@@ -13,7 +13,12 @@ data class ClaudeStatus(
     val error: String? = null
 )
 
-/** `claude auth status` 결과로 설치·로그인 여부를 본다. 인증 파일은 읽지 않고 로그인도 하지 않는다. */
+/**
+ * `<bin> auth status` 결과로 설치·로그인 여부를 본다. 인증 파일은 읽지 않고 로그인도 하지 않는다.
+ *
+ * [bin]은 온보딩이 확인해 config.yaml `runners.claude.bin`에 저장한 절대 경로다. core 러너와 같은
+ * 파일을 확인한다.
+ */
 fun interface ClaudeProbe {
-    suspend fun check(): ClaudeStatus
+    suspend fun check(bin: String): ClaudeStatus
 }

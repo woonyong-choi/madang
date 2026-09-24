@@ -23,12 +23,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import madang.shared.LocalFolderPicker
+import madang.shared.onboarding.AGENT_TOOLS
 import madang.shared.onboarding.ClaudeStatus
 import madang.shared.onboarding.OnboardingState
 import madang.shared.onboarding.OnboardingStep
 import madang.shared.onboarding.OnboardingViewModel
+import madang.shared.onboarding.ToolState
 
-/** 첫 실행: 전역 설정 초기화 → 첫 프로젝트 폴더 → claude 확인. */
+/** 첫 실행: 전역 설정 초기화 → 첫 프로젝트 폴더 → 도구 확인. */
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel) {
     val state by viewModel.state.collectAsState()
@@ -46,7 +48,7 @@ fun OnboardingScreen(viewModel: OnboardingViewModel) {
             when (state.step) {
                 OnboardingStep.HOME -> HomeStep(state, viewModel)
                 OnboardingStep.PROJECT -> ProjectStep(state, viewModel)
-                OnboardingStep.CLAUDE -> ClaudeStep(state, viewModel)
+                OnboardingStep.TOOLS -> ToolsStep(state, viewModel)
             }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
@@ -94,16 +96,51 @@ private fun ProjectStep(state: OnboardingState, viewModel: OnboardingViewModel) 
 }
 
 @Composable
-private fun ClaudeStep(state: OnboardingState, viewModel: OnboardingViewModel) {
+private fun ToolsStep(state: OnboardingState, viewModel: OnboardingViewModel) {
     val strings = LocalStrings.current
-    StepHeader(strings.claudeStepTitle, strings.claudeStepBody)
-    LabeledValue("claude", claudeText(state.claude))
+    StepHeader(strings.toolsStepTitle, strings.toolsStepBody)
+    AGENT_TOOLS.forEach { name -> ToolRow(name, state.tool(name), viewModel) }
+    LabeledValue(strings.claudeLogin, claudeText(state.claude))
+    val checking = state.claude == null || state.tools.values.any { it.checking }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = viewModel::checkClaude, enabled = state.claude != null) {
+        OutlinedButton(onClick = viewModel::checkTools, enabled = !checking) {
             Text(strings.recheck)
         }
         Button(onClick = viewModel::finish, enabled = !state.done) { Text(strings.begin) }
     }
+}
+
+/** 도구 하나. 찾았으면 절대 경로를, 못 찾았으면 경로를 직접 넣는 칸을 보인다. */
+@Composable
+private fun ToolRow(name: String, tool: ToolState, viewModel: OnboardingViewModel) {
+    val strings = LocalStrings.current
+    LabeledValue(
+        name,
+        when {
+            tool.checking -> strings.checking
+            tool.path != null -> tool.path
+            else -> strings.toolNotFound
+        }
+    )
+    if (!tool.missing) return
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = tool.input,
+            onValueChange = { viewModel.setToolInput(name, it) },
+            singleLine = true,
+            isError = tool.rejected,
+            placeholder = { Text("/usr/local/bin/$name") },
+            modifier = Modifier.weight(1f)
+        )
+        OutlinedButton(
+            onClick = { viewModel.useToolInput(name) },
+            enabled = tool.input.isNotBlank()
+        ) { Text(strings.useToolPath) }
+    }
+    if (tool.rejected) Text(strings.toolPathRejected, color = MaterialTheme.colorScheme.error)
 }
 
 @Composable

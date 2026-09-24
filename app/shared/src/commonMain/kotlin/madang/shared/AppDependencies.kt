@@ -6,12 +6,14 @@ import madang.shared.core.EventTransport
 import madang.shared.core.PortFileReader
 import madang.shared.core.WebSocketEventTransport
 import madang.shared.onboarding.ClaudeProbe
+import madang.shared.onboarding.ToolLocator
 import madang.shared.settings.AppSettings
 import madang.shared.settings.AppSettingsStore
 
 /**
  * 플랫폼이 앱에 넘기는 것들.
  *
+ * @property toolLocator 온보딩이 로그인 셸에서 claude·codex 경로를 확인하는 방법.
  * @property connect core 주소로 클라이언트를 만든다. 가짜 core는 여기서 MockEngine을 끼운다.
  * @property portFile 설정의 앱 홈에서 `core.port`를 읽는 방법.
  * @property launcher core를 띄우는 방법. core를 띄울 수 없는 플랫폼은 null.
@@ -24,6 +26,7 @@ import madang.shared.settings.AppSettingsStore
 class AppDependencies(
     val settings: AppSettingsStore,
     val claudeProbe: ClaudeProbe,
+    val toolLocator: ToolLocator,
     val portFile: (AppSettings) -> PortFileReader,
     val launcher: ((AppSettings) -> CoreLauncher)?,
     val connect: (baseUrl: String) -> CoreClient = { CoreClient(it) },

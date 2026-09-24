@@ -13,16 +13,16 @@ import madang.shared.onboarding.ClaudeProbe
 import madang.shared.onboarding.ClaudeStatus
 
 /**
- * `claude auth status`를 실행해 설치·로그인 여부를 본다.
+ * `<bin> auth status`를 실행해 설치·로그인 여부를 본다.
  *
  * 출력 JSON에서 `loggedIn`과 `authMethod`만 읽는다. 계정 정보 등 다른 값은 버리고, 인증 파일은
- * 읽지 않으며 로그인도 시도하지 않는다. 명령을 찾지 못하면 설치되지 않은 것으로 본다.
+ * 읽지 않으며 로그인도 시도하지 않는다. 명령을 실행하지 못하면 설치되지 않은 것으로 본다.
  */
-class CommandClaudeProbe(private val command: String = "claude") : ClaudeProbe {
+class CommandClaudeProbe : ClaudeProbe {
 
-    override suspend fun check(): ClaudeStatus = withContext(Dispatchers.IO) {
+    override suspend fun check(bin: String): ClaudeStatus = withContext(Dispatchers.IO) {
         val process = try {
-            ProcessBuilder(command, "auth", "status").redirectErrorStream(true).start()
+            ProcessBuilder(bin, "auth", "status").redirectErrorStream(true).start()
         } catch (e: IOException) {
             return@withContext ClaudeStatus(installed = false, loggedIn = false)
         }

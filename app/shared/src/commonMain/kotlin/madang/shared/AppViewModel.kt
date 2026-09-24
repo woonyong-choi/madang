@@ -83,8 +83,14 @@ class AppViewModel(private val deps: AppDependencies, private val scope: Corouti
     private fun onConnected(core: CoreClient, home: HomeStatus) {
         client = core
         if (!home.initialized) {
-            val onboarding =
-                OnboardingViewModel(core, deps.claudeProbe, home.path, sessionScope, ::showMain)
+            val onboarding = OnboardingViewModel(
+                core,
+                deps.claudeProbe,
+                deps.toolLocator,
+                home.path,
+                sessionScope,
+                ::showMain
+            )
             _screen.value = Screen.Onboarding(onboarding)
             onboarding.start()
         } else {

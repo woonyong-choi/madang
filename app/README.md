@@ -42,9 +42,14 @@ app/
   core가 그 폴더에 `.madang/`을 만든다.
 - 프로젝트 오른쪽 클릭의 "등록 해제"는 `DELETE /projects/{p}`다. 폴더와 기록은 그대로 남는다.
 - 첫 실행(`GET /home`의 `initialized`가 거짓): 전역 설정 초기화(`POST /home`, 경로는 core가 알려 준
-  앱 홈) → 첫 프로젝트 폴더 고르기(`POST /projects`) → claude 확인 순서다. claude 확인은
-  `claude auth status` 출력의 로그인 여부와 방식만 본다. 로그인은 터미널에서 직접 하고, 로그인하지
-  않았어도 시작할 수 있다.
+  앱 홈) → 첫 프로젝트 폴더 고르기(`POST /projects`) → 도구 확인 순서다.
+- 도구 확인: Finder로 연 앱은 셸 PATH를 받지 않는다. 그래서 사용자의 로그인 셸
+  (`$SHELL -lc 'command -v claude'`, codex도)이 찾은 절대 경로를 보여 주고 전역 config.yaml의
+  `runners.claude.bin`·`runners.codex.bin`에 저장한다(`GET /config`로 원문을 받아 그 값만 고친 뒤
+  `PUT /config`, 주석은 그대로). 못 찾으면 실행 파일 경로를 직접 넣고, 앱은 그 파일이 실행
+  파일인지만 확인해 저장한다. 흔한 설치 위치를 뒤지는 추측은 하지 않는다.
+- claude 로그인 확인은 저장한 경로로 `<경로> auth status`를 실행해 출력의 로그인 여부와 방식만
+  본다. 로그인은 터미널에서 직접 하고, 로그인하지 않았어도 시작할 수 있다.
 
 ## 메인 화면 조작
 
@@ -217,8 +222,11 @@ MADANG_REAL_CORE_URL=http://127.0.0.1:7470 MADANG_REAL_PROJECT=<프로젝트 id>
 ## core 연결
 
 `./gradlew :desktop:run`은 떠 있는 core가 없으면 `uv run --project ../core madang serve`로
-core를 띄운다. 설정 화면의 "core 실행 파일"을 지정하면 `<파일> serve`를 쓴다. 실패하면 시작
-화면에 원인과 "다시 시도"가 보인다.
+core를 띄운다. 설정 화면의 "core 실행 파일"을 지정하면 `<파일> serve`를 쓴다. 패키지된 앱은
+리소스 폴더의 동봉 core(`madang-core/madang`, PyInstaller onedir)를 띄운다. 어느 경우든 로그인
+셸의 PATH(`$SHELL -lc`)를 core 환경으로 넘겨, 에이전트가 부르는 `madang`과 도구를 찾게 한다.
+로그인 셸에서 PATH를 얻지 못하면 앱의 PATH를 그대로 물려준다. 실패하면 시작 화면에 원인과
+"다시 시도"가 보인다.
 
 core 없이 화면을 개발하려면 가짜 core를 쓴다. `../core/openapi.yaml`의 응답 예시로 답하고,
 연결되면 계약의 이벤트 예시를 차례로 보낸다. 앱 설정 파일은 쓰지 않는다.

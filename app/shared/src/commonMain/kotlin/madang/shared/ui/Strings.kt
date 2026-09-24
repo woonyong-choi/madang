@@ -21,8 +21,12 @@ data class Strings(
     val projectStepTitle: String,
     val projectStepBody: String,
     val chooseFolder: String,
-    val claudeStepTitle: String,
-    val claudeStepBody: String,
+    val toolsStepTitle: String,
+    val toolsStepBody: String,
+    val toolNotFound: String,
+    val useToolPath: String,
+    val toolPathRejected: String,
+    val claudeLogin: String,
     val claudeLoggedIn: (method: String?) -> String,
     val claudeLoggedOut: String,
     val recheck: String,
@@ -90,8 +94,14 @@ val KoreanStrings = Strings(
     projectStepBody = "작업할 폴더를 고르세요. 보통 git 저장소입니다. 페이지 기록은 그 폴더의 " +
         ".madang/에 쌓이고 기본으로 git에서 빠집니다.",
     chooseFolder = "폴더 고르기",
-    claudeStepTitle = "claude 확인",
-    claudeStepBody = "`claude auth status` 결과만 봅니다. 로그인은 터미널에서 claude로 직접 합니다.",
+    toolsStepTitle = "도구 확인",
+    toolsStepBody = "로그인 셸에서 claude와 codex를 찾아 그 경로를 config.yaml runners에 저장합니다. " +
+        "core도 이 경로로 실행합니다. 로그인은 `claude auth status` 결과만 보며, 터미널에서 " +
+        "claude로 직접 합니다.",
+    toolNotFound = "찾지 못함. 실행 파일 경로를 직접 넣으세요.",
+    useToolPath = "이 경로 사용",
+    toolPathRejected = "실행할 수 있는 파일의 절대 경로가 아닙니다.",
+    claudeLogin = "claude 로그인",
     claudeLoggedIn = { method -> "로그인됨" + (method?.let { " ($it)" } ?: "") },
     claudeLoggedOut = "로그인하지 않음. 터미널에서 claude를 실행해 로그인한 뒤 다시 확인하세요.",
     recheck = "다시 확인",
@@ -159,9 +169,15 @@ val EnglishStrings = KoreanStrings.copy(
     projectStepBody = "Choose a folder to work in, usually a git repository. Page records go to " +
         "its .madang/ folder, which git ignores by default.",
     chooseFolder = "Choose folder",
-    claudeStepTitle = "Check claude",
-    claudeStepBody = "Only the result of `claude auth status` is read. Log in with claude in a " +
-        "terminal.",
+    toolsStepTitle = "Check tools",
+    toolsStepBody =
+        "claude and codex are looked up in your login shell and their paths are saved " +
+            "to runners in config.yaml, so core runs the same files. Login is read only from " +
+            "`claude auth status`; log in with claude in a terminal.",
+    toolNotFound = "Not found. Enter the path to the executable.",
+    useToolPath = "Use this path",
+    toolPathRejected = "Not an absolute path to an executable file.",
+    claudeLogin = "claude login",
     claudeLoggedIn = { method -> "Logged in" + (method?.let { " ($it)" } ?: "") },
     claudeLoggedOut = "Not logged in. Run claude in a terminal to log in, then check again.",
     recheck = "Check again",
