@@ -3,32 +3,22 @@
 from __future__ import annotations
 
 import json
-import os
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
 from madang import __version__, cli_agent, config
-from madang.assemble import assemble
-from madang.cli_agent.context import BY_ENV
+from madang.graph import Flow, FlowResult, events, steps
 from madang.runners import make_runner
 from madang.runners.base import CliRunner
-from madang.runners.record import RecordedRun, run_page
-from madang.store import changes, frontmatter, git, pages, runs
+from madang.runners.record import RecordedRun
+from madang.store import frontmatter, pages
 from madang.store.git import GitError
 from madang.store.home import NotAHomeError, init_home
 from madang.store.log import append_message
-from madang.store.page import (
-    SPACE_FILE,
-    STATE_FILE,
-    space_dir,
-    space_repo,
-    work_dir,
-)
+from madang.store.page import STATE_FILE, work_dir
 from madang.validate import Issue, validate_target
 
 app = typer.Typer(
@@ -70,7 +60,7 @@ def root(
 
 @app.command()
 def init(home: HomeOption = None) -> None:
-    """앱 홈(설정, 루트 메모리, 루트 스페이스, git 저장소)을 만든다."""
+    """앱 홈(설정, 루트 메모리, 루트 공간, git 저장소)을 만든다."""
     path = config.resolve_home(home)
     try:
         result = init_home(path)
@@ -132,13 +122,6 @@ def validate(
 
 # 단일 실행
 
-SCRATCH_DIR = "scratch"
-REPO_PREFIX = "repo:"
-# 코어가 직접 쓰는 페이지 파일. 실행 산출물로 보고하지 않는다.
-_BOOKKEEPING = (pages.LOG_FILE, f"{pages.BLOCKS_DIR}/{pages.LAST_BLOCK_FILE}")
-_BOOKKEEPING_DIRS = (f"{runs.RUNS_DIR}/", f"{SCRATCH_DIR}/")
-_SUMMARY_FILES = 3
-
 
 @dataclass
 class RunOutcome:
@@ -173,7 +156,7 @@ def execute_run(
     """새 세션에서 페이지의 한 단계를 실행하고 결과를 커밋한다.
 
     요청을 기록하고, 프롬프트를 조립해 ``scratch/``에 저장한다. 러너는
-    스페이스의 코드 저장소(없으면 페이지 폴더)에서 작업한다. 이후 페이지를
+    공간의 코드 저장소(없으면 페이지 폴더)에서 작업한다. 이후 페이지를
     검사하고, 실행을 기록하고, 답을 기록한 뒤 앱 홈을 커밋한다.
 
     Args:
@@ -196,75 +179,33 @@ def execute_run(
     state = pages.read_header(page_dir / STATE_FILE)
     tier = int(state.get("tier") or 1)
     kind = str(state.get("kind") or cfg.routes.default_kind)
-    cwd = work_dir(page_dir)
     if target is not None and not pages.block_files(page_dir, target):
         raise ValueError(f"block '{target}' has no file in blocks/")
 
     message = append_message(
         page_dir, "user", request, {"target": target or "page"}
     )
-    assembled = assemble(
-        page_dir, target, request, tier, cfg=cfg, runner=runner.name
-    )
-    prompt = assembled.prompt
-    scratch = page_dir / SCRATCH_DIR
-    scratch.mkdir(exist_ok=True)
-    (scratch / f"{message}.prompt.md").write_text(prompt, encoding="utf-8")
-
-    before = _snapshots(page_dir, cwd)
-    with _environment(BY_ENV, f"{runner.name}/{model}"):
-        recorded = run_page(
-            runner,
-            config=cfg,
-            page_dir=page_dir,
-            cwd=cwd,
-            prompt=prompt,
-            model=model,
-            effort=effort,
-            kind=kind,
-            tier=tier,
-            trigger={"message": message, "target": target or "page"},
-            input=assembled.estimate(),
-        )
-    changed, unknown = _run_output(page_dir, cwd, before)
-    issues = validate_target(
+    steps.prepare(
         page_dir,
-        repo=space_repo(page_dir),
-        token_limit=cfg.madang.limits.state_tokens,
-        kinds=cfg.routes.kinds,
+        cfg=cfg,
+        runner=runner.name,
+        message=message,
+        target=target,
+        request=request,
+        tier=tier,
     )
-    _finish_record(
-        page_dir, recorded, assembled.contract, (changed, unknown), issues
-    )
-
-    result = recorded.result
-    answer = result.final_text if result.status == "done" else None
-    append_message(
+    recorded = steps.execute(
         page_dir,
-        "agent",
-        answer or f"{result.status}: {result.error or 'no answer'}",
-        {"run": recorded.n},
+        runner,
+        cfg=cfg,
+        message=message,
+        route={"model": model, "effort": effort, "kind": kind, "tier": tier},
+        trigger={"message": message, "target": target or "page"},
     )
-    commit = _commit_run(page_dir, cfg.home, recorded, changed)
+    issues = steps.check(page_dir, cfg, recorded.n)
+    steps.reply(page_dir, recorded)
+    commit = steps.commit_run(page_dir, cfg.home, recorded.record)
     return RunOutcome(recorded=recorded, issues=issues, commit=commit)
-
-
-def run_commit_message(
-    page_id: str, n: int, runner: str, model: str, changed: list[str]
-) -> str:
-    """실행의 앱 홈 커밋 메시지를 반환한다.
-
-    Args:
-        page_id: 페이지 id.
-        n: 실행 번호.
-        runner: 러너 이름.
-        model: 모델 이름.
-        changed: 실행이 바꾼 파일.
-
-    Returns:
-        ``[<page-id>] run <n> · <runner>/<model> · <changed files>``.
-    """
-    return f"[{page_id}] run {n} · {runner}/{model} · {_summary(changed)}"
 
 
 def format_outcome(outcome: RunOutcome) -> str:
@@ -288,128 +229,6 @@ def format_outcome(outcome: RunOutcome) -> str:
     return " · ".join(parts)
 
 
-def _summary(changed: list[str]) -> str:
-    if not changed:
-        return "no file changes"
-    if len(changed) <= _SUMMARY_FILES:
-        return ", ".join(changed)
-    shown = changed[: _SUMMARY_FILES - 1]
-    return f"{', '.join(shown)} +{len(changed) - len(shown)} more"
-
-
-@contextmanager
-def _environment(name: str, value: str) -> Iterator[None]:
-    """에이전트 프로세스용 환경 변수를 설정하고 끝나면 되돌린다."""
-    old = os.environ.get(name)
-    os.environ[name] = value
-    try:
-        yield
-    finally:
-        if old is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = old
-
-
-def _snapshots(
-    page_dir: Path, cwd: Path
-) -> tuple[changes.Snapshot, changes.Snapshot | None]:
-    repo = changes.take(cwd) if cwd != page_dir else None
-    return changes.take(page_dir), repo
-
-
-def _run_output(
-    page_dir: Path,
-    cwd: Path,
-    before: tuple[changes.Snapshot, changes.Snapshot | None],
-) -> tuple[list[str], list[str]]:
-    """실행이 바꾼 파일과 등록하지 않은 새 파일을 반환한다.
-
-    페이지 파일은 페이지 기준 상대 경로이고, 코드 저장소 파일에는
-    ``repo:`` 접두가 붙는다.
-    """
-    page_before, repo_before = before
-    page_after, repo_after = _snapshots(page_dir, cwd)
-    changed = [
-        p for p in page_after.changed_since(page_before) if not _bookkeeping(p)
-    ]
-    new = [
-        p for p in page_after.new_untracked(page_before) if not _bookkeeping(p)
-    ]
-    if repo_before is not None and repo_after is not None:
-        changed += [
-            REPO_PREFIX + p for p in repo_after.changed_since(repo_before)
-        ]
-        new += [REPO_PREFIX + p for p in repo_after.new_untracked(repo_before)]
-    registered = _artifacts(page_dir)
-    managed = {STATE_FILE, "page.md"}
-    unknown = [p for p in new if p not in registered and p not in managed]
-    return changed, unknown
-
-
-def _bookkeeping(path: str) -> bool:
-    return path in _BOOKKEEPING or path.startswith(_BOOKKEEPING_DIRS)
-
-
-def _artifacts(page_dir: Path) -> set[str]:
-    try:
-        header = pages.read_header(page_dir / STATE_FILE)
-    except (OSError, frontmatter.FrontmatterError):
-        return set()
-    items = header.get("artifacts")
-    return {str(a) for a in items} if isinstance(items, list) else set()
-
-
-def _finish_record(
-    page_dir: Path,
-    recorded: RecordedRun,
-    contract_version: str,
-    output: tuple[list[str], list[str]],
-    issues: list[Issue],
-) -> None:
-    """실행 뒤 코어가 알게 된 내용을 ``runs/N.json``에 더한다."""
-    record, result = recorded.record, recorded.result
-    record.changed_files, record.unknown_files = output
-    record.contract = contract_version
-    record.duration = result.duration
-    record.error = result.error
-    record.state_check = {
-        "ok": not issues,
-        "issues": [issue.to_dict() for issue in issues],
-    }
-    if result.status == "done":
-        record.result_status = _state_status(page_dir)
-    runs.write_run(page_dir, record)
-
-
-def _state_status(page_dir: Path) -> str | None:
-    try:
-        status = pages.read_header(page_dir / STATE_FILE).get("status")
-    except (OSError, frontmatter.FrontmatterError):
-        return None
-    return str(status) if status else None
-
-
-def _commit_run(
-    page_dir: Path, home: Path, recorded: RecordedRun, changed: list[str]
-) -> str:
-    record = recorded.record
-    paths = [page_dir.relative_to(home).as_posix()]
-    space = space_dir(page_dir)
-    if space is not None and (space / SPACE_FILE).is_file():
-        paths.append((space / SPACE_FILE).relative_to(home).as_posix())
-    git.run(home, "add", "-A", "--", *paths)
-    message = run_commit_message(
-        page_dir.name,
-        record.n,
-        str(record.runner),
-        str(record.model),
-        changed,
-    )
-    git.commit(home, message, paths, unsigned=True)
-    return git.head(home)
-
-
 def _fail(message: str, code: int = 1) -> typer.Exit:
     typer.echo(f"error: {message}", err=True)
     return typer.Exit(code)
@@ -429,8 +248,12 @@ def _load(home: Path | None) -> config.Config:
 def run_command(
     page_id: Annotated[str, typer.Argument(help="페이지 id.")],
     request: Annotated[str, typer.Argument(help="이 단계에서 할 일.")],
-    tool: Annotated[str, typer.Option("--tool", help="러너: claude | codex.")],
-    model: Annotated[str, typer.Option("--model", help="모델 이름.")],
+    tool: Annotated[
+        str | None, typer.Option("--tool", help="러너: claude | codex.")
+    ] = None,
+    model: Annotated[
+        str | None, typer.Option("--model", help="모델 이름.")
+    ] = None,
     effort: Annotated[
         str, typer.Option("--effort", help="추론 강도.")
     ] = "medium",
@@ -438,10 +261,30 @@ def run_command(
         str | None,
         typer.Option("--target", help="요청 대상 블록. 예: b05."),
     ] = None,
+    flow: Annotated[
+        bool,
+        typer.Option(
+            "--flow",
+            help=(
+                "흐름 그래프로 처리한다. 종류·러너·모델은 routes.yaml이 "
+                "고르고, 검사·리뷰·승격까지 이어 간다."
+            ),
+        ),
+    ] = False,
     home: HomeOption = None,
 ) -> None:
-    """새 세션에서 페이지의 한 단계를 실행한 뒤 검사하고 커밋한다."""
+    """새 세션에서 페이지의 한 단계를 실행한 뒤 검사하고 커밋한다.
+
+    --flow를 주면 메시지 하나를 흐름 그래프로 끝까지 처리한다.
+    """
     cfg = _load(home)
+    if flow:
+        if tool or model:
+            raise _fail("--tool and --model cannot be used with --flow")
+        _run_flow(cfg, page_id, request, target)
+        return
+    if not tool or not model:
+        raise _fail("--tool and --model are required without --flow")
     try:
         page_dir = pages.find_page(cfg.home, page_id)
         runner = make_runner(tool, cfg)
@@ -471,13 +314,88 @@ def run_command(
         raise typer.Exit(1)
 
 
-# 페이지와 스페이스 생성
+@app.command("resume")
+def resume_command(
+    thread_id: Annotated[
+        str, typer.Argument(help="멈춘 흐름 id. 예: <page-id>/b01.")
+    ],
+    choice: Annotated[str, typer.Argument(help="선택지 중 하나.")],
+    home: HomeOption = None,
+) -> None:
+    """사람의 답을 기다리는 흐름에 답을 주고 이어 간다."""
+    cfg = _load(home)
+    try:
+        result = Flow(cfg, on_event=_echo_event).resume(thread_id, choice)
+    except (GitError, OSError, ValueError, frontmatter.FrontmatterError) as e:
+        raise _fail(str(e)) from e
+    _finish_flow(result)
+
+
+def format_flow(result: FlowResult) -> str:
+    """흐름이 끝나거나 멈춘 뒤 출력하는 한 줄 요약을 반환한다."""
+    state = result.state
+    parts = [
+        f"flow {result.thread_id}",
+        f"kind {state['kind'] or '-'}",
+        f"runs {state['runs_this_message']}",
+        f"last run {state['run_n'] or '-'}",
+    ]
+    if result.waiting is not None:
+        options = "|".join(result.waiting["options"])
+        parts += [f"waiting {result.waiting['reason']}", f"options {options}"]
+    else:
+        parts.append(state["result_status"] or "-")
+    return " · ".join(parts)
+
+
+def _run_flow(
+    cfg: config.Config, page_id: str, request: str, target: str | None
+) -> None:
+    flow = Flow(cfg, on_event=_echo_event)
+    try:
+        result = flow.start(page_id, request, {"block": target})
+    except (
+        pages.PageNotFoundError,
+        GitError,
+        OSError,
+        ValueError,
+        frontmatter.FrontmatterError,
+    ) as exc:
+        raise _fail(str(exc)) from exc
+    _finish_flow(result)
+
+
+def _finish_flow(result: FlowResult) -> None:
+    typer.echo(format_flow(result))
+    stopped = result.state["result_status"] in ("blocked", "cancelled")
+    if result.waiting is not None or stopped:
+        raise typer.Exit(1)
+
+
+_ECHOED = (
+    events.RUN_STARTED,
+    events.RUN_FINISHED,
+    events.RUN_FAILED,
+    events.FLOW_WAITING,
+    events.PAGE_UNKNOWN_FILES,
+)
+
+
+def _echo_event(name: str, payload: dict[str, Any]) -> None:
+    """흐름 이벤트 중 사람이 볼 것만 표준 오류에 한 줄로 쓴다."""
+    if name not in _ECHOED:
+        return
+    shown = {k: v for k, v in payload.items() if k not in ("page", "message")}
+    typer.echo(f"{name} {json.dumps(shown, ensure_ascii=False)}", err=True)
+
+
+# 페이지와 공간 생성
 
 page_app = typer.Typer(
     help="페이지를 만든다.", no_args_is_help=True, add_completion=False
 )
 space_app = typer.Typer(
-    help="스페이스를 만든다.", no_args_is_help=True, add_completion=False
+    help="공간를 만든다.", no_args_is_help=True, add_completion=False
 )
 app.add_typer(page_app, name="page")
 app.add_typer(space_app, name="space")
@@ -487,7 +405,7 @@ app.add_typer(space_app, name="space")
 def page_new(
     title: Annotated[str, typer.Option("--title", help="페이지 제목.")],
     space: Annotated[
-        str, typer.Option("--space", help="스페이스 슬러그.")
+        str, typer.Option("--space", help="공간 슬러그.")
     ] = "root",
     kind: Annotated[
         str | None,
@@ -515,17 +433,17 @@ def page_new(
 
 @space_app.command("new")
 def space_new(
-    slug: Annotated[str, typer.Argument(help="스페이스 슬러그.")],
+    slug: Annotated[str, typer.Argument(help="공간 슬러그.")],
     title: Annotated[
-        str | None, typer.Option("--title", help="스페이스 제목.")
+        str | None, typer.Option("--title", help="공간 제목.")
     ] = None,
     repo: Annotated[
         str | None,
-        typer.Option("--repo", help="스페이스의 코드 저장소."),
+        typer.Option("--repo", help="공간의 코드 저장소."),
     ] = None,
     home: HomeOption = None,
 ) -> None:
-    """스페이스를 만들고 슬러그를 출력한다."""
+    """공간를 만들고 슬러그를 출력한다."""
     cfg = _load(home)
     try:
         pages.create_space(cfg.home, slug, title=title, repo=repo)

@@ -9,9 +9,9 @@ import yaml
 from conftest import FAKE_CLI, STREAMS
 from typer.testing import CliRunner
 
-from madang import cli
-from madang.cli import app, execute_run, run_commit_message
+from madang.cli import app, execute_run
 from madang.config import load_config
+from madang.graph.steps import environment, run_commit_message
 from madang.runners.base import RunResult, Usage
 from madang.store import frontmatter, pages
 from madang.store.home import init_home
@@ -351,6 +351,6 @@ def test_page_and_space_new(home: Path) -> None:
 
 def test_environment_is_restored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MADANG_BY", "human")
-    with cli._environment("MADANG_BY", "claude/x"):
+    with environment("MADANG_BY", "claude/x"):
         assert os.environ["MADANG_BY"] == "claude/x"
     assert os.environ["MADANG_BY"] == "human"

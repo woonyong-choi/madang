@@ -337,4 +337,4 @@ def test_cancel(
 
     assert not thread.is_alive()
     assert results[0].status == "cancelled"
-    runner.cancel()  # no process left: nothing happens
+    runner.cancel()  # 남은 프로세스가 없으므로 아무 일도 없다
