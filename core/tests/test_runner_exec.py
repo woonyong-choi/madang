@@ -81,6 +81,8 @@ def test_default_commands_come_from_runners_yaml(tmp_path: Path) -> None:
         "codex",
         "exec",
         "--json",
+        "--add-dir",
+        str((tmp_path / "home").resolve()),
         "-m",
         "gpt-6-luna",
         "-c",

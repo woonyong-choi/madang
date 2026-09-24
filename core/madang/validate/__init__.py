@@ -2,7 +2,8 @@
 
 from madang.validate.issues import Issue
 from madang.validate.page import validate_page, validate_target
-from madang.validate.state import count_tokens, validate_state
+from madang.validate.state import validate_state
+from madang.validate.tokens import count_tokens
 
 __all__ = [
     "Issue",

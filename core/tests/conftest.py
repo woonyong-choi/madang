@@ -5,6 +5,8 @@ import pytest
 
 from madang.config import RunnerSpec
 
+pytest_plugins = ["api_support"]
+
 FIXTURES = Path(__file__).parent / "fixtures"
 STREAMS = FIXTURES / "streams"
 FAKE_CLI = FIXTURES / "bin" / "fake_cli.py"

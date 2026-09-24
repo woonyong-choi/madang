@@ -14,6 +14,7 @@ from madang import config
 from madang.store import frontmatter
 from madang.store.page import PAGE_STATUSES, latest_run
 from madang.validate.issues import Issue, Lines
+from madang.validate.tokens import count_tokens
 
 DEFAULT_TOKEN_LIMIT = config.Limits().state_tokens
 REQUIRED_KEYS = ("status", "kind", "tier", "attempts")
@@ -29,34 +30,6 @@ def default_kinds() -> tuple[str, ...]:
     """내장 routes.yaml에 적힌 종류를 반환한다."""
     data = yaml.safe_load(config.default_text("routes.yaml")) or {}
     return tuple(data.get("kinds") or ())
-
-
-@lru_cache(maxsize=1)
-def _encoding() -> Any:
-    try:
-        import tiktoken
-
-        return tiktoken.get_encoding("cl100k_base")
-    except Exception:  # 인코딩 파일을 쓸 수 없음(오프라인 첫 실행)
-        return None
-
-
-def count_tokens(text: str) -> int:
-    """``cl100k_base`` tiktoken 인코딩으로 토큰을 센다.
-
-    인코딩 파일이 없으면 UTF-8 3바이트당 토큰 1개라는 보수적 추정으로
-    대신한다.
-
-    Args:
-        text: 셀 텍스트.
-
-    Returns:
-        토큰 수.
-    """
-    enc = _encoding()
-    if enc is not None:
-        return len(enc.encode(text, disallowed_special=()))
-    return -(-len(text.encode("utf-8")) // 3)
 
 
 def _is_int(value: Any) -> bool:

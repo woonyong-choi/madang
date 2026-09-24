@@ -460,3 +460,51 @@ def test_failed_review_run_asks_human(home: Path, page: Path) -> None:
     done = flow(home, script).resume(result.thread_id, "retry")
     assert done.state["result_status"] == "done"
     assert [c["name"] for c in script.calls] == ["codex", "claude", "claude"]
+
+
+def test_retry_after_failed_repair_is_judged_as_implementation(
+    home: Path, page: Path
+) -> None:
+    # 리뷰 실행이 state.md를 깨고 보정도 실패한 뒤, 사람이 다시 시도하면
+    # 새 구현 실행은 리뷰로 판정되지 않고 다시 리뷰를 받는다.
+    script = Script(
+        set_status("review"),
+        break_state,
+        break_state,
+        restore_state("review"),
+        set_status("review"),
+    )
+    result = flow(home, script).start(page.name, "구현해줘")
+    assert result.waiting["reason"] == "repair_failed"
+    assert result.state["last_run_kind"] == "review"
+
+    done = flow(home, script).resume(result.thread_id, "retry")
+    assert done.state["result_status"] == "done"
+    assert [c["name"] for c in script.calls] == [
+        "codex",
+        "claude",
+        "claude",
+        "codex",
+        "claude",
+    ]
+    assert record(page, 5)["kind"] == "review"
+
+
+def test_waiting_on_lists_paused_flows_of_a_page(
+    home: Path, page: Path
+) -> None:
+    script = Script()
+    runner = flow(home, script)
+    assert runner.waiting_on(page.name) == []
+
+    first = runner.start(page.name, "구조를 검토해줘")
+    second = runner.start(page.name, "구조를 점검해줘")
+    other = pages.create_page(home, "root", "다른", slug="other")
+    runner.start(other.name, "구조를 검토해줘")
+
+    found = runner.waiting_on(page.name)
+    assert [thread for thread, _ in found] == [
+        first.thread_id,
+        second.thread_id,
+    ]
+    assert found[0][1]["reason"] == "kind"

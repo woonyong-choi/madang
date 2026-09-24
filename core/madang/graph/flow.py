@@ -138,6 +138,31 @@ class Flow:
             PageNotFoundError: 페이지가 없는 경우.
             ValueError: 대상 블록에 파일이 없는 경우.
         """
+        thread_id, state = self.accept(page_id, request, target)
+        return self.advance(thread_id, state)
+
+    def accept(
+        self,
+        page_id: str,
+        request: str,
+        target: dict[str, Any] | None = None,
+    ) -> tuple[str, FlowState]:
+        """메시지를 페이지 로그에 남기고 흐름의 첫 상태를 만든다.
+
+        그래프는 실행하지 않는다. 호출자가 ``advance``로 이어 간다.
+
+        Args:
+            page_id: 페이지 id.
+            request: 메시지 본문.
+            target: ``{block, elements, mode}``. 페이지 전체면 None.
+
+        Returns:
+            ``(흐름 id, 첫 상태)``. 흐름 id는 ``<page-id>/<메시지 id>``다.
+
+        Raises:
+            PageNotFoundError: 페이지가 없는 경우.
+            ValueError: 대상 블록에 파일이 없는 경우.
+        """
         page_dir = pages.find_page(self.cfg.home, page_id)
         target = _normalize(target)
         block = target["block"]
@@ -148,8 +173,20 @@ class Flow:
         )
         space = page_dir.parent.parent.name
         state = initial_state(space, page_dir.name, message, target)
+        return f"{page_dir.name}/{message}", state
+
+    def advance(self, thread_id: str, state: FlowState) -> FlowResult:
+        """``accept``가 만든 첫 상태로 흐름을 실행한다.
+
+        Args:
+            thread_id: ``accept``가 돌려준 흐름 id.
+            state: ``accept``가 돌려준 첫 상태.
+
+        Returns:
+            끝났거나 사람을 기다리는 흐름.
+        """
         self._nodes.cancelled.clear()
-        return self._invoke(state, f"{page_dir.name}/{message}")
+        return self._invoke(state, thread_id)
 
     def resume(self, thread_id: str, choice: str) -> FlowResult:
         """사람을 기다리는 흐름에 답을 주고 이어 간다.
@@ -178,6 +215,31 @@ class Flow:
         """흐름이 사람을 기다리면 그 질문을, 아니면 None을 반환한다."""
         with self._compiled() as graph:
             return _pending(graph, thread_id)
+
+    def waiting_on(self, page_id: str) -> list[tuple[str, dict[str, Any]]]:
+        """페이지에서 사람의 답을 기다리는 흐름을 찾는다.
+
+        ``core.db``의 체크포인트에서 그 페이지의 흐름 id를 모두 훑는다.
+
+        Args:
+            page_id: 페이지 id.
+
+        Returns:
+            ``(흐름 id, 질문)`` 목록. 메시지 순서(오래된 것 먼저).
+        """
+        prefix = f"{page_id}/"
+        with self._compiled() as graph:
+            threads = [
+                thread
+                for thread in _thread_ids(graph.checkpointer)
+                if thread.startswith(prefix)
+            ]
+            found = [
+                (thread, pending)
+                for thread in sorted(threads, key=_message_order)
+                if (pending := _pending(graph, thread)) is not None
+            ]
+        return found
 
     def cancel(self) -> None:
         """진행 중인 실행을 멈추고 흐름을 끝낸다. 실행 직전이어도 멈춘다."""
@@ -236,6 +298,24 @@ def _pending(graph: CompiledStateGraph, thread_id: str) -> dict | None:
     if not snapshot.next:
         return None
     return snapshot.values.get("pending_decision")
+
+
+def _thread_ids(saver: SqliteSaver) -> list[str]:
+    """체크포인트가 있는 흐름 id. 아직 표가 없으면 빈 목록."""
+    try:
+        rows = saver.conn.execute(
+            "SELECT DISTINCT thread_id FROM checkpoints"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [str(row[0]) for row in rows]
+
+
+def _message_order(thread_id: str) -> tuple[int, str]:
+    """``<page>/bNN`` 흐름 id를 메시지 번호로 정렬하는 키."""
+    message = thread_id.rsplit("/", 1)[-1]
+    number = pages.parse_block_id(message)
+    return (number if number is not None else -1, thread_id)
 
 
 def _normalize(target: dict[str, Any] | None) -> dict[str, Any]:

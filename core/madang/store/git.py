@@ -142,6 +142,45 @@ def commit(
     )
 
 
+def commit_changes(
+    repo: Path, paths: Sequence[str], message: str
+) -> str | None:
+    """``paths`` 아래의 모든 변경(삭제 포함)을 커밋한다.
+
+    있는 경로는 ``git add -A``로 스테이징한다. 지운 경로는 호출자가 이미
+    ``git rm``했다고 본다. 서명하지 않는다.
+
+    Args:
+        repo: 저장소 디렉터리.
+        paths: 저장소 기준 상대 경로.
+        message: 커밋 메시지.
+
+    Returns:
+        새 커밋의 짧은 해시. 커밋할 변경이 없으면 None.
+
+    Raises:
+        GitError: git이 실패했다.
+    """
+    present = [p for p in paths if (repo / p).exists()]
+    if present:
+        run(repo, "add", "-A", "--", *present)
+    staged = run(
+        repo,
+        "diff",
+        "--cached",
+        "--name-only",
+        "--no-renames",
+        "-z",
+        "--",
+        *paths,
+    ).stdout
+    files = [f for f in staged.split("\0") if f]
+    if not files:
+        return None
+    commit(repo, message, files, unsigned=True)
+    return head(repo)
+
+
 def head(repo: Path) -> str:
     """HEAD의 짧은 해시를 반환한다."""
     return run(repo, "rev-parse", "--short", "HEAD").stdout.strip()

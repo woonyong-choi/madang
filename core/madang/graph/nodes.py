@@ -105,7 +105,8 @@ class FlowNodes:
     def pick(self, state: FlowState) -> dict[str, Any]:
         """``routes.tiers[kind][tier]``에서 러너, 모델, 추론 강도를 고른다."""
         page_dir = self._page_dir(state)
-        runner, model, effort = self._resolve(
+        runner, model, effort = resolve_route(
+            self.cfg,
             self._tiers(state["kind"])[state["tier"] - 1],
             self._implementer(state, page_dir),
         )
@@ -131,7 +132,8 @@ class FlowNodes:
         if self.cancelled.is_set():
             return Command(goto=END, update={"result_status": "cancelled"})
         recorded = self._execute(state, state["kind"], state["tier"])
-        return Command(goto="validate", update=_counted(state, recorded))
+        update = {**_counted(state, recorded), "last_run_kind": state["kind"]}
+        return Command(goto="validate", update=update)
 
     def validate(self, state: FlowState, config: RunnableConfig) -> Command:
         """실행 뒤 페이지를 검사하고 실행을 커밋한다."""
@@ -190,8 +192,8 @@ class FlowNodes:
         page_dir = self._page_dir(state)
         entries = self._tiers(REVIEW_KIND, required=False)
         entry = entries[0] if entries else Tier(runner=OPPOSITE, model=PRIMARY)
-        runner, model, effort = self._resolve(
-            entry, self._implementer(state, page_dir)
+        runner, model, effort = resolve_route(
+            self.cfg, entry, self._implementer(state, page_dir)
         )
         reviewer: FlowState = {
             **state,
@@ -206,6 +208,7 @@ class FlowNodes:
             "runner": runner,
             "model": model,
             "effort": effort,
+            "last_run_kind": REVIEW_KIND,
             **_counted(state, recorded),
         }
         return Command(goto="validate", update=update)
@@ -436,25 +439,41 @@ class FlowNodes:
         owner = pages.read_header(page_dir / STATE_FILE).get("owner")
         return str(owner).split("/", 1)[0] if owner else state["runner"]
 
-    def _resolve(self, entry: Tier, implementer: str) -> tuple[str, str, str]:
-        """``opposite``와 ``primary``를 실제 러너와 모델로 바꾼다."""
-        runner = entry.runner
-        if runner == OPPOSITE:
-            others = [name for name in self.cfg.runners if name != implementer]
-            runner = others[0] if others else implementer
-        model, effort = entry.model, entry.effort
-        if model == PRIMARY:
-            model, primary_effort = self._primary(runner)
-            effort = effort or primary_effort
-        return runner, model, effort or DEFAULT_EFFORT
 
-    def _primary(self, runner: str) -> tuple[str, str | None]:
-        """라우팅 표에서 ``runner``가 처음 맡는 모델과 추론 강도."""
-        for tiers in self.cfg.routes.tiers.values():
-            for tier in tiers:
-                if tier.runner == runner and tier.model != PRIMARY:
-                    return tier.model, tier.effort
-        raise ValueError(f"routes.yaml has no model for runner '{runner}'")
+def resolve_route(
+    cfg: Config, entry: Tier, implementer: str
+) -> tuple[str, str, str]:
+    """라우팅 표 항목의 ``opposite``와 ``primary``를 실제 값으로 바꾼다.
+
+    Args:
+        cfg: 앱 홈 설정.
+        entry: ``routes.tiers[kind][tier]`` 항목.
+        implementer: 마지막으로 구현한 러너. ``opposite``의 기준이다.
+
+    Returns:
+        ``(runner, model, effort)``.
+
+    Raises:
+        ValueError: ``primary``인데 그 러너의 모델이 라우팅 표에 없는 경우.
+    """
+    runner = entry.runner
+    if runner == OPPOSITE:
+        others = [name for name in cfg.runners if name != implementer]
+        runner = others[0] if others else implementer
+    model, effort = entry.model, entry.effort
+    if model == PRIMARY:
+        model, primary_effort = _primary(cfg, runner)
+        effort = effort or primary_effort
+    return runner, model, effort or DEFAULT_EFFORT
+
+
+def _primary(cfg: Config, runner: str) -> tuple[str, str | None]:
+    """라우팅 표에서 ``runner``가 처음 맡는 모델과 추론 강도."""
+    for tiers in cfg.routes.tiers.values():
+        for tier in tiers:
+            if tier.runner == runner and tier.model != PRIMARY:
+                return tier.model, tier.effort
+    raise ValueError(f"routes.yaml has no model for runner '{runner}'")
 
 
 def _base(state: FlowState) -> dict[str, Any]:
@@ -482,8 +501,12 @@ def _counted(state: FlowState, recorded: RecordedRun) -> dict[str, Any]:
 
 
 def _reviewing(state: FlowState) -> bool:
-    """방금 끝난 실행이 리뷰인지 여부."""
-    return REVIEW_KIND in (state["result_status"], state["kind"])
+    """방금 판정할 실행이 리뷰인지 여부.
+
+    이 필드가 생기기 전의 체크포인트에는 값이 없으므로 없으면 리뷰가
+    아니라고 본다.
+    """
+    return state.get("last_run_kind") == REVIEW_KIND
 
 
 def _blocking(issues: list[Issue]) -> bool:

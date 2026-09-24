@@ -8,7 +8,7 @@ from madang import contract
 from madang.config import load_config
 from madang.store import frontmatter, pages
 from madang.store.home import init_home
-from madang.validate import state as state_checks
+from madang.validate import tokens
 
 
 @pytest.fixture(autouse=True)
@@ -85,7 +85,7 @@ def test_estimate_adds_parts_and_system(home: Path, page: Path) -> None:
     out = build(page, home)
     record = out.estimate()
     parts = record["parts"]
-    assert parts["system_est"] == asm.DEFAULT_SYSTEM_EST["claude"]
+    assert parts["system_est"] == 23000
     assert set(parts) == {
         "system_est",
         "root",
@@ -96,7 +96,7 @@ def test_estimate_adds_parts_and_system(home: Path, page: Path) -> None:
     }
     assert record["total_est"] == sum(parts.values()) == out.total_est
     for part in out.parts:
-        assert part.tokens == state_checks.count_tokens(part.text)
+        assert part.tokens == tokens.count_tokens(part.text)
     assert record["tokenizer"] == "cl100k_base"
     assert "truncated" not in record
     json.dumps(record)
@@ -108,13 +108,19 @@ def test_system_estimate_comes_from_runners_yaml(
     path = home / "config/runners.yaml"
     path.write_text(
         path.read_text().replace(
-            "  cache_ttl: 1h\n", "  cache_ttl: 1h\n  system_est: 12345\n"
+            "  system_est: 23000\n", "  system_est: 12345\n"
         )
     )
     assert build(page, home).system_est == 12345
-    codex = build(page, home, runner="codex")
-    assert codex.system_est == asm.DEFAULT_SYSTEM_EST["codex"]
     assert build(page, home, runner="other").system_est == 0
+
+
+def test_system_estimate_falls_back_to_bundled_runners(
+    home: Path, page: Path
+) -> None:
+    path = home / "config/runners.yaml"
+    path.write_text(path.read_text().replace("  system_est: 24000\n", ""))
+    assert build(page, home, runner="codex").system_est == 24000
 
 
 def test_contract_is_rendered(home: Path, page: Path) -> None:
@@ -150,13 +156,13 @@ def test_target_block_is_cut_at_the_limit(home: Path, page: Path) -> None:
     kept = target.split("\n", 2)[2].rsplit("\n</file>", 1)[0]
     assert kept.startswith("word0 word1")
     assert kept.endswith(asm.TRUNCATION_MARK)
-    assert state_checks.count_tokens(kept) <= 50
+    assert tokens.count_tokens(kept) <= 50
 
 
 def test_truncate_keeps_short_text() -> None:
     assert asm.truncate("short", 10) == ("short", False)
     cut, was_cut = asm.truncate("a " * 500, 20)
-    assert was_cut and state_checks.count_tokens(cut) <= 20
+    assert was_cut and tokens.count_tokens(cut) <= 20
 
 
 def test_view_target_brings_bound_data(home: Path, page: Path) -> None:
@@ -195,12 +201,13 @@ def test_tokenizer_fallback_is_marked(
     home: Path, page: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     exact = build(page, home)
-    monkeypatch.setattr(state_checks, "_encoding", lambda: None)
+    monkeypatch.setattr(tokens, "_encoding", lambda: None)
     rough = build(page, home)
-    assert asm.tokenizer_name() == asm.FALLBACK_TOKENIZER
+    assert tokens.uses_fallback()
+    assert tokens.tokenizer_name() == tokens.FALLBACK_TOKENIZER
     assert rough.estimate()["tokenizer"] == "utf8-bytes/3"
     # UTF-8 3바이트당 토큰 1개로 센다. state 검사와 같은 기준이다
     request = next(p for p in rough.parts if p.name == "request")
     assert request.tokens == -(-len(request.text.encode()) // 3)
-    assert state_checks.count_tokens("가나다") == 3
+    assert tokens.count_tokens("가나다") == 3
     assert rough.total_est != exact.total_est

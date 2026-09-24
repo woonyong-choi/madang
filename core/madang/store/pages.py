@@ -7,13 +7,15 @@
 from __future__ import annotations
 
 import re
+import shutil
 import unicodedata
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from madang.store import frontmatter
+from madang import config
+from madang.store import frontmatter, git
 from madang.store.files import atomic_write
 from madang.store.page import PAGE_FILE, SPACE_FILE, STATE_FILE
 
@@ -269,10 +271,14 @@ def create_space(
     (space / PAGES_DIR).mkdir(parents=True, exist_ok=True)
     header = {"slug": slug, "title": title or slug, "repo": repo}
     (space / SPACE_FILE).write_text(
-        frontmatter.dumps(header, "이 공간의 모든 페이지가 함께 쓰는 메모.\n"),
-        "utf-8",
+        frontmatter.dumps(header, _default_space_body()), "utf-8"
     )
     return space
+
+
+def _default_space_body() -> str:
+    """앱 홈 기본 space.md와 같은 본문을 반환한다."""
+    return frontmatter.split(config.default_text(SPACE_FILE)).body
 
 
 STATE_BODY = """## 목표
@@ -355,6 +361,38 @@ def create_page(
     (page_dir / STATE_FILE).write_text(frontmatter.dumps(state, body), "utf-8")
     (page_dir / LOG_FILE).write_text("", "utf-8")
     return page_dir
+
+
+def move_page(home: Path, page_dir: Path, space: str) -> Path:
+    """페이지 폴더를 다른 공간으로 옮긴다. 커밋은 호출자가 한다.
+
+    옛 경로는 git 인덱스에서 뺀다. 새 경로는 호출자가 커밋할 때 더한다.
+
+    Args:
+        home: 앱 홈.
+        page_dir: 옮길 페이지 폴더.
+        space: 대상 공간 슬러그.
+
+    Returns:
+        새 페이지 폴더.
+
+    Raises:
+        FileNotFoundError: 대상 공간이 없다.
+        FileExistsError: 대상 공간에 같은 id의 페이지가 있다.
+    """
+    target_space = Path(home) / SPACES_DIR / space
+    if not (target_space / SPACE_FILE).is_file():
+        raise FileNotFoundError(f"space '{space}' does not exist")
+    target = target_space / PAGES_DIR / page_dir.name
+    if target.exists():
+        raise FileExistsError(
+            f"page '{page_dir.name}' already exists in space '{space}'"
+        )
+    old = page_dir.relative_to(home).as_posix()
+    git.run(home, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", old)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(page_dir), str(target))
+    return target
 
 
 # 도우미

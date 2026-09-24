@@ -11,7 +11,9 @@ class FlowState(TypedDict):
     ``space``, ``page``, ``message``는 id다. 본문은 페이지 파일에서 읽는다.
     ``target``은 ``{block, elements, mode}``이다. ``result_status``는
     마지막 판정(done | blocked | review | doing | cancelled)이며 판정 전에는
-    빈 문자열이다. ``pending_decision``은 사람에게 묻는 동안만 채워진다.
+    빈 문자열이다. ``last_run_kind``는 마지막으로 실행한 종류로, 리뷰
+    실행이면 ``review``다. 보정 실행은 보정한 실행의 종류를 그대로 둔다.
+    ``pending_decision``은 사람에게 묻는 동안만 채워진다.
     """
 
     space: str
@@ -27,6 +29,7 @@ class FlowState(TypedDict):
     run_n: int
     result_status: str
     runs_this_message: int
+    last_run_kind: str
     pending_decision: dict[str, Any] | None
 
 
@@ -58,5 +61,6 @@ def initial_state(
         run_n=0,
         result_status="",
         runs_this_message=0,
+        last_run_kind="",
         pending_decision=None,
     )

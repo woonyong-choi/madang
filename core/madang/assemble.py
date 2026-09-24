@@ -10,25 +10,24 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from madang import contract
 from madang.cli_agent.ops import BUILTIN_TEMPLATES
-from madang.config import Config
+from madang.config import Config, default_text
 from madang.store import frontmatter, pages
 from madang.store.page import SPACE_FILE, STATE_FILE, space_dir, work_dir
-from madang.validate import state as state_checks
+from madang.validate import tokens
 
 ROOT_FILE = "root.md"
 TEMPLATES_DIR = "templates"
 TRUNCATION_MARK = "\n..."
-# 기본 인자로 한 단어를 실행했을 때 측정한 입력량을 올림한 값.
-DEFAULT_SYSTEM_EST = {"claude": 23000, "codex": 24000}
 # 승격된 실행(tier > 1)이 여전히 읽는 상태 절.
 PROMOTED_SECTIONS = ("막힌 점", "다음 할 일")
-TOKENIZER = "cl100k_base"
-FALLBACK_TOKENIZER = "utf8-bytes/3"
 
 _HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
 
@@ -63,7 +62,7 @@ class Assembled:
     parts: list[Part]
     system_est: int
     contract: str = contract.VERSION
-    tokenizer: str = TOKENIZER
+    tokenizer: str = tokens.TOKENIZER
     truncated: list[str] = field(default_factory=list)
 
     @property
@@ -89,11 +88,6 @@ class Assembled:
         if self.truncated:
             record["truncated"] = list(self.truncated)
         return record
-
-
-def tokenizer_name() -> str:
-    """쓰고 있는 토큰 계수기(cl100k 또는 바이트 대체)를 반환한다."""
-    return TOKENIZER if state_checks._encoding() else FALLBACK_TOKENIZER
 
 
 def assemble(
@@ -142,7 +136,7 @@ def assemble(
     return Assembled(
         parts=[_part(name, tag, body) for name, tag, body in sections],
         system_est=system_estimate(cfg, runner),
-        tokenizer=tokenizer_name(),
+        tokenizer=tokens.tokenizer_name(),
         truncated=truncated,
     )
 
@@ -150,18 +144,32 @@ def assemble(
 def system_estimate(cfg: Config, runner: str) -> int:
     """runners.yaml에서 ``runner``의 ``system_est``를 반환한다.
 
+    앱 홈의 runners.yaml에 값이 없으면 번들된 기본 runners.yaml의 값을
+    쓴다. 예전에 만든 앱 홈도 추정이 0이 되지 않게 하기 위해서다.
+
     Args:
         cfg: 앱 홈 설정.
         runner: 러너 이름.
 
     Returns:
-        설정값, 없으면 내장 추정값, 그것도 없으면 0.
+        설정값, 없으면 기본 runners.yaml의 값, 그것도 없으면 0.
     """
     spec = cfg.runners.get(runner)
     value = getattr(spec, "system_est", None) if spec else None
-    if isinstance(value, int) and not isinstance(value, bool):
+    if _is_count(value):
         return value
-    return DEFAULT_SYSTEM_EST.get(runner, 0)
+    default = _default_runners().get(runner) or {}
+    value = default.get("system_est") if isinstance(default, dict) else None
+    return value if _is_count(value) else 0
+
+
+def _is_count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+@lru_cache(maxsize=1)
+def _default_runners() -> dict[str, Any]:
+    return yaml.safe_load(default_text("runners.yaml")) or {}
 
 
 def truncate(text: str, limit: int) -> tuple[str, bool]:
@@ -174,12 +182,12 @@ def truncate(text: str, limit: int) -> tuple[str, bool]:
     Returns:
         ``(text, cut)``. 잘린 텍스트는 ``TRUNCATION_MARK``로 끝난다.
     """
-    if state_checks.count_tokens(text) <= limit:
+    if tokens.count_tokens(text) <= limit:
         return text, False
     low, high = 0, len(text)
     while low < high:
         mid = (low + high + 1) // 2
-        if state_checks.count_tokens(text[:mid] + TRUNCATION_MARK) <= limit:
+        if tokens.count_tokens(text[:mid] + TRUNCATION_MARK) <= limit:
             low = mid
         else:
             high = mid - 1
@@ -189,7 +197,7 @@ def truncate(text: str, limit: int) -> tuple[str, bool]:
 def _part(name: str, tag: str, body: str) -> Part:
     closing = tag.split(" ", 1)[0]
     text = f"<{tag}>\n{body.strip()}\n</{closing}>"
-    return Part(name=name, text=text, tokens=state_checks.count_tokens(text))
+    return Part(name=name, text=text, tokens=tokens.count_tokens(text))
 
 
 def _body(path: Path) -> str:

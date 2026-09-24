@@ -389,6 +389,49 @@ def _echo_event(name: str, payload: dict[str, Any]) -> None:
     typer.echo(f"{name} {json.dumps(shown, ensure_ascii=False)}", err=True)
 
 
+# core API
+
+
+@app.command()
+def serve(
+    home: HomeOption = None,
+    port: Annotated[
+        int | None,
+        typer.Option(
+            "--port",
+            help=(
+                "처음 시도할 포트. 쓰이고 있으면 다음 포트를 쓴다. "
+                "기본값은 madang.yaml의 core.port(7470)."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """Core API를 127.0.0.1에 띄운다. 고른 포트는 <home>/core.port에 적는다."""
+    from madang.api.server import serve as run_server
+
+    root = config.resolve_home(home)
+    start = port
+    if start is None:
+        try:
+            start = config.load_config(root).madang.core.port
+        except Exception:
+            start = config.CoreSettings().port
+    try:
+        run_server(root, start)
+    except OSError as exc:
+        raise _fail(str(exc)) from exc
+
+
+@app.command()
+def openapi() -> None:
+    """Core API 계약(OpenAPI YAML)을 출력한다. 서버가 돌려주는 문서와 같다."""
+    import sys
+
+    from madang.api.contract import contract_text
+
+    sys.stdout.write(contract_text())
+
+
 # 페이지와 공간 생성
 
 page_app = typer.Typer(

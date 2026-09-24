@@ -26,6 +26,8 @@ servers:
     description: 로컬 core. 포트는 다를 수 있으며 core가 core.port에 적는다.
 tags:
   - name: system
+  - name: setup
+    description: 앱 홈 초기화와 설정 파일 편집.
   - name: spaces
   - name: pages
   - name: blocks
@@ -71,6 +73,87 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RunnerAvailability"
+
+  /home:
+    get:
+      tags: [setup]
+      operationId: getHome
+      summary: core가 쓰는 앱 홈과 초기화 여부.
+      description: |
+        `initialized`가 거짓이면 앱은 온보딩을 보여 주고 `POST /home`으로
+        앱 홈을 만든다. 초기화 전의 core는 빈 앱 홈처럼 답한다: 목록은
+        비어 있고, 공간·페이지 경로는 404, 만들기와 설정은 409.
+      responses:
+        "200":
+          description: 앱 홈 상태.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeStatus"
+    post:
+      tags: [setup]
+      operationId: initHome
+      summary: 앱 홈을 만들고(이미 있으면 그대로) core가 그 홈을 쓰게 한다.
+      description: |
+        `path`에 앱 홈을 초기화한다. 기존 파일은 덮어쓰지 않는다. `remote`는
+        `config/madang.yaml`의 `home_remote`에 주소만 기록하며 원격 저장소를
+        만들지는 않는다. core는 이후 이 홈을 쓰고 `core.port`도 이 홈에 둔다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HomeInit"
+      responses:
+        "200":
+          description: 초기화된 앱 홈.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /config/routes:
+    get:
+      tags: [setup]
+      operationId: getRoutes
+      summary: config/routes.yaml 원문.
+      responses:
+        "200":
+          description: 라우팅 표.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutesDocument"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    put:
+      tags: [setup]
+      operationId: saveRoutes
+      summary: config/routes.yaml을 바꾼다. 검사를 통과해야 저장된다.
+      description: |
+        YAML 문법, 필수 키(`kinds`, `default_kind`, `tiers`), 스키마, 종류와
+        runner 참조를 검사한다. 실패하면 파일은 그대로다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutesDocument"
+      responses:
+        "200":
+          description: 저장된 라우팅 표.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutesDocument"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /spaces:
     get:
@@ -946,7 +1029,7 @@ components:
             `unreadable`, `frontmatter`, `missing-key`, `invalid-value`,
             `duplicate-decision`, `choice-not-in-options`, `repo-unset`,
             `invalid-artifact`, `artifact-missing`, `missing-section`,
-            `token-limit`, `done-without-verify`.
+            `token-limit`, `done-without-verify`, `invalid-yaml`.
         message:
           type: string
         line:
@@ -1002,6 +1085,63 @@ components:
       examples:
         - status: ok
           version: 0.1.0
+
+    # 설정
+
+    HomeStatus:
+      type: object
+      description: core가 쓰는 앱 홈.
+      required: [path, initialized]
+      properties:
+        path:
+          type: string
+          description: 앱 홈의 절대 경로.
+        initialized:
+          type: boolean
+          description: 설정 파일이 있는 앱 홈인지. 거짓이면 온보딩이 필요하다.
+        remote:
+          type: [string, "null"]
+          description: config/madang.yaml의 `home_remote`.
+      examples:
+        - path: /Users/me/.madang
+          initialized: true
+          remote: git@github.com:me/madang-home.git
+        - path: /Users/me/.madang
+          initialized: false
+          remote: null
+
+    HomeInit:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: 앱 홈 경로. `~`는 사용자 홈으로 푼다.
+        remote:
+          type: [string, "null"]
+          description: 기록할 git 원격 주소. 생략하면 기록하지 않는다.
+      examples:
+        - path: ~/.madang
+          remote: git@github.com:me/madang-home.git
+        - path: ~/Documents/madang
+
+    RoutesDocument:
+      type: object
+      description: config/routes.yaml 원문.
+      required: [text]
+      properties:
+        text:
+          type: string
+      examples:
+        - text: |
+            kinds: [design, build, small, review, explore]
+            default_kind: build
+            tiers:
+              design: [{runner: claude, model: claude-opus-5-5, effort: high}]
+              build: [{runner: codex, model: gpt-6-sol, effort: medium}]
+              small: [{runner: codex, model: gpt-6-luna, effort: high}]
+              review: [{runner: opposite, model: primary}]
+              explore: [{runner: codex, model: gpt-6-luna, effort: medium}]
 
     # 러너
 
@@ -1847,7 +1987,10 @@ components:
 
     RunResultStatus:
       type: string
-      enum: [done, blocked, review, error, cancelled]
+      description: >-
+        runner가 끝난 방식(`error`, `cancelled`, 시간 초과는 `blocked`), 또는
+        정상 종료 뒤 state.md의 status.
+      enum: [planning, doing, blocked, review, done, error, cancelled]
 
     RunTrigger:
       type: object

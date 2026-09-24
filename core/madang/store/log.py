@@ -6,10 +6,69 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from madang.store import pages
+
+_HEAD = re.compile(
+    r"^<!--\s*(?P<id>b\d+)\s*\|\s*(?P<ts>[^|]*?)\s*\|\s*(?P<role>[\w-]+)"
+    r"\s*(?:\|\s*(?P<attrs>.*?))?\s*-->[ \t]*$",
+    re.MULTILINE,
+)
+
+
+@dataclass(frozen=True)
+class Message:
+    """log.md의 메시지 블록 하나.
+
+    Attributes:
+        id: 블록 id.
+        ts: 머리 줄의 ISO 8601 시각.
+        role: 작성자: user, router, agent 중 하나.
+        text: 머리 줄을 뺀 본문.
+        attrs: 머리 줄의 ``key=value`` 필드.
+    """
+
+    id: str
+    ts: str
+    role: str
+    text: str
+    attrs: dict[str, str] = field(default_factory=dict)
+
+
+def read_messages(page_dir: Path) -> list[Message]:
+    """log.md의 메시지 블록을 쓰인 순서대로 반환한다.
+
+    Args:
+        page_dir: 페이지 폴더.
+
+    Returns:
+        메시지 목록. log.md가 없으면 빈 목록.
+    """
+    log = page_dir / pages.LOG_FILE
+    text = log.read_text(encoding="utf-8") if log.is_file() else ""
+    heads = list(_HEAD.finditer(text))
+    messages = []
+    for i, head in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        messages.append(
+            Message(
+                id=head["id"],
+                ts=head["ts"],
+                role=head["role"],
+                text=text[head.end() : end].strip(),
+                attrs=_attrs(head["attrs"] or ""),
+            )
+        )
+    return messages
+
+
+def _attrs(text: str) -> dict[str, str]:
+    pairs = (item.partition("=") for item in text.split())
+    return {key: value for key, sep, value in pairs if sep}
 
 
 def format_header(

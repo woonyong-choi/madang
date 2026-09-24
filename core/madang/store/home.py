@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import yaml
 
 from madang import config
 from madang.store import git
 
 INIT_MESSAGE = "[home] init"
+REMOTE_KEY = "home_remote"
+_REMOTE_LINE = re.compile(rf"^{REMOTE_KEY}:.*$", re.MULTILINE)
 ROOT_SPACE = "root"
 MARKER = f"{config.CONFIG_DIR}/madang.yaml"
 
@@ -23,6 +29,8 @@ _FILES: dict[str, str] = {
 # 자리표시 파일로 git에 유지하는 빈 디렉터리
 _DIRS = (f"spaces/{ROOT_SPACE}/pages", "templates")
 _KEEP = ".gitkeep"
+# core가 실행 중에 두는 파일. 아직 초기화 전인 폴더에 있어도 된다.
+RUNTIME_FILES = ("core.port", "core.db")
 
 
 class NotAHomeError(ValueError):
@@ -99,11 +107,47 @@ def init_home(home: Path) -> InitResult:
     return result
 
 
+def is_initialized(home: Path) -> bool:
+    """``home``이 초기화된 앱 홈인지(설정 파일이 있는지) 반환한다."""
+    return (home / MARKER).is_file()
+
+
+def remote(home: Path) -> str | None:
+    """config/madang.yaml의 ``home_remote``를 반환한다. 없으면 None."""
+    path = home / MARKER
+    if not path.is_file():
+        return None
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return None
+    value = data.get(REMOTE_KEY) if isinstance(data, dict) else None
+    return str(value) if value else None
+
+
+def set_remote(home: Path, address: str) -> None:
+    """config/madang.yaml의 ``home_remote`` 줄만 바꾼다. 주석은 그대로다.
+
+    Args:
+        home: 초기화된 앱 홈.
+        address: git 원격 주소.
+    """
+    path = home / MARKER
+    text = path.read_text(encoding="utf-8")
+    line = f"{REMOTE_KEY}: {json.dumps(address)}"
+    if _REMOTE_LINE.search(text):
+        text = _REMOTE_LINE.sub(lambda _m: line, text, count=1)
+    else:
+        text = f"{line}\n{text}"
+    path.write_text(text, encoding="utf-8")
+
+
 def _refuse_foreign(home: Path) -> None:
     """``home``이 빈 폴더, 새 저장소, 앱 홈 중 하나가 아니면 예외를 던진다."""
     if (home / MARKER).is_file():
         return
-    others = [p.name for p in home.iterdir() if p.name != ".git"]
+    ignored = (".git", *RUNTIME_FILES)
+    others = [p.name for p in home.iterdir() if p.name not in ignored]
     if others or (git.is_repo(home) and git.log_oneline(home)):
         raise NotAHomeError(
             f"{home} is not empty and has no {MARKER}; "
