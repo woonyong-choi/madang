@@ -13,6 +13,9 @@
 4. core 재시작 뒤 세 페이지 기록이 API 조회로 같음.
 5. 되돌리기로 (2)를 되감음(머지 전 트리, 원래 파일).
 
+``MADANG_CORE_BIN``을 주면 저장소 core(uv) 대신 그 실행 파일로 core를 띄우고
+CLI를 부른다(앱에 동봉한 PyInstaller core 확인용).
+
 항목마다 PASS/FAIL과 근거, 호출마다의 입력 수치를 보고서(md)에 쓴다. 앱
 화면을 거치는 확인은 디스플레이가 없으므로 not run으로 남긴다. git은 core의
 ``madang.git`` 모듈로만 읽는다.
@@ -50,6 +53,8 @@ from madang.viewers import Registry, document_context
 PASS, FAIL, NOT_RUN = "PASS", "FAIL", "NOT RUN"
 FLOW_POLL_SECONDS = 5.0
 CORE_START_SECONDS = 60.0
+# 설정하면 uv 대신 이 실행 파일(앱에 동봉한 core)로 madang 명령을 돌린다.
+CORE_BIN_ENV = "MADANG_CORE_BIN"
 # 문서 영역 스크린샷에서 다른 픽셀 비율의 상한.
 PIXEL_RATIO_LIMIT = 0.001
 TEST_COMMAND = "python3 -m unittest discover -s tests"
@@ -88,7 +93,7 @@ class Core:
     def madang(self, *args: str) -> str:
         """CLI 명령 하나를 실행하고 표준 출력을 돌려준다."""
         out = subprocess.run(
-            [*self._uv(), *args],
+            [*self._madang(), *args],
             env=self.env,
             capture_output=True,
             text=True,
@@ -101,7 +106,7 @@ class Core:
         self.port = _free_port()
         log = self.log_path.open("ab")
         self._proc = subprocess.Popen(
-            [*self._uv(), "serve", "--port", str(self.port)],
+            [*self._madang(), "serve", "--port", str(self.port)],
             env=self.env,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -172,7 +177,10 @@ class Core:
         """GET 본문."""
         return self.call("GET", path)[1]
 
-    def _uv(self) -> list[str]:
+    def _madang(self) -> list[str]:
+        """``madang`` 명령. ``MADANG_CORE_BIN``이면 그 실행 파일을 쓴다."""
+        if core_bin := self.env.get(CORE_BIN_ENV):
+            return [core_bin]
         return [
             "uv",
             "run",

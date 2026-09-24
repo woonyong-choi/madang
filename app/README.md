@@ -4,6 +4,12 @@ Madang 데스크톱 앱. Kotlin Multiplatform + Compose Multiplatform.
 
 지금 타깃은 desktop(JVM: macOS, Windows)이다. Android·iOS는 이후에 추가한다.
 
+## 설치 (macOS)
+
+1. `Madang-1.0.0.dmg`를 열고 `Madang.app`을 원하는 폴더로 끌어 놓는다. Python은 필요 없다(core가 앱에 들어 있다).
+2. 서명하지 않은 앱이라 처음 한 번은 Finder에서 앱을 Control-클릭 → "열기"를 누른다(막히면 시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기", 또는 `xattr -dr com.apple.quarantine <경로>/Madang.app`).
+3. 첫 화면의 온보딩에서 앱 홈 초기화 → 첫 프로젝트 폴더 고르기 → claude 로그인 확인 순서로 진행한다(로그인은 터미널에서 `claude`로 직접 한다).
+
 ## 요구 사항
 
 - JDK 21
@@ -280,9 +286,25 @@ Ktor + kotlinx-serialization). 계약은 이 파일 하나이며 앱에 손으�
 
 ## 패키징
 
-`compose.desktop.application`에 `Dmg`(macOS), `Msi`(Windows)가 설정되어 있다.
+`compose.desktop.application`에 `Dmg`(macOS), `Msi`(Windows)가 설정되어 있다. 배포물에는 core를
+PyInstaller로 묶은 실행 파일을 싣는다. 먼저 저장소 루트에서 core를 만들고 나서 패키징한다.
 
 ```sh
-./gradlew :desktop:packageDmg    # macOS
+bash scripts/build-core.sh       # 저장소 루트에서. 결과: core/dist/madang-core/
+./gradlew :desktop:packageDmg    # macOS. 결과: desktop/build/compose/binaries/main/dmg/
 ./gradlew :desktop:packageMsi    # Windows
 ```
+
+- core는 onedir 번들(`madang-core/madang` + `_internal/`)이다. 한 파일 번들과 달리 실행할 때마다
+  임시 폴더에 풀지 않아 시작이 빠르고, 앱 서명 때 안의 바이너리를 그대로 서명할 수 있다. tiktoken
+  인코딩과 렌더러·뷰어 템플릿, 의존성의 라이선스 원문이 번들 안에 있다.
+- 빌드가 `THIRD_PARTY_NOTICES.md`(저장소 루트)와 core 번들을 앱 리소스 폴더(`Contents/app/resources/`)에
+  싣는다. 패키지된 앱은 설정에 core 실행 파일이 없으면 이 동봉 core로 `madang serve`를 띄운다.
+  동봉 core는 자기 폴더를 PATH 앞에 두어 에이전트가 부르는 `madang`도 같은 실행 파일이 된다.
+- core 번들이 없으면 패키징 작업은 실패한다. 개발 실행(`:desktop:run`)은 번들 없이도 된다.
+- 브라우저·문서 탭 엔진(KCEF의 Chromium 번들)은 dmg에 넣지 않는다. 처음 열 때 앱 설정 폴더의
+  `kcef-bundle/`에 내려받는다.
+- 서명·공증은 하지 않는다. 아이콘은 흰색 자리표시 아이콘(`desktop/icons/`)이다.
+- Finder로 연 앱은 셸의 PATH를 받지 않는다. `claude`가 `~/.local/bin`처럼 기본 PATH 밖에 있으면
+  앱 홈 `config.yaml`의 `runners.claude.bin`에 절대 경로를 적거나, 터미널에서
+  `<경로>/Madang.app/Contents/MacOS/Madang`으로 띄운다.

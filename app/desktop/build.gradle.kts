@@ -64,6 +64,44 @@ tasks.test {
     )
 }
 
+// 패키지에 싣는 동봉 core(scripts/build-core.sh의 PyInstaller onedir)와 제3자 고지.
+// Compose는 appResourcesRootDir의 common/과 운영체제 폴더를 앱 리소스 폴더로 합친다.
+val coreBundle: File = coreProject.resolve("dist/madang-core")
+val appResources = layout.buildDirectory.dir("app-resources")
+val osResourceDir: String = System.getProperty("os.name").lowercase().let {
+    when {
+        it.contains("mac") -> "macos"
+        it.contains("win") -> "windows"
+        else -> "linux"
+    }
+}
+
+val prepareCoreBundle by tasks.registering(Sync::class) {
+    into(appResources)
+    from(rootProject.projectDir.resolve("../THIRD_PARTY_NOTICES.md")) { into("common") }
+    from(coreBundle) { into("$osResourceDir/madang-core") }
+}
+
+tasks.matching { it.name == "prepareAppResources" }.configureEach {
+    dependsOn(prepareCoreBundle)
+}
+
+// 개발 실행은 동봉 core 없이도 되지만, 앱 이미지(dmg·msi의 바탕)는 core 없이 만들지 않는다.
+// 앱 이미지로 리소스를 복사할 때 실행 비트가 빠지므로 동봉 core 실행 파일에 되돌린다.
+tasks.matching { it.name in setOf("createDistributable", "createReleaseDistributable") }
+    .configureEach {
+        doFirst {
+            check(coreBundle.resolve("madang").canExecute()) {
+                "core bundle missing: run scripts/build-core.sh first (${coreBundle.path})"
+            }
+        }
+        doLast {
+            outputs.files.asFileTree
+                .matching { include("**/resources/madang-core/madang") }
+                .forEach { it.setExecutable(true, false) }
+        }
+    }
+
 compose.desktop {
     application {
         mainClass = "madang.desktop.MainKt"
@@ -78,6 +116,10 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
+            appResourcesRootDir.set(appResources)
+            // jlink 런타임 모듈. KCEF(JCEF)가 jdk.unsupported를, 엔진 번들 내려받기(TLS)가
+            // jdk.crypto.ec를 쓴다. 나머지는 suggestRuntimeModules 결과다.
+            modules("java.instrument", "java.management", "jdk.unsupported", "jdk.crypto.ec")
             packageName = "Madang"
             packageVersion = "1.0.0"
 

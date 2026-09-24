@@ -20,6 +20,7 @@ import madang.shared.AppDependencies
 import madang.shared.AppViewModel
 import madang.shared.MadangApp
 import madang.shared.core.CoreClient
+import madang.shared.settings.AppSettings
 import madang.shared.settings.InMemorySettingsStore
 import org.jetbrains.skia.Image
 
@@ -73,12 +74,27 @@ private fun dependencies(): AppDependencies {
         settings = FileSettingsStore(DesktopPaths.appConfigDir().resolve("settings.json")),
         claudeProbe = CommandClaudeProbe(),
         portFile = { CorePortFile(DesktopPaths.appHome(it)) },
-        launcher = { ProcessCoreLauncher(it) },
+        launcher = { ProcessCoreLauncher(withBundledCore(it)) },
         folderPicker = DesktopFolderPicker(),
         localFiles = DesktopLocalFiles(),
         browser = browser,
         notifier = notifier
     )
+}
+
+/**
+ * 패키지된 앱은 리소스 폴더에 동봉한 core(`madang-core/madang`, PyInstaller onedir)로
+ * `madang serve`를 띄운다. 설정에 core 실행 파일이 있거나 저장소에서 개발 실행 중이면
+ * (`madang.coreProject`) 그대로 둔다. 동봉 경로는 띄울 때만 쓰고 설정 파일에 저장하지 않는다.
+ */
+private fun withBundledCore(settings: AppSettings): AppSettings {
+    if (settings.coreBinary != null || System.getProperty("madang.coreProject") != null) {
+        return settings
+    }
+    val resources = System.getProperty("compose.application.resources.dir") ?: return settings
+    val bundled = File(resources, "madang-core/madang").takeIf { it.canExecute() }
+        ?: return settings
+    return settings.copy(coreBinary = bundled.path)
 }
 
 /**

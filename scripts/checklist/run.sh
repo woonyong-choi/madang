@@ -11,6 +11,8 @@
 # 환경: CHECKLIST_REPORT  보고서 경로 (기본: 작업 폴더/checklist.md)
 #       CHECKLIST_WORK    작업 폴더 (기본: 새 임시 폴더)
 #       CHECKLIST_MODEL   라우팅 단계마다 쓸 claude 모델 (기본: claude-sonnet-5)
+#       MADANG_CORE_BIN   core 실행 파일. 주면 uv 대신 이것으로 madang을 돌린다
+#                         (예: Madang.app/Contents/app/resources/madang-core/madang)
 # 종료 코드: 모든 항목 PASS면 0, FAIL이 있으면 1, 중간에 멈추면 그 밖의 값.
 
 set -euo pipefail
@@ -27,6 +29,7 @@ fi
 
 echo "work:   $work"
 echo "report: $report"
+echo "core:   ${MADANG_CORE_BIN:-uv run --project $repo/core madang}"
 uv run --quiet --project "$repo/core" python "$here/checklist.py" \
   --repo "$repo" --work "$work" --report "$report" \
   --model "${CHECKLIST_MODEL:-claude-sonnet-5}"
