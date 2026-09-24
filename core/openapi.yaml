@@ -1,0 +1,2912 @@
+openapi: 3.1.0
+info:
+  title: Madang core API
+  version: 1.0.0
+  summary: madang-core의 로컬 HTTP·WebSocket API.
+  description: |
+    데스크톱 앱은 이 API로 madang-core와 통신한다. 앱 홈(`~/.madang`)은
+    core가 소유하며 앱은 자체 문서를 두지 않는다.
+
+    규약:
+    - 시각은 오프셋이 붙은 ISO 8601이다(`2026-09-24T09:40:00+09:00`).
+    - 페이지 id는 `YYYY-MM-DD-<slug>`, 블록 id는 `bNN`이다. run 번호는
+      페이지별로 늘어나며 재사용하지 않는다.
+    - 페이지 안의 경로는 페이지 기준이다(`blocks/b05-base.json`). 공간의
+      코드 저장소 경로에는 `repo:` 접두어가 붙는다
+      (`repo:src/session/lock.ts`).
+    - 오류는 `ApiError`로 돌려준다. 파일 검사에 실패하면 400과 함께
+      `ValidationFailure`와 그 `issues`를 돌려준다.
+    - 변경은 `/events` WebSocket으로 알린다. 앱은 재연결 후 전부 다시
+      가져온다.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://127.0.0.1:7470
+    description: 로컬 core. 포트는 다를 수 있으며 core가 core.port에 적는다.
+tags:
+  - name: system
+  - name: spaces
+  - name: pages
+  - name: blocks
+  - name: memory
+  - name: messages
+  - name: runs
+  - name: decisions
+  - name: files
+  - name: trash
+  - name: templates
+  - name: runners
+  - name: agent
+    description: madang CLI가 하는 상태·저장소 변경.
+  - name: events
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: core가 떠 있는지 알린다.
+      responses:
+        "200":
+          description: core가 실행 중이다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /runners:
+    get:
+      tags: [runners]
+      operationId: listRunners
+      summary: runner별 사용 가능 여부.
+      description: |
+        시작할 때와 매 run 전에 확인하고 5분간 캐시한다
+        (`claude auth status`, `codex login status`, API runner는 키 유무).
+        변경은 `runner.availability`로도 알린다.
+      responses:
+        "200":
+          description: 최근 확인 결과.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunnerAvailability"
+
+  /spaces:
+    get:
+      tags: [spaces]
+      operationId: listSpaces
+      summary: 공간 목록. 루트 공간은 항상 있다.
+      responses:
+        "200":
+          description: 모든 공간.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Space"
+    post:
+      tags: [spaces]
+      operationId: createSpace
+      summary: 공간을 만든다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpaceCreate"
+      responses:
+        "201":
+          description: 새 공간.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Space"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /spaces/{space}:
+    parameters:
+      - $ref: "#/components/parameters/Space"
+    patch:
+      tags: [spaces]
+      operationId: updateSpace
+      summary: 공간의 제목, 상위 공간, 아이콘, 색, 정렬을 바꾸거나 코드 저장소를 연결한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpaceUpdate"
+      responses:
+        "200":
+          description: 수정된 공간.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Space"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [spaces]
+      operationId: deleteSpace
+      summary: 빈 공간을 지운다.
+      responses:
+        "204":
+          description: 삭제하고 커밋했다.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /spaces/{space}/pages:
+    parameters:
+      - $ref: "#/components/parameters/Space"
+    get:
+      tags: [pages]
+      operationId: listPages
+      summary: 공간의 페이지를 카드로 나열한다.
+      description: 고정된 페이지가 먼저, 그다음은 공간의 `sort` 기준(기본 `updated`, 최신순).
+      responses:
+        "200":
+          description: 페이지 카드.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PageCard"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [pages]
+      operationId: createPage
+      summary: page.md, state.md, log.md를 갖춘 페이지를 만든다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageCreate"
+      responses:
+        "201":
+          description: 새 페이지.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageDetail"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /spaces/{space}/repo/commit:
+    parameters:
+      - $ref: "#/components/parameters/Space"
+    post:
+      tags: [agent]
+      operationId: commitRepo
+      summary: 공간의 코드 저장소에 커밋한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoCommit"
+      responses:
+        "200":
+          description: 새 커밋.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCommitResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /spaces/{space}/repo/push:
+    parameters:
+      - $ref: "#/components/parameters/Space"
+    post:
+      tags: [agent]
+      operationId: pushRepo
+      summary: 코드 저장소의 현재 브랜치를 push한다.
+      description: force push는 하지 않으며 다른 브랜치도 push하지 않는다.
+      responses:
+        "200":
+          description: push했다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoPushResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /pages/{page}:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+    get:
+      tags: [pages]
+      operationId: getPage
+      summary: page.md와 블록 머리부.
+      responses:
+        "200":
+          description: 페이지.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [pages]
+      operationId: updatePage
+      summary: 제목, 고정, 태그, 블록 순서를 바꾸거나 페이지를 다른 공간으로 옮긴다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageUpdate"
+      responses:
+        "200":
+          description: 수정된 카드.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageCard"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [pages]
+      operationId: deletePage
+      summary: 페이지 폴더를 지우고 커밋한다. 휴지통에서 복원할 수 있다.
+      responses:
+        "204":
+          description: 삭제하고 커밋했다.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /pages/{page}/blocks:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+    post:
+      tags: [blocks]
+      operationId: createBlock
+      summary: doc, data, view 블록을 만들어 페이지 끝에 붙인다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockCreate"
+      responses:
+        "201":
+          description: 새 블록 머리부.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockHeader"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/blocks/{block}:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - $ref: "#/components/parameters/Block"
+    get:
+      tags: [blocks]
+      operationId: getBlock
+      summary: 블록 파일 전체.
+      responses:
+        "200":
+          description: 머리부와 파일 내용.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Block"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [blocks]
+      operationId: replaceBlock
+      summary: 블록 파일 전체를 바꾼다(앱에서 직접 편집).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockContent"
+      responses:
+        "200":
+          description: 저장된 블록.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Block"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [blocks]
+      operationId: updateBlockHeader
+      summary: 머리부 키만 바꾼다(bindings, presets, theme, title).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockHeaderPatch"
+      responses:
+        "200":
+          description: 새 머리부.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockHeader"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [blocks]
+      operationId: deleteBlock
+      summary: "`git rm`으로 블록을 지우고 커밋한다."
+      responses:
+        "204":
+          description: 삭제하고 커밋했다.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/blocks/{block}/promote:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - $ref: "#/components/parameters/Block"
+    post:
+      tags: [blocks]
+      operationId: promoteBlock
+      summary: 블록 파일을 코드 저장소의 docs/에 복사하고 커밋한다.
+      responses:
+        "200":
+          description: 승격했거나 이미 최신이다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromoteResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /pages/{page}/memory:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+    get:
+      tags: [memory]
+      operationId: getMemory
+      summary: 에이전트가 매 호출마다 읽는 3층 memory.
+      responses:
+        "200":
+          description: root.md, space.md, state.md.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Memory"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/memory/{layer}:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - name: layer
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/MemoryLayer"
+    put:
+      tags: [memory]
+      operationId: saveMemory
+      summary: memory 파일 하나를 저장한다. 검사를 통과해야 저장된다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryContent"
+      responses:
+        "200":
+          description: 저장된 파일.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryFile"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/messages:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+    post:
+      tags: [messages]
+      operationId: sendMessage
+      summary: 사용자 메시지를 추가하고 run을 시작한다.
+      description: |
+        run은 `run.*` 이벤트로 알린다. 선택한 요소를 겨냥한 요청
+        (`mode: edit`과 `elements`)은 항상 종류 `small`로 실행한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageCreate"
+      responses:
+        "202":
+          description: 메시지를 저장하고 flow를 시작했다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageAccepted"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /pages/{page}/runs/{n}:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - $ref: "#/components/parameters/RunNumber"
+    get:
+      tags: [runs]
+      operationId: getRun
+      summary: run 기록(runs/N.json).
+      responses:
+        "200":
+          description: 기록.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunRecord"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/runs/{n}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - $ref: "#/components/parameters/RunNumber"
+    post:
+      tags: [runs]
+      operationId: cancelRun
+      summary: 진행 중인 run을 멈춘다. `cancelled`로 끝난다.
+      responses:
+        "202":
+          description: 멈추는 중. 이어서 `run.failed`가 온다.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /pages/{page}/runs/{n}/events:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - $ref: "#/components/parameters/RunNumber"
+    get:
+      tags: [runs]
+      operationId: listRunEvents
+      summary: run의 이벤트 로그(runs/N.events.jsonl).
+      description: |
+        runner 이벤트를 도착 순서대로 돌려준다. 진행 중인 run이면 그때까지의
+        이벤트다. 레이어 1의 run 패널이 읽는다.
+      responses:
+        "200":
+          description: run의 이벤트.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RunStreamEvent"
+                examples:
+                  - - type: text
+                      text: work 배열에서 펄어비스 항목을 찾습니다.
+                    - type: tool_call
+                      name: apply_patch
+                      summary: blocks/b05-base.json
+                    - type: file_changed
+                      path: blocks/b05-base.json
+                    - type: usage
+                      usage: {input: 29104, cached: 24310, output: 612}
+                    - type: done
+                      text: work 순서를 바꿨습니다. 펄어비스 경력이 맨 위입니다.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/decisions/{id}/answer:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - name: id
+        in: path
+        required: true
+        description: "`flow.waiting`으로 받은 대기 중 결정의 id."
+        schema:
+          type: string
+    post:
+      tags: [decisions]
+      operationId: answerDecision
+      summary: 사람 결정에 답해 기다리던 flow를 재개한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionAnswer"
+      responses:
+        "202":
+          description: flow를 재개했다.
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /pages/{page}/preview-input:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+    get:
+      tags: [messages]
+      operationId: previewInput
+      summary: 다음 호출이 읽을 내용과 부분별 토큰 추정치.
+      description: 앱은 사용자가 입력하는 동안 디바운스해서 호출한다.
+      parameters:
+        - name: target
+          in: query
+          required: false
+          description: 대상 블록 id. 생략하면 페이지를 대상으로 한다.
+          schema:
+            type: string
+          example: b04
+        - name: elements
+          in: query
+          required: false
+          description: 선택한 요소의 데이터 경로.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+          example: ["work[1]"]
+        - name: mode
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/TargetMode"
+        - name: text
+          in: query
+          required: false
+          description: 지금까지 입력한 요청 문장.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 입력 내역.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InputPreview"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/unknown-files:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+    get:
+      tags: [files]
+      operationId: listUnknownFiles
+      summary: run이 남겼지만 artifact로 등록되지 않은 파일.
+      responses:
+        "200":
+          description: 미처리 파일.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UnknownFile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/unknown-files/{path}:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - name: path
+        in: path
+        required: true
+        description: >-
+          목록에 나온 파일 경로를 한 세그먼트로 퍼센트 인코딩한 값
+          (`blocks%2Fnotes.txt`, `repo%3Asrc%2Fscratch.ts`).
+        schema:
+          type: string
+    post:
+      tags: [files]
+      operationId: resolveUnknownFile
+      summary: 알 수 없는 파일 하나를 등록·유지·삭제한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnknownFileAction"
+      responses:
+        "200":
+          description: 아직 처리되지 않은 파일.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UnknownFile"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/state/tasks:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+    patch:
+      tags: [agent]
+      operationId: setTask
+      summary: state.md에 작업을 추가하거나 갱신한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskUpdate"
+      responses:
+        "200":
+          description: 저장된 작업.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/state/decisions:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+    post:
+      tags: [agent]
+      operationId: recordDecision
+      summary: state.md에 결정을 기록한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionCreate"
+      responses:
+        "201":
+          description: 저장된 결정.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateDecision"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/state/artifacts:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+    post:
+      tags: [agent]
+      operationId: addArtifact
+      summary: state.md의 artifacts에 파일을 등록한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactAdd"
+      responses:
+        "200":
+          description: 변경 후 전체 artifacts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                examples:
+                  - - blocks/b04-resume.view.md
+                    - blocks/b05-base.json
+                    - blocks/b06-pearlabyss.json
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /trash:
+    get:
+      tags: [trash]
+      operationId: listTrash
+      summary: 최근 삭제된 페이지와 블록, 최신순.
+      responses:
+        "200":
+          description: 앱 홈 이력에서 찾은 삭제 내역.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrashEntry"
+
+  /trash/{commit}/restore:
+    parameters:
+      - name: commit
+        in: path
+        required: true
+        description: 삭제한 커밋.
+        schema:
+          type: string
+    post:
+      tags: [trash]
+      operationId: restoreTrash
+      summary: 삭제 커밋이 지운 것을 되살리고 커밋한다.
+      responses:
+        "200":
+          description: 복원했다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrashRestore"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /templates:
+    get:
+      tags: [templates]
+      operationId: listTemplates
+      summary: 내장·설치된 view 템플릿.
+      responses:
+        "200":
+          description: 템플릿 목록.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Template"
+
+  /templates/{name}/schema:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        example: resume
+    get:
+      tags: [templates]
+      operationId: getTemplateSchema
+      summary: 템플릿의 slot 스키마(schema.json).
+      responses:
+        "200":
+          description: 스키마 문서.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateSchema"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /events:
+    x-websocket:
+      protocol: websocket
+      direction: server-to-client
+      message: "#/components/schemas/Event"
+    get:
+      tags: [events]
+      operationId: openEvents
+      summary: 변경 이벤트 WebSocket 스트림.
+      description: |
+        WebSocket으로 업그레이드한다. 텍스트 프레임 하나가 JSON `Event`
+        하나다(`components.schemas.Event` 참고, `type`으로 구분). 클라이언트는
+        아무것도 보내지 않는다. 재연결 후 클라이언트는 공간, 페이지, 열려 있는
+        페이지를 다시 가져온다.
+      x-websocket: true
+      responses:
+        "101":
+          description: WebSocket 프로토콜로 전환한다.
+
+components:
+  parameters:
+    Space:
+      name: space
+      in: path
+      required: true
+      description: 공간 slug.
+      schema:
+        type: string
+      example: jobs
+    Page:
+      name: page
+      in: path
+      required: true
+      description: 페이지 id.
+      schema:
+        type: string
+      example: 2026-09-24-resume
+    Block:
+      name: block
+      in: path
+      required: true
+      description: 블록 id.
+      schema:
+        type: string
+      example: b04
+    RunNumber:
+      name: n
+      in: path
+      required: true
+      description: 페이지 안의 run 번호.
+      schema:
+        type: integer
+        minimum: 1
+      example: 2
+
+  responses:
+    Invalid:
+      description: 요청 또는 결과 파일이 검사에 실패했다.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationFailure"
+    NotFound:
+      description: 공간, 페이지, 블록, run, 파일이 없다.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            error: not_found
+            message: page '2026-09-30-missing' not found
+    Conflict:
+      description: 현재 상태에서는 변경할 수 없다.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            error: conflict
+            message: space 'jobs' still has 2 pages
+
+  schemas:
+    # 오류
+
+    ApiError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: >-
+            기계가 읽는 사유: `not_found`, `conflict`, `invalid`, `busy`,
+            `no_repo`.
+        message:
+          type: string
+      examples:
+        - error: conflict
+          message: a run is already in progress on this page
+
+    Issue:
+      type: object
+      description: 검사 문제 하나.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: >-
+            케밥 표기 식별자. 알려진 코드: `missing-file`,
+            `unreadable`, `frontmatter`, `missing-key`, `invalid-value`,
+            `duplicate-decision`, `choice-not-in-options`, `repo-unset`,
+            `invalid-artifact`, `artifact-missing`, `missing-section`,
+            `token-limit`, `done-without-verify`.
+        message:
+          type: string
+        line:
+          type: [integer, "null"]
+          description: 1부터 세는 파일 줄. 알 때만.
+        path:
+          type: [string, "null"]
+          description: 파일. 알 때만.
+      examples:
+        - code: missing-section
+          message: "missing required section '## 다음 할 일'"
+          line: null
+          path: state.md
+
+    ValidationFailure:
+      type: object
+      required: [error, message, issues]
+      properties:
+        error:
+          type: string
+          enum: [invalid]
+        message:
+          type: string
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/Issue"
+      examples:
+        - error: invalid
+          message: state.md failed validation
+          issues:
+            - code: invalid-value
+              message: "status: expected planning | doing | blocked | review | done"
+              line: 2
+              path: state.md
+            - code: token-limit
+              message: state.md is 2310 tokens (limit 2000); summarize the log
+              line: null
+              path: state.md
+
+    # 시스템
+
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+          description: core 버전.
+      examples:
+        - status: ok
+          version: 0.1.0
+
+    # runner
+
+    RunnerStatus:
+      type: object
+      required: [name, available]
+      properties:
+        name:
+          type: string
+          description: runners.yaml의 runner 이름.
+        available:
+          type: boolean
+        auth:
+          type: string
+          enum: [subscription, api]
+        reason:
+          type: [string, "null"]
+          description: runner를 쓸 수 없는 이유.
+      examples:
+        - name: codex
+          available: false
+          auth: subscription
+          reason: not logged in
+
+    RunnerAvailability:
+      type: object
+      required: [checked, runners]
+      properties:
+        checked:
+          type: string
+          format: date-time
+        runners:
+          type: array
+          items:
+            $ref: "#/components/schemas/RunnerStatus"
+      examples:
+        - checked: "2026-09-24T09:30:12+09:00"
+          runners:
+            - name: claude
+              available: true
+              auth: subscription
+              reason: null
+            - name: codex
+              available: true
+              auth: subscription
+              reason: null
+
+    # 공간
+
+    SpaceSort:
+      type: string
+      description: 고정된 페이지 다음에 공간의 페이지를 어떤 기준으로 정렬할지.
+      enum: [updated, created, title]
+
+    Space:
+      type: object
+      required: [slug, title]
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        repo:
+          type: [string, "null"]
+          description: space.md의 코드 저장소 경로.
+        parent:
+          type: [string, "null"]
+          description: 상위 공간 slug. 최상위 공간이면 null.
+        icon:
+          type: [string, "null"]
+          description: 공간 옆에 보여 줄 아이콘 이름.
+        color:
+          type: [string, "null"]
+          description: 강조 색(`#rrggbb`).
+          pattern: "^#[0-9a-fA-F]{6}$"
+        sort:
+          $ref: "#/components/schemas/SpaceSort"
+        pages:
+          type: integer
+          description: 페이지 수.
+        active_pages:
+          type: integer
+          description: 상태가 doing 또는 blocked인 페이지 수.
+      examples:
+        - slug: jobs
+          title: 지원
+          repo: null
+          parent: null
+          icon: briefcase
+          color: "#3a5bd9"
+          sort: updated
+          pages: 2
+          active_pages: 0
+        - slug: jobs-2026
+          title: 2026 하반기
+          repo: null
+          parent: jobs
+          icon: null
+          color: null
+          sort: created
+          pages: 0
+          active_pages: 0
+
+    SpaceCreate:
+      type: object
+      required: [slug, title]
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        repo:
+          type: string
+        parent:
+          type: string
+          description: 상위 공간 slug.
+        icon:
+          type: string
+        color:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        sort:
+          $ref: "#/components/schemas/SpaceSort"
+      examples:
+        - slug: jobs
+          title: 지원
+        - slug: jobs-2026
+          title: 2026 하반기
+          parent: jobs
+          icon: calendar
+          color: "#b8322a"
+          sort: created
+
+    SpaceUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        repo:
+          type: [string, "null"]
+          description: 경로를 주면 저장소를 연결하고 null이면 연결을 끊는다.
+        parent:
+          type: [string, "null"]
+          description: slug를 주면 그 공간 아래로 옮기고 null이면 최상위로 옮긴다.
+        icon:
+          type: [string, "null"]
+        color:
+          type: [string, "null"]
+          pattern: "^#[0-9a-fA-F]{6}$"
+        sort:
+          $ref: "#/components/schemas/SpaceSort"
+      examples:
+        - title: 지원 2026
+        - parent: jobs
+          icon: folder
+          color: "#3a5bd9"
+          sort: title
+
+    # 페이지
+
+    PageStatus:
+      type: string
+      enum: [planning, doing, blocked, review, done]
+
+    RunRef:
+      type: object
+      description: 카드에 보여 줄 페이지의 마지막 run.
+      required: [n, runner, model]
+      properties:
+        n:
+          type: integer
+        runner:
+          type: string
+        model:
+          type: string
+        result_status:
+          $ref: "#/components/schemas/RunResultStatus"
+      examples:
+        - n: 2
+          runner: codex
+          model: gpt-6-luna
+          result_status: review
+
+    PageCard:
+      type: object
+      description: 페이지 목록의 카드 하나.
+      required: [id, space, title, status, pinned, tags, block_counts]
+      properties:
+        id:
+          type: string
+        space:
+          type: string
+          description: 공간 slug.
+        title:
+          type: string
+        kind:
+          type: string
+          description: 기본 요청 종류(router 힌트).
+        status:
+          $ref: "#/components/schemas/PageStatus"
+        created:
+          type: string
+          format: date-time
+        updated:
+          type: string
+          format: date-time
+        pinned:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        preview:
+          type: [string, "null"]
+          description: 마지막 메시지 한 줄.
+        block_counts:
+          type: object
+          description: 블록 종류별 개수. run은 `run`으로 센다.
+          additionalProperties:
+            type: integer
+        last_run:
+          $ref: "#/components/schemas/RunRef"
+          description: 페이지에 run이 아직 없으면 없다.
+        first_view:
+          type: [string, "null"]
+          description: 카드 썸네일용 첫 view 블록의 id.
+      examples:
+        - id: 2026-09-24-resume
+          space: jobs
+          title: 이력서
+          kind: build
+          status: review
+          created: "2026-09-24T08:10:00+09:00"
+          updated: "2026-09-24T09:31:41+09:00"
+          pinned: true
+          tags: [이력서]
+          preview: work 순서를 바꿨습니다. 펄어비스 경력이 맨 위입니다.
+          block_counts: {message: 9, view: 1, data: 2, run: 2}
+          last_run: {n: 2, runner: codex, model: gpt-6-luna, result_status: review}
+          first_view: b04
+
+    PageCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        kind:
+          type: string
+          description: 기본값은 routes.yaml의 `default_kind`.
+      examples:
+        - title: 이력서
+          kind: build
+
+    PageUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        pinned:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        blocks_order:
+          type: array
+          description: page.md `blocks`의 새 순서 전체.
+          items:
+            type: string
+        space:
+          type: string
+          description: 페이지를 옮길 공간의 slug.
+      examples:
+        - pinned: true
+          tags: [이력서]
+        - space: archive
+
+    PageDetail:
+      type: object
+      description: page.md, 본문 순서대로의 블록 머리부, run 목록.
+      required: [id, space, title, status, pinned, tags, blocks, runs, unknown_files]
+      properties:
+        id:
+          type: string
+        space:
+          type: string
+        title:
+          type: string
+        kind:
+          type: string
+        status:
+          $ref: "#/components/schemas/PageStatus"
+        created:
+          type: string
+          format: date-time
+        updated:
+          type: string
+          format: date-time
+        pinned:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        overview:
+          type: string
+          description: page.md의 Markdown 본문.
+        blocks:
+          type: array
+          description: page.md `blocks` 순서의 블록 머리부.
+          items:
+            $ref: "#/components/schemas/BlockHeader"
+        runs:
+          type: array
+          description: >-
+            run 요약, 오름차순. 각 run은 `trigger.message`의 메시지 뒤에
+            보여 준다.
+          items:
+            $ref: "#/components/schemas/RunRecord"
+        unknown_files:
+          type: array
+          description: 미처리 알 수 없는 파일. 비어 있지 않으면 배너를 보여 준다.
+          items:
+            $ref: "#/components/schemas/UnknownFile"
+        waiting:
+          $ref: "#/components/schemas/FlowWaitingData"
+          description: >-
+            flow가 사람 결정이나 runner를 기다리는 동안에만 있다.
+      examples:
+        - id: 2026-09-24-resume
+          space: jobs
+          title: 이력서
+          kind: build
+          status: review
+          created: "2026-09-24T08:10:00+09:00"
+          updated: "2026-09-24T09:31:41+09:00"
+          pinned: true
+          tags: [이력서]
+          overview: ""
+          blocks:
+            - {id: b01, type: message, role: user, ts: "2026-09-24T08:11:02+09:00", text: 이력서 템플릿 만들어줘, target: {}}
+            - {id: b02, type: message, role: router, ts: "2026-09-24T08:11:03+09:00", run: 1, text: "kind=design conf=0.91 → claude/claude-opus-5-5 high"}
+            - {id: b03, type: message, role: agent, ts: "2026-09-24T08:14:40+09:00", run: 1, text: "이력서 뷰(b04)와 기본 데이터(b05), 펄어비스용 덮어쓰기(b06)를 만들었습니다."}
+            - id: b04
+              type: view
+              file: blocks/b04-resume.view.md
+              title: 이력서
+              created_by: run 1
+              template: resume@1
+              bindings: {base: b05, overlay: b06}
+              presets:
+                기본: {base: b05}
+                펄어비스: {base: b05, overlay: b06}
+              active_preset: 펄어비스
+              theme: {color.accent: "#3a5bd9"}
+            - {id: b05, type: data, file: blocks/b05-base.json, title: 기본 데이터, created_by: run 1, format: json}
+            - {id: b06, type: data, file: blocks/b06-pearlabyss.json, title: 펄어비스 덮어쓰기, created_by: run 1, format: json}
+            - {id: b07, type: message, role: user, ts: "2026-09-24T09:30:58+09:00", text: 펄어비스 경력을 맨 위로, target: {block: b04, elements: ["work[1]"], mode: edit}}
+            - {id: b08, type: message, role: router, ts: "2026-09-24T09:31:00+09:00", run: 2, text: "kind=small conf=1.00 → codex/gpt-6-luna high"}
+            - {id: b09, type: message, role: agent, ts: "2026-09-24T09:31:41+09:00", run: 2, text: work 순서를 바꿨습니다. 펄어비스 경력이 맨 위입니다.}
+          runs:
+            - n: 1
+              started: "2026-09-24T08:11:03+09:00"
+              finished: "2026-09-24T08:14:40+09:00"
+              trigger: {message: b01}
+              kind: design
+              tier: 1
+              runner: claude
+              model: claude-opus-5-5
+              effort: high
+              input:
+                parts: {system_est: 24600, root: 110, space: 1840, state: 380, contract: 420, target: 0, request: 12}
+                total_est: 27362
+              usage: {input: 27410, cached: 0, output: 3120}
+              changed_files: [blocks/b04-resume.view.md, blocks/b05-base.json, blocks/b06-pearlabyss.json, state.md]
+              unknown_files: []
+              verify: {cmd: null, ok: null}
+              result_status: review
+              commit: 5e6f7a8
+              events_log: runs/1.events.jsonl
+            - n: 2
+              started: "2026-09-24T09:31:00+09:00"
+              finished: "2026-09-24T09:31:41+09:00"
+              trigger: {message: b07, target: b04, elements: ["work[1]"], mode: edit}
+              kind: small
+              tier: 1
+              runner: codex
+              model: gpt-6-luna
+              effort: high
+              input:
+                parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+                total_est: 29230
+              usage: {input: 29104, cached: 24310, output: 612}
+              changed_files: [blocks/b05-base.json]
+              unknown_files: []
+              verify: {cmd: null, ok: null}
+              result_status: review
+              commit: a1b2c3d
+              events_log: runs/2.events.jsonl
+          unknown_files: []
+
+    # 블록
+
+    BlockType:
+      type: string
+      enum: [message, doc, data, view, code, term, site, run]
+
+    MessageRole:
+      type: string
+      enum: [user, router, agent]
+
+    TargetMode:
+      type: string
+      enum: [view, edit]
+
+    Target:
+      type: object
+      description: 메시지가 향하는 대상. 비어 있으면 페이지.
+      properties:
+        block:
+          type: string
+        elements:
+          type: array
+          description: "요소 데이터 경로. 예: `work[1].company`."
+          items:
+            type: string
+        mode:
+          $ref: "#/components/schemas/TargetMode"
+      examples:
+        - block: b04
+          elements: ["work[1]"]
+          mode: edit
+
+    BlockHeader:
+      type: object
+      description: |
+        블록 머리부. 공통 키가 먼저 나오고 나머지는 한 종류에만 속한다:
+        message(`role`, `ts`, `run`, `target`, `text`), data(`format`,
+        `schema`), view(`template`, `bindings`, `presets`, `active_preset`,
+        `theme`), code(`path`, `since_run`), term(`cmd`, `cwd`, `proc`),
+        site(`url`, `repo_bound`).
+      required: [id, type]
+      properties:
+        id:
+          type: string
+        type:
+          $ref: "#/components/schemas/BlockType"
+        file:
+          type: [string, "null"]
+          description: 페이지 기준 파일. 메시지는 log.md에 있어 null.
+        title:
+          type: string
+        created_by:
+          type: string
+          description: "`run N` 또는 `user`."
+        role:
+          $ref: "#/components/schemas/MessageRole"
+        ts:
+          type: string
+          format: date-time
+        run:
+          type: integer
+          description: 메시지를 쓴 run, 또는 메시지가 일으킨 run.
+        target:
+          $ref: "#/components/schemas/Target"
+        text:
+          type: string
+          description: 메시지 본문. 작아서 그대로 담긴다.
+        format:
+          type: string
+          enum: [json, csv, source]
+          description: 데이터 파일 형식. `source`는 API 원본(후속 단계).
+        schema:
+          type: string
+          description: "sidecar의 데이터 스키마 참조. 예: `resume#/base`."
+        template:
+          type: string
+          description: "`name@version` 형식."
+        bindings:
+          type: object
+          description: slot 이름에서 데이터 블록 id로.
+          additionalProperties:
+            type: string
+        presets:
+          type: object
+          description: preset 이름에서 bindings로.
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        active_preset:
+          type: [string, "null"]
+        theme:
+          type: object
+          description: >-
+            템플릿이 편집을 허용하는 스타일 이름(`color.accent`,
+            `font.size`)을 키로 하는 스타일 덮어쓰기.
+          additionalProperties:
+            type: string
+        path:
+          type: string
+        since_run:
+          type: integer
+        cmd:
+          type: string
+        cwd:
+          type: string
+        proc:
+          type: string
+        url:
+          type: string
+        repo_bound:
+          type: boolean
+      examples:
+        - id: b04
+          type: view
+          file: blocks/b04-resume.view.md
+          title: 이력서
+          created_by: run 1
+          template: resume@1
+          bindings: {base: b05, overlay: b06}
+          presets:
+            기본: {base: b05}
+            펄어비스: {base: b05, overlay: b06}
+          active_preset: 펄어비스
+          theme: {color.accent: "#3a5bd9"}
+
+    Block:
+      type: object
+      description: 블록 머리부와 파일 전체.
+      required: [header, content]
+      properties:
+        header:
+          $ref: "#/components/schemas/BlockHeader"
+        content:
+          type: string
+          description: >-
+            저장된 그대로의 파일 텍스트. 메시지는 메시지 본문, 데이터 블록은
+            JSON 또는 CSV 텍스트.
+      examples:
+        - header: {id: b05, type: data, file: blocks/b05-base.json, title: 기본 데이터, created_by: run 1, format: json, schema: "resume#/base"}
+          content: |
+            {
+              "name": "김마당",
+              "title": "백엔드 엔지니어",
+              "contact": {"email": "madang@example.com", "location": "서울"},
+              "summary": "대규모 트래픽 서비스의 인증·세션 계층을 설계하고 운영해 온 8년 차 백엔드 엔지니어입니다.",
+              "work": [
+                {"company": "펄어비스", "role": "게임 서버 엔지니어", "period": "2019.01 – 2022.02", "highlights": ["동시 접속 30만 매치메이킹 서버 개발"]},
+                {"company": "한빛소프트", "role": "시니어 백엔드 엔지니어", "period": "2022.03 – 현재", "highlights": ["세션 갱신 경합 제거로 로그인 오류율 92% 감소"]}
+              ],
+              "skills": ["Kotlin", "TypeScript", "PostgreSQL", "Redis"]
+            }
+
+    BlockContent:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+      examples:
+        - content: |
+            {"title": "게임 서버 엔지니어 (펄어비스 지원용)"}
+
+    BlockHeaderPatch:
+      type: object
+      description: 바꿀 머리부 키. 없는 키는 그대로 둔다.
+      properties:
+        title:
+          type: string
+        bindings:
+          type: object
+          additionalProperties:
+            type: string
+        presets:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        active_preset:
+          type: [string, "null"]
+        theme:
+          type: object
+          additionalProperties:
+            type: string
+      examples:
+        - active_preset: 기본
+        - bindings: {base: b05, overlay: b06}
+        - theme: {color.accent: "#b8322a"}
+
+    BlockCreate:
+      type: object
+      description: >-
+        `doc`과 `data`는 `content`를, `view`는 `template`과 `bindings`를
+        받는다.
+      required: [type, name]
+      properties:
+        type:
+          type: string
+          enum: [doc, data, view]
+        name:
+          type: string
+          description: 파일 이름용 slug(`bNN-<name>.<ext>`).
+        content:
+          type: string
+        format:
+          type: string
+          enum: [json, csv]
+          description: 데이터 형식. 기본값 json.
+        template:
+          type: string
+          description: "`name` 또는 `name@version`."
+        bindings:
+          type: object
+          additionalProperties:
+            type: string
+      examples:
+        - type: view
+          name: resume
+          template: resume@1
+          bindings: {base: b05}
+
+    PromoteResult:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: 블록을 복사한 `repo:` 경로.
+        commit:
+          type: [string, "null"]
+          description: 파일이 이미 최신이면 null.
+      examples:
+        - path: repo:docs/b04-resume.view.md
+          commit: 3c4d5e6
+
+    # memory
+
+    MemoryLayer:
+      type: string
+      enum: [root, space, state]
+
+    MemoryFile:
+      type: object
+      required: [layer, path, content, tokens]
+      properties:
+        layer:
+          $ref: "#/components/schemas/MemoryLayer"
+        path:
+          type: string
+          description: 앱 홈 기준 경로.
+        content:
+          type: string
+          description: front matter를 포함한 파일 전체.
+        tokens:
+          type: integer
+          description: 토큰 수(tiktoken cl100k_base).
+        token_limit:
+          type: [integer, "null"]
+          description: 저장 시 강제하는 한도(state.md만).
+      examples:
+        - layer: state
+          path: spaces/jobs/pages/2026-09-24-resume/state.md
+          content: |
+            ---
+            status: review
+            kind: build
+            tier: 1
+            attempts: 0
+            owner: codex/gpt-6-luna
+            decisions: []
+            tasks:
+              - {id: T1, title: 이력서 뷰 만들기, status: done}
+              - {id: T2, title: 펄어비스용 프리셋, status: review}
+            artifacts:
+              - blocks/b04-resume.view.md
+              - blocks/b05-base.json
+              - blocks/b06-pearlabyss.json
+            ---
+            ## 목표
+            이력서 뷰 하나로 지원처별 프리셋을 전환할 수 있다.
+
+            ## 다음 할 일
+            1. 펄어비스 프리셋 결과를 사람이 검토한다.
+
+            ## 로그
+            2026-09-24 | codex/gpt-6-luna | run 2 | work 순서 변경
+          tokens: 212
+          token_limit: 2000
+
+    Memory:
+      type: object
+      required: [root, space, state]
+      properties:
+        root:
+          $ref: "#/components/schemas/MemoryFile"
+        space:
+          $ref: "#/components/schemas/MemoryFile"
+        state:
+          $ref: "#/components/schemas/MemoryFile"
+      examples:
+        - root:
+            layer: root
+            path: root.md
+            content: |
+              # 나에 대해
+              한국어로 답한다. 확인 질문 없이 진행한다.
+            tokens: 18
+            token_limit: null
+          space:
+            layer: space
+            path: spaces/jobs/space.md
+            content: |
+              ---
+              slug: jobs
+              title: 지원
+              repo: null
+              ---
+              지원서와 이력서를 다룬다. 사실은 base 데이터만 믿는다.
+            tokens: 41
+            token_limit: null
+          state:
+            layer: state
+            path: spaces/jobs/pages/2026-09-24-resume/state.md
+            content: |
+              ---
+              status: review
+              kind: build
+              tier: 1
+              attempts: 0
+              ---
+              ## 목표
+              이력서 뷰 하나로 지원처별 프리셋을 전환할 수 있다.
+
+              ## 다음 할 일
+              1. 펄어비스 프리셋 결과를 사람이 검토한다.
+            tokens: 74
+            token_limit: 2000
+
+    MemoryContent:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+      examples:
+        - content: |
+            # 나에 대해
+            한국어로 답한다.
+
+    # 메시지와 입력
+
+    MessageCreate:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: "`design:` 같은 접두어가 종류를 강제한다."
+        target:
+          $ref: "#/components/schemas/Target"
+      examples:
+        - text: 펄어비스 경력을 맨 위로
+          target: {block: b04, elements: ["work[1]"], mode: edit}
+
+    MessageAccepted:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          description: 저장된 메시지 블록의 id.
+      examples:
+        - message: b07
+
+    InputParts:
+      type: object
+      description: 입력 부분별 추정 토큰.
+      required: [system_est, root, space, state, contract, target, request]
+      properties:
+        system_est:
+          type: integer
+          description: runner 자체의 시스템 프롬프트와 도구(상수).
+        root:
+          type: integer
+        space:
+          type: integer
+        state:
+          type: integer
+        contract:
+          type: integer
+          description: 내장 작업 지시문.
+        target:
+          type: integer
+        request:
+          type: integer
+      examples:
+        - {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+
+    RunInput:
+      type: object
+      required: [parts, total_est]
+      properties:
+        parts:
+          $ref: "#/components/schemas/InputParts"
+        total_est:
+          type: integer
+      examples:
+        - parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+          total_est: 29230
+
+    InputPreview:
+      type: object
+      description: 다음 호출이 어떻게 라우팅되고 무엇을 읽는지.
+      required: [kind, tier, runner, model, parts, total_est]
+      properties:
+        kind:
+          type: string
+        tier:
+          type: integer
+        runner:
+          type: string
+        model:
+          type: string
+        effort:
+          type: string
+        parts:
+          $ref: "#/components/schemas/InputParts"
+        total_est:
+          type: integer
+      examples:
+        - kind: small
+          tier: 1
+          runner: codex
+          model: gpt-6-luna
+          effort: high
+          parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+          total_est: 29230
+
+    # run
+
+    RunResultStatus:
+      type: string
+      enum: [done, blocked, review, error, cancelled]
+
+    RunTrigger:
+      type: object
+      properties:
+        message:
+          type: string
+        target:
+          type: string
+        elements:
+          type: array
+          items:
+            type: string
+        mode:
+          $ref: "#/components/schemas/TargetMode"
+      examples:
+        - {message: b07, target: b04, elements: ["work[1]"], mode: edit}
+
+    RunUsage:
+      type: object
+      description: 토큰 수. `input`은 `cached`를 포함한다.
+      required: [input, cached, output]
+      properties:
+        input:
+          type: integer
+        cached:
+          type: integer
+        output:
+          type: integer
+      examples:
+        - {input: 29104, cached: 24310, output: 612}
+
+    RunVerify:
+      type: object
+      properties:
+        cmd:
+          type: [string, "null"]
+        ok:
+          type: [boolean, "null"]
+      examples:
+        - {cmd: null, ok: null}
+
+    RunRecord:
+      type: object
+      description: runs/N.json 형식의 run 기록.
+      required: [n, usage, changed_files, unknown_files, verify]
+      properties:
+        n:
+          type: integer
+        started:
+          type: [string, "null"]
+          format: date-time
+        finished:
+          type: [string, "null"]
+          format: date-time
+        trigger:
+          $ref: "#/components/schemas/RunTrigger"
+        kind:
+          type: string
+        tier:
+          type: integer
+        runner:
+          type: string
+        model:
+          type: string
+        effort:
+          type: string
+        input:
+          $ref: "#/components/schemas/RunInput"
+        usage:
+          $ref: "#/components/schemas/RunUsage"
+        changed_files:
+          type: array
+          items:
+            type: string
+        unknown_files:
+          type: array
+          items:
+            type: string
+        verify:
+          $ref: "#/components/schemas/RunVerify"
+        result_status:
+          $ref: "#/components/schemas/RunResultStatus"
+        commit:
+          type: [string, "null"]
+        events_log:
+          type: [string, "null"]
+          description: 원본 이벤트 스트림의 페이지 기준 경로.
+      examples:
+        - n: 2
+          started: "2026-09-24T09:31:00+09:00"
+          finished: "2026-09-24T09:31:41+09:00"
+          trigger: {message: b07, target: b04, elements: ["work[1]"], mode: edit}
+          kind: small
+          tier: 1
+          runner: codex
+          model: gpt-6-luna
+          effort: high
+          input:
+            parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+            total_est: 29230
+          usage: {input: 29104, cached: 24310, output: 612}
+          changed_files: [blocks/b05-base.json]
+          unknown_files: []
+          verify: {cmd: null, ok: null}
+          result_status: review
+          commit: a1b2c3d
+          events_log: runs/2.events.jsonl
+
+    RunStreamEvent:
+      type: object
+      description: >-
+        도구에 중립인 runner 이벤트 하나. `type`에 해당하는 필드만 채운다:
+        text는 `text`, tool_call은 `name`·`summary`, tool_result는
+        `summary`, file_changed는 `path`, usage는 `usage`, done은 `text`,
+        error는 `message`.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [text, tool_call, tool_result, file_changed, usage, done, error]
+        text:
+          type: string
+        name:
+          type: string
+        summary:
+          type: string
+        path:
+          type: string
+        usage:
+          $ref: "#/components/schemas/RunUsage"
+        message:
+          type: string
+      examples:
+        - type: tool_call
+          name: apply_patch
+          summary: blocks/b05-base.json
+        - type: file_changed
+          path: blocks/b05-base.json
+
+    # 결정
+
+    Question:
+      type: object
+      required: [kind, prompt]
+      properties:
+        kind:
+          type: string
+          enum: [choice, yesno, score]
+        prompt:
+          type: string
+        options:
+          type: [array, "null"]
+          items:
+            type: string
+      examples:
+        - kind: choice
+          prompt: state.md 보정에 실패했습니다. 어떻게 할까요?
+          options: [retry, next_tier, stop]
+
+    PendingDecision:
+      type: object
+      description: flow가 기다리는 질문(ask_human).
+      required: [id, question]
+      properties:
+        id:
+          type: string
+        run:
+          type: [integer, "null"]
+        question:
+          $ref: "#/components/schemas/Question"
+      examples:
+        - id: q1
+          run: 2
+          question:
+            kind: choice
+            prompt: state.md 보정에 실패했습니다. 어떻게 할까요?
+            options: [retry, next_tier, stop]
+
+    DecisionAnswer:
+      type: object
+      required: [choice]
+      properties:
+        choice:
+          type: string
+          description: >-
+            `choice`는 선택지 중 하나, `yesno`는 `true`/`false`, `score`는
+            `1`–`5`.
+      examples:
+        - choice: retry
+
+    # 상태(에이전트)
+
+    TaskStatus:
+      type: string
+      enum: [todo, doing, blocked, review, done]
+
+    Task:
+      type: object
+      required: [id, title, status]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        due:
+          type: string
+          format: date
+      examples:
+        - {id: T2, title: 펄어비스용 프리셋, status: review}
+
+    TaskUpdate:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        title:
+          type: string
+          description: 새 작업이면 필수.
+        due:
+          type: string
+          format: date
+      examples:
+        - {id: T2, status: done}
+
+    DecisionState:
+      type: string
+      enum: [proposed, confirmed, superseded, deferred]
+
+    StateDecision:
+      type: object
+      description: state.md `decisions`의 항목 하나.
+      required: [id, topic, choice, options, state]
+      properties:
+        id:
+          type: string
+        topic:
+          type: string
+        choice:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        by:
+          type: string
+          description: "`runner/model` 또는 `user`."
+        run:
+          type: [integer, "null"]
+        state:
+          $ref: "#/components/schemas/DecisionState"
+        supersedes:
+          type: [string, "null"]
+      examples:
+        - id: D1
+          topic: 지원처별 차이를 담는 방법
+          choice: overlay-preset
+          options: [overlay-preset, copy-per-company]
+          by: claude/claude-opus-5-5
+          run: 1
+          state: confirmed
+          supersedes: null
+
+    DecisionCreate:
+      type: object
+      required: [id, topic, choice, options]
+      properties:
+        id:
+          type: string
+        topic:
+          type: string
+        choice:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        supersedes:
+          type: string
+      examples:
+        - id: D1
+          topic: 지원처별 차이를 담는 방법
+          choice: overlay-preset
+          options: [overlay-preset, copy-per-company]
+
+    ArtifactAdd:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: 페이지 기준 또는 `repo:` 경로.
+      examples:
+        - path: blocks/b06-pearlabyss.json
+
+    RepoCommit:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+      examples:
+        - message: "docs: add resume layout notes"
+
+    RepoCommitResult:
+      type: object
+      required: [commit]
+      properties:
+        commit:
+          type: string
+      examples:
+        - commit: 7b8c9d0
+
+    RepoPushResult:
+      type: object
+      required: [branch]
+      properties:
+        branch:
+          type: string
+        remote:
+          type: string
+      examples:
+        - branch: main
+          remote: origin
+
+    # 파일과 휴지통
+
+    UnknownFile:
+      type: object
+      description: run이 만들었지만 등록하지 않은 파일.
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: 페이지 기준 경로, 코드 저장소면 `repo:` 접두어.
+        run:
+          type: [integer, "null"]
+          description: 이 파일을 발견한 run.
+      examples:
+        - path: blocks/notes.txt
+          run: 2
+
+    UnknownFileAction:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [artifact, keep, delete]
+      examples:
+        - action: artifact
+
+    TrashEntry:
+      type: object
+      required: [commit, deleted, page, paths, message]
+      properties:
+        commit:
+          type: string
+          description: 삭제한 커밋.
+        deleted:
+          type: string
+          format: date-time
+        space:
+          type: string
+        page:
+          type: string
+        block:
+          type: [string, "null"]
+          description: 페이지 전체가 삭제됐으면 null.
+        paths:
+          type: array
+          description: 지워진 경로(앱 홈 기준).
+          items:
+            type: string
+        message:
+          type: string
+          description: 커밋 메시지.
+      examples:
+        - commit: 9f8e7d6
+          deleted: "2026-09-23T18:02:11+09:00"
+          space: jobs
+          page: 2026-09-20-cover-letter
+          block: null
+          paths: [spaces/jobs/pages/2026-09-20-cover-letter]
+          message: "[2026-09-20-cover-letter] delete page"
+
+    TrashRestore:
+      type: object
+      required: [commit, paths]
+      properties:
+        commit:
+          type: string
+          description: 복원 커밋.
+        paths:
+          type: array
+          items:
+            type: string
+      examples:
+        - commit: 0a1b2c3
+          paths: [spaces/jobs/pages/2026-09-20-cover-letter]
+
+    # 템플릿
+
+    TemplateSlot:
+      type: object
+      required: [name, required]
+      properties:
+        name:
+          type: string
+        schema:
+          type: string
+          description: "schema.json 안의 포인터. 예: `#/base`."
+        required:
+          type: boolean
+        label:
+          type: string
+      examples:
+        - {name: base, schema: "#/base", required: true, label: 기본 데이터}
+
+    TemplateEditable:
+      type: object
+      properties:
+        text:
+          type: boolean
+        style:
+          type: array
+          items:
+            type: string
+      examples:
+        - text: true
+          style: [color.accent, font.size]
+
+    Template:
+      type: object
+      required: [name, version, title, slots, builtin]
+      properties:
+        name:
+          type: string
+        version:
+          type: integer
+        title:
+          type: string
+        slots:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemplateSlot"
+        editable:
+          $ref: "#/components/schemas/TemplateEditable"
+        builtin:
+          type: boolean
+          description: 설치한 것이 아니라 앱에 포함된 템플릿.
+      examples:
+        - name: resume
+          version: 1
+          title: 이력서
+          slots:
+            - {name: base, schema: "#/base", required: true, label: 기본 데이터}
+            - {name: overlay, schema: "#/overlay", required: false, label: 덮어쓰기}
+          editable: {text: true, style: [color.accent, font.size]}
+          builtin: true
+
+    TemplateSchema:
+      type: object
+      required: [name, version, schema]
+      properties:
+        name:
+          type: string
+        version:
+          type: integer
+        schema:
+          type: string
+          description: JSON 텍스트로 된 schema.json 문서.
+      examples:
+        - name: resume
+          version: 1
+          schema: '{"$schema": "https://json-schema.org/draft/2020-12/schema", "base": {"type": "object", "required": ["name", "work"]}, "overlay": {"type": "object"}}'
+
+    # 이벤트
+
+    Event:
+      description: |
+        WebSocket 메시지 하나. 모든 이벤트는 봉투
+        `{type, ts, space?, page?, block?, run?, data}`를 가지며 `data`는
+        `type`에 따라 달라진다.
+      oneOf:
+        - $ref: "#/components/schemas/SpaceCreatedEvent"
+        - $ref: "#/components/schemas/SpaceUpdatedEvent"
+        - $ref: "#/components/schemas/SpaceDeletedEvent"
+        - $ref: "#/components/schemas/PageCreatedEvent"
+        - $ref: "#/components/schemas/PageUpdatedEvent"
+        - $ref: "#/components/schemas/PageDeletedEvent"
+        - $ref: "#/components/schemas/BlockAddedEvent"
+        - $ref: "#/components/schemas/BlockUpdatedEvent"
+        - $ref: "#/components/schemas/BlockDeletedEvent"
+        - $ref: "#/components/schemas/RunStartedEvent"
+        - $ref: "#/components/schemas/RunAssembledEvent"
+        - $ref: "#/components/schemas/RunProgressEvent"
+        - $ref: "#/components/schemas/RunFinishedEvent"
+        - $ref: "#/components/schemas/RunFailedEvent"
+        - $ref: "#/components/schemas/RunFallbackEvent"
+        - $ref: "#/components/schemas/PageUnknownFilesEvent"
+        - $ref: "#/components/schemas/FlowWaitingEvent"
+        - $ref: "#/components/schemas/MemoryUpdatedEvent"
+        - $ref: "#/components/schemas/RunnerAvailabilityEvent"
+      discriminator:
+        propertyName: type
+        mapping:
+          space.created: "#/components/schemas/SpaceCreatedEvent"
+          space.updated: "#/components/schemas/SpaceUpdatedEvent"
+          space.deleted: "#/components/schemas/SpaceDeletedEvent"
+          page.created: "#/components/schemas/PageCreatedEvent"
+          page.updated: "#/components/schemas/PageUpdatedEvent"
+          page.deleted: "#/components/schemas/PageDeletedEvent"
+          block.added: "#/components/schemas/BlockAddedEvent"
+          block.updated: "#/components/schemas/BlockUpdatedEvent"
+          block.deleted: "#/components/schemas/BlockDeletedEvent"
+          run.started: "#/components/schemas/RunStartedEvent"
+          run.assembled: "#/components/schemas/RunAssembledEvent"
+          run.progress: "#/components/schemas/RunProgressEvent"
+          run.finished: "#/components/schemas/RunFinishedEvent"
+          run.failed: "#/components/schemas/RunFailedEvent"
+          run.fallback: "#/components/schemas/RunFallbackEvent"
+          page.unknown_files: "#/components/schemas/PageUnknownFilesEvent"
+          flow.waiting: "#/components/schemas/FlowWaitingEvent"
+          memory.updated: "#/components/schemas/MemoryUpdatedEvent"
+          runner.availability: "#/components/schemas/RunnerAvailabilityEvent"
+
+    EventType:
+      type: string
+      enum:
+        - space.created
+        - space.updated
+        - space.deleted
+        - page.created
+        - page.updated
+        - page.deleted
+        - block.added
+        - block.updated
+        - block.deleted
+        - run.started
+        - run.assembled
+        - run.progress
+        - run.finished
+        - run.failed
+        - run.fallback
+        - page.unknown_files
+        - flow.waiting
+        - memory.updated
+        - runner.availability
+
+    EventEnvelope:
+      type: object
+      description: >-
+        모든 이벤트가 공유하는 키. 이것을 먼저 해석하고 `type`으로 구체
+        이벤트를 해석한다.
+      required: [type, ts]
+      properties:
+        type:
+          $ref: "#/components/schemas/EventType"
+        ts:
+          type: string
+          format: date-time
+        space:
+          type: string
+        page:
+          type: string
+        block:
+          type: string
+        run:
+          type: integer
+      examples:
+        - type: run.progress
+          ts: "2026-09-24T09:31:12+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          run: 2
+
+    DeletedRef:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          description: 삭제된 대상의 slug, 페이지 id, 블록 id.
+      examples:
+        - id: b06
+
+    SpaceEventData:
+      type: object
+      required: [space]
+      properties:
+        space:
+          $ref: "#/components/schemas/Space"
+
+    PageEventData:
+      type: object
+      required: [page]
+      properties:
+        page:
+          $ref: "#/components/schemas/PageCard"
+
+    BlockEventData:
+      type: object
+      required: [block]
+      properties:
+        block:
+          $ref: "#/components/schemas/BlockHeader"
+
+    RunStartedData:
+      type: object
+      required: [runner, model, kind, tier]
+      properties:
+        runner:
+          type: string
+        model:
+          type: string
+        effort:
+          type: string
+        kind:
+          type: string
+        tier:
+          type: integer
+        trigger:
+          $ref: "#/components/schemas/RunTrigger"
+
+    RunFailedData:
+      type: object
+      required: [result_status, error]
+      properties:
+        result_status:
+          $ref: "#/components/schemas/RunResultStatus"
+        error:
+          type: string
+
+    RunFallbackData:
+      type: object
+      description: runner와 model은 `runner/model` 형식. effort는 유지된다.
+      required: [from, to, reason]
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        reason:
+          type: string
+          description: "`unavailable`, 또는 일치한 초기 실패."
+      examples:
+        - from: codex/gpt-6-luna
+          to: claude/claude-sonnet-5
+          reason: unavailable
+
+    UnknownFilesData:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnknownFile"
+
+    FlowWaitingData:
+      type: object
+      description: >-
+        답해야 할 사람 결정(`decision`), 또는 flow가 진행할 수 없는 이유.
+        예: 쓸 수 있는 runner가 없으면 `no_runner`.
+      properties:
+        decision:
+          $ref: "#/components/schemas/PendingDecision"
+        reason:
+          type: string
+      examples:
+        - decision:
+            id: q1
+            run: 2
+            question:
+              kind: choice
+              prompt: state.md 보정에 실패했습니다. 어떻게 할까요?
+              options: [retry, next_tier, stop]
+        - reason: no_runner
+
+    MemoryUpdatedData:
+      type: object
+      required: [layer]
+      properties:
+        layer:
+          $ref: "#/components/schemas/MemoryLayer"
+        tokens:
+          type: integer
+
+    SpaceCreatedEvent:
+      type: object
+      required: [type, ts, space, data]
+      properties:
+        type: {type: string, enum: [space.created]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        data: {$ref: "#/components/schemas/SpaceEventData"}
+      examples:
+        - type: space.created
+          ts: "2026-09-24T08:05:00+09:00"
+          space: jobs
+          data: {space: {slug: jobs, title: 지원, repo: null, pages: 0, active_pages: 0}}
+
+    SpaceUpdatedEvent:
+      type: object
+      required: [type, ts, space, data]
+      properties:
+        type: {type: string, enum: [space.updated]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        data: {$ref: "#/components/schemas/SpaceEventData"}
+      examples:
+        - type: space.updated
+          ts: "2026-09-24T08:06:00+09:00"
+          space: jobs
+          data: {space: {slug: jobs, title: 지원 2026, repo: null, pages: 1, active_pages: 0}}
+
+    SpaceDeletedEvent:
+      type: object
+      required: [type, ts, space, data]
+      properties:
+        type: {type: string, enum: [space.deleted]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        data: {$ref: "#/components/schemas/DeletedRef"}
+      examples:
+        - type: space.deleted
+          ts: "2026-09-24T10:00:00+09:00"
+          space: old
+          data: {id: old}
+
+    PageCreatedEvent:
+      type: object
+      required: [type, ts, space, page, data]
+      properties:
+        type: {type: string, enum: [page.created]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        data: {$ref: "#/components/schemas/PageEventData"}
+      examples:
+        - type: page.created
+          ts: "2026-09-24T08:10:00+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          data:
+            page: {id: 2026-09-24-resume, space: jobs, title: 이력서, kind: build, status: planning, created: "2026-09-24T08:10:00+09:00", updated: "2026-09-24T08:10:00+09:00", pinned: false, tags: [], preview: null, block_counts: {}, first_view: null}
+
+    PageUpdatedEvent:
+      type: object
+      required: [type, ts, space, page, data]
+      properties:
+        type: {type: string, enum: [page.updated]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        data: {$ref: "#/components/schemas/PageEventData"}
+      examples:
+        - type: page.updated
+          ts: "2026-09-24T09:31:41+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          data:
+            page:
+              id: 2026-09-24-resume
+              space: jobs
+              title: 이력서
+              kind: build
+              status: review
+              updated: "2026-09-24T09:31:41+09:00"
+              pinned: true
+              tags: [이력서]
+              preview: work 순서를 바꿨습니다. 펄어비스 경력이 맨 위입니다.
+              block_counts: {message: 9, view: 1, data: 2, run: 2}
+              last_run: {n: 2, runner: codex, model: gpt-6-luna, result_status: review}
+              first_view: b04
+
+    PageDeletedEvent:
+      type: object
+      required: [type, ts, space, page, data]
+      properties:
+        type: {type: string, enum: [page.deleted]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        data: {$ref: "#/components/schemas/DeletedRef"}
+      examples:
+        - type: page.deleted
+          ts: "2026-09-23T18:02:11+09:00"
+          space: jobs
+          page: 2026-09-20-cover-letter
+          data: {id: 2026-09-20-cover-letter}
+
+    BlockAddedEvent:
+      type: object
+      required: [type, ts, space, page, block, data]
+      properties:
+        type: {type: string, enum: [block.added]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        block: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/BlockEventData"}
+      examples:
+        - type: block.added
+          ts: "2026-09-24T09:31:41+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          block: b09
+          run: 2
+          data:
+            block: {id: b09, type: message, role: agent, ts: "2026-09-24T09:31:41+09:00", run: 2, text: work 순서를 바꿨습니다. 펄어비스 경력이 맨 위입니다.}
+
+    BlockUpdatedEvent:
+      type: object
+      required: [type, ts, space, page, block, data]
+      properties:
+        type: {type: string, enum: [block.updated]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        block: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/BlockEventData"}
+      examples:
+        - type: block.updated
+          ts: "2026-09-24T09:35:00+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          block: b04
+          data:
+            block: {id: b04, type: view, file: blocks/b04-resume.view.md, title: 이력서, created_by: run 1, template: resume@1, bindings: {base: b05}, presets: {기본: {base: b05}, 펄어비스: {base: b05, overlay: b06}}, active_preset: 기본, theme: {color.accent: "#3a5bd9"}}
+
+    BlockDeletedEvent:
+      type: object
+      required: [type, ts, space, page, block, data]
+      properties:
+        type: {type: string, enum: [block.deleted]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        block: {type: string}
+        data: {$ref: "#/components/schemas/DeletedRef"}
+      examples:
+        - type: block.deleted
+          ts: "2026-09-24T09:40:00+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          block: b06
+          data: {id: b06}
+
+    RunStartedEvent:
+      type: object
+      required: [type, ts, space, page, run, data]
+      properties:
+        type: {type: string, enum: [run.started]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/RunStartedData"}
+      examples:
+        - type: run.started
+          ts: "2026-09-24T09:31:00+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          run: 2
+          data:
+            runner: codex
+            model: gpt-6-luna
+            effort: high
+            kind: small
+            tier: 1
+            trigger: {message: b07, target: b04, elements: ["work[1]"], mode: edit}
+
+    RunAssembledEvent:
+      type: object
+      required: [type, ts, space, page, run, data]
+      properties:
+        type: {type: string, enum: [run.assembled]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/RunInput"}
+      examples:
+        - type: run.assembled
+          ts: "2026-09-24T09:31:01+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          run: 2
+          data:
+            parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+            total_est: 29230
+
+    RunProgressEvent:
+      type: object
+      required: [type, ts, space, page, run, data]
+      properties:
+        type: {type: string, enum: [run.progress]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/RunStreamEvent"}
+      examples:
+        - type: run.progress
+          ts: "2026-09-24T09:31:12+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          run: 2
+          data: {type: file_changed, path: blocks/b05-base.json}
+
+    RunFinishedEvent:
+      type: object
+      required: [type, ts, space, page, run, data]
+      properties:
+        type: {type: string, enum: [run.finished]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/RunRecord"}
+      examples:
+        - type: run.finished
+          ts: "2026-09-24T09:31:41+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          run: 2
+          data:
+            n: 2
+            started: "2026-09-24T09:31:00+09:00"
+            finished: "2026-09-24T09:31:41+09:00"
+            kind: small
+            tier: 1
+            runner: codex
+            model: gpt-6-luna
+            effort: high
+            usage: {input: 29104, cached: 24310, output: 612}
+            changed_files: [blocks/b05-base.json]
+            unknown_files: []
+            verify: {cmd: null, ok: null}
+            result_status: review
+            commit: a1b2c3d
+            events_log: runs/2.events.jsonl
+
+    RunFailedEvent:
+      type: object
+      required: [type, ts, space, page, run, data]
+      properties:
+        type: {type: string, enum: [run.failed]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/RunFailedData"}
+      examples:
+        - type: run.failed
+          ts: "2026-09-24T09:36:00+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          run: 3
+          data: {result_status: cancelled, error: cancelled}
+
+    RunFallbackEvent:
+      type: object
+      required: [type, ts, space, page, data]
+      properties:
+        type: {type: string, enum: [run.fallback]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/RunFallbackData"}
+      examples:
+        - type: run.fallback
+          ts: "2026-09-24T09:31:00+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          run: 2
+          data: {from: codex/gpt-6-luna, to: claude/claude-sonnet-5, reason: unavailable}
+
+    PageUnknownFilesEvent:
+      type: object
+      required: [type, ts, space, page, data]
+      properties:
+        type: {type: string, enum: [page.unknown_files]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/UnknownFilesData"}
+      examples:
+        - type: page.unknown_files
+          ts: "2026-09-24T09:31:41+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          run: 2
+          data:
+            files: [{path: blocks/notes.txt, run: 2}]
+
+    FlowWaitingEvent:
+      type: object
+      required: [type, ts, space, page, data]
+      properties:
+        type: {type: string, enum: [flow.waiting]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/FlowWaitingData"}
+      examples:
+        - type: flow.waiting
+          ts: "2026-09-24T09:32:05+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          run: 2
+          data:
+            decision:
+              id: q1
+              run: 2
+              question:
+                kind: choice
+                prompt: state.md 보정에 실패했습니다. 어떻게 할까요?
+                options: [retry, next_tier, stop]
+
+    MemoryUpdatedEvent:
+      type: object
+      required: [type, ts, data]
+      properties:
+        type: {type: string, enum: [memory.updated]}
+        ts: {type: string, format: date-time}
+        space: {type: string}
+        page: {type: string}
+        data: {$ref: "#/components/schemas/MemoryUpdatedData"}
+      examples:
+        - type: memory.updated
+          ts: "2026-09-24T09:31:41+09:00"
+          space: jobs
+          page: 2026-09-24-resume
+          data: {layer: state, tokens: 212}
+
+    RunnerAvailabilityEvent:
+      type: object
+      required: [type, ts, data]
+      properties:
+        type: {type: string, enum: [runner.availability]}
+        ts: {type: string, format: date-time}
+        data: {$ref: "#/components/schemas/RunnerAvailability"}
+      examples:
+        - type: runner.availability
+          ts: "2026-09-24T09:30:12+09:00"
+          data:
+            checked: "2026-09-24T09:30:12+09:00"
+            runners:
+              - {name: claude, available: true, auth: subscription, reason: null}
+              - {name: codex, available: false, auth: subscription, reason: not logged in}
