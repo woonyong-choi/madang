@@ -85,7 +85,7 @@ class AppViewModel(private val deps: AppDependencies, private val scope: Corouti
         val core = client ?: return
         val events = EventStream(deps.eventTransport(core))
         val newPageTitle = stringsFor(_language.value).navigator.untitledPage
-        val viewModel = MainViewModel(core, events, sessionScope, newPageTitle)
+        val viewModel = MainViewModel(core, events, sessionScope, newPageTitle, deps.settings)
         main = viewModel
         _screen.value = Screen.Main(viewModel)
     }

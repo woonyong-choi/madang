@@ -3,6 +3,7 @@ package madang.shared.main
 import kotlin.time.Duration
 import madang.api.model.PageCard
 import madang.api.model.PageDetail
+import madang.api.model.RunStreamEvent
 import madang.api.model.Space
 
 /** 이벤트 연결 상태. */
@@ -26,12 +27,14 @@ data class PendingMessage(val localId: String, val text: String, val messageId: 
  * 3열에 열린 페이지.
  *
  * @property contents doc·data 블록 id별 파일 내용.
+ * @property runEvents run 탭에서 읽은 run 번호별 이벤트 로그.
  * @property pending 낙관적으로 붙인 메시지. core 페이지에 같은 블록이 생기면 빠진다.
  * @property answered 답을 보낸 사람 결정 id. flow가 다시 돌거나 새 질문이 오면 지운다.
  */
 data class OpenPage(
     val detail: PageDetail,
     val contents: Map<String, String> = emptyMap(),
+    val runEvents: Map<Int, List<RunStreamEvent>> = emptyMap(),
     val pending: List<PendingMessage> = emptyList(),
     val answered: String? = null
 ) {
@@ -56,12 +59,13 @@ data class OpenPage(
 }
 
 /**
- * 레이어 0 상태.
+ * 메인 화면 상태(3열과 가운데 열의 탭).
  *
  * @property source 1열에서 고른 공간 또는 태그. 2열이 이것을 보여 준다.
  * @property focusSpace 공간 포커스. 있으면 1열에 그 공간과 하위만 보인다.
  * @property selectedPage 2열에서 고른 페이지. [page]는 그 페이지를 불러온 결과다.
  * @property pane 키보드 포커스가 있는 열.
+ * @property tabs 열린 페이지의 가운데 열 탭 세트.
  * @property toggled 접힘 규칙과 반대로 둔 본문 항목의 key.
  * @property activeRuns 페이지 id별 진행 중인 run.
  * @property unknownFilesOpen 열린 페이지의 미등록 파일 목록을 펼쳤다.
@@ -80,6 +84,7 @@ data class MainState(
     val filter: PageFilter = PageFilter(),
     val selectedPage: String? = null,
     val page: OpenPage? = null,
+    val tabs: TabSet = TabSet(),
     val pane: Pane = Pane.SPACES,
     val expandAll: Boolean = false,
     val toggled: Set<String> = emptySet(),
@@ -91,6 +96,9 @@ data class MainState(
     val tagRows: List<TagRow> get() = tagRows(cards, expandedTags)
 
     val listCards: List<PageCard> get() = visibleCards(cards, spaces, source, filter)
+
+    /** 입력창이 보낼 곳. 활성 탭을 따른다. */
+    val sendTarget: SendTarget? get() = page?.let { sendTarget(it.detail, tabs) }
 
     /** 1열에서 위아래로 오가는 순서. 공간 다음에 태그. */
     val navItems: List<ListSource>

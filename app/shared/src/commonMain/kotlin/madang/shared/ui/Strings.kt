@@ -55,7 +55,8 @@ data class Strings(
     val eventsRetrying: String,
     val spaces: String,
     val navigator: NavigatorStrings,
-    val page: PageStrings
+    val page: PageStrings,
+    val tabs: TabStrings
 )
 
 val KoreanStrings = Strings(
@@ -116,7 +117,8 @@ val KoreanStrings = Strings(
     eventsRetrying = "이벤트 재연결 대기",
     spaces = "공간",
     navigator = KoreanNavigatorStrings,
-    page = KoreanPageStrings
+    page = KoreanPageStrings,
+    tabs = KoreanTabStrings
 )
 
 val EnglishStrings = KoreanStrings.copy(
@@ -177,7 +179,8 @@ val EnglishStrings = KoreanStrings.copy(
     eventsRetrying = "Waiting to reconnect",
     spaces = "Spaces",
     navigator = EnglishNavigatorStrings,
-    page = EnglishPageStrings
+    page = EnglishPageStrings,
+    tabs = EnglishTabStrings
 )
 
 fun stringsFor(language: Language): Strings = when (language) {

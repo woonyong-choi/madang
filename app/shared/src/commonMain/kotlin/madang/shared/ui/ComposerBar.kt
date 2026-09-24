@@ -47,14 +47,17 @@ class ComposerActions(
 )
 
 /**
- * 3열 아래 입력창: 대상("페이지에게"), 문장, 다음 호출 입력 토큰 추정, 보내기.
+ * 가운데 열 아래 입력창: 대상(활성 탭. "페이지에게" 또는 "[블록 이름]에게"), 문장, 다음 호출
+ * 입력 토큰 추정, 보내기.
  *
- * Enter와 Cmd/Ctrl+Enter로 보내고 Shift+Enter로 줄을 바꾼다. 첫 단어가 종류 이름의 앞부분이면
- * 접두어 후보가 뜨고 Tab이나 클릭으로 채운다.
+ * Enter와 Cmd/Ctrl+Enter로 보내고 Shift+Enter로 줄을 바꾼다. 한글처럼 입력기가 글자를 조합하는
+ * 중에 누른 Enter는 조합 확정이라 보내지 않는다. 첫 단어가 종류 이름의 앞부분이면 접두어 후보가
+ * 뜨고 Tab이나 클릭으로 채운다.
  */
 @Composable
 fun ComposerBar(state: ComposerState, actions: ComposerActions, modifier: Modifier = Modifier) {
     val strings = LocalStrings.current.page
+    val target = state.target?.blockName?.let(LocalStrings.current.tabs.toBlock) ?: strings.toPage
     var field by remember(state.page) { mutableStateOf(TextFieldValue(state.text)) }
     if (field.text != state.text) {
         field = TextFieldValue(state.text, TextRange(state.text.length))
@@ -84,7 +87,7 @@ fun ComposerBar(state: ComposerState, actions: ComposerActions, modifier: Modifi
             verticalAlignment = Alignment.Bottom
         ) {
             Text(
-                strings.toPage,
+                target,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(end = 10.dp, bottom = 8.dp)
@@ -122,7 +125,8 @@ fun ComposerBar(state: ComposerState, actions: ComposerActions, modifier: Modifi
                                 enter = event.key == Key.Enter || event.key == Key.NumPadEnter,
                                 tab = event.key == Key.Tab,
                                 shift = event.isShiftPressed,
-                                hasSuggestions = suggestions.isNotEmpty()
+                                hasSuggestions = suggestions.isNotEmpty(),
+                                composing = field.composition != null
                             )
                             when (key) {
                                 ComposerKey.SEND -> actions.send()

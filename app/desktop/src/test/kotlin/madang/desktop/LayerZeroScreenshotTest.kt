@@ -28,6 +28,7 @@ import madang.desktop.fake.FakeCore
 import madang.desktop.fake.FixtureHome
 import madang.shared.core.CoreClient
 import madang.shared.core.EventStream
+import madang.shared.main.BlockTab
 import madang.shared.main.FlowItem
 import madang.shared.main.ListSource
 import madang.shared.main.MainState
@@ -44,8 +45,8 @@ import org.jetbrains.skia.EncodedImageFormat
  * 픽스처 앱 홈으로 레이어 0을 화면 밖에서 그려 PNG로 남긴다.
  *
  * 넓은 창(3열), 좁은 창(목록 + 본문 2열), 더 좁은 창(본문 1열)과, 메시지를 보내 run 카드가 붙고
- * 미등록 파일 띠·사람 결정 카드·메모리 검사 오류가 보이는 화면을 그린다. 결과는
- * `madang.screenshotDir`(기본 `build/screenshots`)에 쓴다.
+ * 미등록 파일 띠·사람 결정 카드·메모리 검사 오류가 보이는 화면, 가운데 열의 페이지 탭과 run 탭을
+ * 그린다. 결과는 `madang.screenshotDir`(기본 `build/screenshots`)에 쓴다.
  */
 class LayerZeroScreenshotTest {
 
@@ -203,6 +204,26 @@ class LayerZeroScreenshotTest {
 
         val file = render("decision-memory", 1440, 900, viewModel)
         assertTrue(file.length() > 10_000, file.path)
+    }
+
+    @Test
+    fun centerColumnShowsPageAndRunTabs() {
+        val viewModel = viewModel()
+        viewModel.await { it.loaded }
+        viewModel.show("jobs", RESUME, Pane.PAGE)
+        val flow = checkNotNull(viewModel.state.value.page).flowItems
+        viewModel.openItem(flow.first { it.key == "b05" })
+        viewModel.openItem(flow.first { it.key == "run-2" })
+        viewModel.activateTab(null)
+        val page = render("tabs-page", 1440, 900, viewModel)
+
+        viewModel.openItem(flow.first { it.key == "run-2" })
+        val withEvents = viewModel.await { it.page?.runEvents?.get(2)?.isNotEmpty() == true }
+        assertEquals(listOf(BlockTab.Block("b05"), BlockTab.Run(2)), withEvents.tabs.tabs)
+        assertEquals(BlockTab.Run(2), withEvents.tabs.active)
+        val run = render("tabs-run", 1440, 900, viewModel)
+
+        for (file in listOf(page, run)) assertTrue(file.length() > 10_000, file.path)
     }
 
     private companion object {

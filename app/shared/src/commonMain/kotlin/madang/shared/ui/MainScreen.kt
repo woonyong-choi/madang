@@ -46,13 +46,15 @@ import madang.shared.main.MainState
 import madang.shared.main.MainViewModel
 import madang.shared.main.NavKey
 import madang.shared.main.Pane
+import madang.shared.main.TabKey
 import madang.shared.main.visiblePanes
 
 /**
- * 메인 화면: 레이어 0의 3열(공간 / 페이지 목록 / 페이지 본문)과 아래 상태 줄.
+ * 메인 화면: 3열(공간 / 페이지 목록 / 탭이 있는 가운데 열)과 아래 상태 줄.
  *
  * 입력창이나 메모리 편집기에 포커스가 있으면 글자·화살표 키는 그쪽이 받고, Cmd/Ctrl 단축키와
- * Esc만 화면이 받는다.
+ * Esc만 화면이 받는다. 탭 단축키: Cmd/Ctrl+W 탭 닫기, Cmd/Ctrl+Shift+]/[ 다음/이전 탭,
+ * Cmd/Ctrl+1 페이지 탭, Esc 페이지 탭으로.
  */
 @Composable
 fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
@@ -63,6 +65,7 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
     val focus = remember { FocusRequester() }
     var dialog by remember { mutableStateOf<MainDialog?>(null) }
     var editing by remember { mutableStateOf(false) }
+    var drawerOpen by remember { mutableStateOf(true) }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val drag = remember(viewModel) {
         DragDropState { card, target ->
@@ -98,6 +101,13 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
                             if (editing) focus.requestFocus()
                             viewModel.onKey(shortcut.key)
                         }
+
+                        is Shortcut.Tab -> true.also {
+                            viewModel.onTabKey(shortcut.key)
+                            if (shortcut.key == TabKey.PAGE && shortcut.focusPage) {
+                                viewModel.focusPane(Pane.PAGE)
+                            }
+                        }
                     }
                 }
         ) {
@@ -129,6 +139,12 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
                                 pageActions(
                                     viewModel,
                                     panes,
+                                    TabActions(
+                                        activate = viewModel::activateTab,
+                                        close = viewModel::closeTab,
+                                        drawerOpen = drawerOpen,
+                                        toggleDrawer = { drawerOpen = !drawerOpen }
+                                    ),
                                     onEditing = { editing = it },
                                     onEscape = { focus.requestFocus() }
                                 ),
@@ -190,11 +206,14 @@ private fun spacesActions(
 private fun pageActions(
     viewModel: MainViewModel,
     panes: List<Pane>,
+    tabs: TabActions,
     onEditing: (Boolean) -> Unit,
     onEscape: () -> Unit
 ) = PageActions(
     toggleExpandAll = viewModel::toggleExpandAll,
     toggleFold = viewModel::toggleFold,
+    openItem = viewModel::openItem,
+    tabs = tabs,
     cancelRun = viewModel::cancelRun,
     back = { viewModel.focusPane(Pane.LIST) }.takeIf { Pane.LIST !in panes },
     toggleMemory = viewModel::toggleMemory,
@@ -238,6 +257,9 @@ private sealed interface Shortcut {
     data object CloseMemory : Shortcut
 
     data class Nav(val key: NavKey) : Shortcut
+
+    /** 탭 동작. [focusPage]면 가운데 열로 키보드 포커스도 옮긴다(Cmd/Ctrl+1). */
+    data class Tab(val key: TabKey, val focusPage: Boolean = false) : Shortcut
 }
 
 /**
@@ -252,16 +274,26 @@ private fun shortcut(event: KeyEvent, editing: Boolean, memoryOpen: Boolean): Sh
         command && event.key == Key.K -> Shortcut.Search
         event.key == Key.Escape && memoryOpen -> Shortcut.CloseMemory
         editing && !command -> null
+        plain && event.key == Key.Escape -> Shortcut.Tab(TabKey.PAGE)
         plain && event.key == Key.M -> Shortcut.Memory
+        command -> tabKey(event) ?: navKey(event)?.let(Shortcut::Nav)
         else -> navKey(event)?.let(Shortcut::Nav)
     }
 }
 
-/** 키 입력을 레이어 0 동작으로. 입력이 없는 키는 null. */
+/** Cmd/Ctrl 키 입력을 탭 동작으로. 탭 단축키가 아니면 null. */
+private fun tabKey(event: KeyEvent): Shortcut.Tab? = when {
+    event.key == Key.W && !event.isShiftPressed -> Shortcut.Tab(TabKey.CLOSE)
+    event.key == Key.RightBracket && event.isShiftPressed -> Shortcut.Tab(TabKey.NEXT)
+    event.key == Key.LeftBracket && event.isShiftPressed -> Shortcut.Tab(TabKey.PREVIOUS)
+    event.key == Key.One && !event.isShiftPressed -> Shortcut.Tab(TabKey.PAGE, focusPage = true)
+    else -> null
+}
+
+/** 키 입력을 레이어 0 동작으로. 입력이 없는 키는 null. Cmd/Ctrl+1은 탭 단축키가 쓴다. */
 private fun navKey(event: KeyEvent): NavKey? {
     if (event.isMetaPressed || event.isCtrlPressed) {
         return when (event.key) {
-            Key.One -> NavKey.FOCUS_SPACES
             Key.Two -> NavKey.FOCUS_LIST
             Key.Three -> NavKey.FOCUS_PAGE
             Key.N -> NavKey.NEW_PAGE

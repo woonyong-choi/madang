@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import madang.api.client.BlocksApi
 import madang.api.client.DecisionsApi
@@ -44,6 +45,7 @@ import madang.api.model.SpaceDeletedEvent
 import madang.api.model.SpaceSort
 import madang.api.model.SpaceUpdate
 import madang.api.model.SpaceUpdatedEvent
+import madang.api.model.Target
 import madang.api.model.UnknownFile
 import madang.api.model.UnknownFileAction
 import madang.shared.core.CoreClient
@@ -52,23 +54,29 @@ import madang.shared.core.EventStream
 import madang.shared.core.EventStreamItem
 import madang.shared.core.bodyOrThrow
 import madang.shared.core.resolveUnknownFile
+import madang.shared.settings.AppSettingsStore
+import madang.shared.settings.InMemorySettingsStore
 
 /**
- * 레이어 0(공간 / 페이지 목록 / 페이지 본문).
+ * 메인 화면(공간 / 페이지 목록 / 가운데 열).
  *
  * 연결이 열릴 때마다 공간과 모든 페이지 카드를 다시 받고, 이후에는 이벤트로 고친다.
  * 사용자 조작은 core에 요청하고 core의 응답(수정된 공간·카드)으로 상태를 고친다. 응답과 같은
  * 내용의 이벤트가 다시 와도 id로 덮어쓰므로 결과가 같다. 낙관적 갱신은 보낸 메시지뿐이다.
  *
- * 입력창([composer]), 메모리 패널([memory]), 최근 삭제([trash])는 열린 페이지를 따라간다.
+ * 가운데 열은 페이지 탭과 doc·data·run 탭이다. 탭 세트는 페이지마다 앱 설정에 저장해 두고
+ * 페이지를 열 때 되살린다. 입력창([composer])은 활성 탭에게 보내고, 메모리 패널([memory])과
+ * 최근 삭제([trash])는 열린 페이지를 따라간다.
  *
  * @param newPageTitle 새 페이지의 처음 제목.
+ * @param settings 페이지별 탭 세트를 저장하는 앱 설정.
  */
 class MainViewModel(
     private val core: CoreClient,
     events: EventStream,
     private val scope: CoroutineScope,
     private val newPageTitle: String = "Untitled",
+    private val settings: AppSettingsStore = InMemorySettingsStore(),
     private val timeSource: TimeSource = TimeSource.Monotonic
 ) {
     private val _state = MutableStateFlow(MainState(baseUrl = core.baseUrl))
@@ -90,6 +98,9 @@ class MainViewModel(
         scope.launch { events.items().collect(::onItem) }
         scope.launch {
             state.map { it.page?.detail?.id }.distinctUntilChanged().collect(::onOpenPageChanged)
+        }
+        scope.launch {
+            state.map { it.sendTarget }.distinctUntilChanged().collect(composer::setTarget)
         }
     }
 
@@ -143,6 +154,30 @@ class MainViewModel(
         loadPage(id)
     }
 
+    /** 흐름 항목을 클릭했다. doc·data·run이면 탭을 연다(이미 열려 있으면 그 탭으로). */
+    fun openItem(item: FlowItem) {
+        tabFor(item)?.let(::openTab)
+    }
+
+    fun openTab(tab: BlockTab) {
+        updateTabs { it.open(tab) }
+        if (tab is BlockTab.Run) _state.value.page?.detail?.id?.let { loadRunEvents(it, tab.n) }
+    }
+
+    /** 탭을 고른다. null은 페이지 탭. */
+    fun activateTab(tab: BlockTab?) = updateTabs { it.activate(tab) }
+
+    fun closeTab(tab: BlockTab) = updateTabs { it.close(tab) }
+
+    fun onTabKey(key: TabKey) = updateTabs {
+        when (key) {
+            TabKey.CLOSE -> it.closeActive()
+            TabKey.NEXT -> it.next()
+            TabKey.PREVIOUS -> it.previous()
+            TabKey.PAGE -> it.activate(null)
+        }
+    }
+
     fun toggleExpandAll() = _state.update {
         it.copy(expandAll = !it.expandAll, toggled = emptySet())
     }
@@ -162,6 +197,7 @@ class MainViewModel(
                     source = state.source as? ListSource.InSpace ?: ListSource.InSpace(space),
                     selectedPage = created.id,
                     page = OpenPage(created),
+                    tabs = TabSet(),
                     pane = Pane.PAGE
                 )
             }
@@ -217,15 +253,20 @@ class MainViewModel(
         request { runsApi.cancelRun(run.page, run.n).bodyOrThrow() }
     }
 
-    /** 입력창의 문장을 열린 페이지에 보낸다. 메시지는 core 응답 전에 본문 끝에 붙인다. */
+    /**
+     * 입력창의 문장을 활성 탭(페이지 또는 블록)에게 보낸다. 메시지는 core 응답 전에 본문 끝에
+     * 붙인다.
+     */
     fun send() {
-        val page = _state.value.page?.detail?.id ?: return
-        val text = composer.take() ?: return
+        if (_state.value.page == null) return
+        val (target, text) = composer.take() ?: return
+        val page = target.page
+        val message = MessageCreate(text, target = target.block?.let { Target(block = it) })
         val pending = PendingMessage("pending-${++pendingCount}", text)
         updateOpen(page) { it.copy(pending = it.pending + pending) }
         scope.launch {
             try {
-                val accepted = messagesApi.sendMessage(page, MessageCreate(text)).bodyOrThrow()
+                val accepted = messagesApi.sendMessage(page, message).bodyOrThrow()
                 updateOpen(page) { it.withAccepted(pending.localId, accepted.message) }
             } catch (e: CancellationException) {
                 throw e
@@ -280,7 +321,6 @@ class MainViewModel(
     }
 
     private fun onOpenPageChanged(page: String?) {
-        composer.setPage(page)
         _state.update { it.copy(unknownFilesOpen = false) }
         if (!memory.state.value.isOpen) return
         if (page == null) memory.close() else memory.open(page)
@@ -344,22 +384,63 @@ class MainViewModel(
         if (page != null && _state.value.page?.detail?.id == page) loadPage(page)
     }
 
-    /** 페이지와 doc·data 블록 내용을 불러온다. 그사이 다른 페이지를 골랐으면 버린다. */
+    /**
+     * 페이지와 doc·data 블록 내용을 불러온다. 그사이 다른 페이지를 골랐으면 버린다. 새로 여는
+     * 페이지면 저장해 둔 탭 세트를 되살리고, 사라진 블록·run의 탭은 닫는다. 열린 run 탭의
+     * 이벤트 로그도 다시 받는다.
+     */
     private fun loadPage(id: String) = request {
         val detail = pagesApi.getPage(id).bodyOrThrow()
         if (_state.value.selectedPage != id) return@request
-        _state.update { state ->
+        val tabs = _state.updateAndGet { state ->
             val open = state.page?.takeIf { it.detail.id == id }
             val toggled = if (open != null) state.toggled else emptySet()
-            state.copy(page = open?.withDetail(detail) ?: OpenPage(detail), toggled = toggled)
-        }
+            val tabs = if (open != null) state.tabs else savedTabs(id)
+            state.copy(
+                page = open?.withDetail(detail) ?: OpenPage(detail),
+                tabs = tabs.retainIn(detail),
+                toggled = toggled
+            )
+        }.tabs
+        saveTabs(id, tabs)
+        tabs.tabs.filterIsInstance<BlockTab.Run>().forEach { loadRunEvents(id, it.n) }
         val contents = detail.blocks
             .filter { it.type == BlockType.DOC || it.type == BlockType.DATA }
             .associate { it.id to blocksApi.getBlock(id, it.id).bodyOrThrow().content }
-        _state.update { state ->
-            val open = state.page?.takeIf { it.detail.id == id } ?: return@update state
-            state.copy(page = open.copy(contents = contents))
+        updateOpen(id) { it.copy(contents = contents) }
+    }
+
+    /** run 탭의 이벤트 로그(`GET /pages/{p}/runs/{n}/events`)를 받는다. */
+    private fun loadRunEvents(page: String, n: Int) = request {
+        val events = runsApi.listRunEvents(page, n).bodyOrThrow()
+        updateOpen(page) { it.copy(runEvents = it.runEvents + (n to events)) }
+    }
+
+    /** 열린 페이지의 탭 세트를 바꾸고 앱 설정에 저장한다. 열린 페이지가 없으면 무시한다. */
+    private fun updateTabs(change: (TabSet) -> TabSet) {
+        val page = _state.value.page?.detail?.id ?: return
+        val next = _state.updateAndGet { state ->
+            if (state.page?.detail?.id == page) state.copy(tabs = change(state.tabs)) else state
         }
+        if (next.page?.detail?.id == page) saveTabs(page, next.tabs)
+    }
+
+    private fun savedTabs(page: String): TabSet = settings.load().pageTabs[page] ?: TabSet()
+
+    /** 페이지 탭만 남은 세트는 기록하지 않는다. 같은 값이면 파일을 다시 쓰지 않는다. */
+    private fun saveTabs(page: String, tabs: TabSet?) {
+        val current = settings.load()
+        val stored = current.pageTabs[page]
+        val next = tabs?.takeIf { it != TabSet() }
+        if (stored == next) return
+        val pageTabs = if (next ==
+            null
+        ) {
+            current.pageTabs - page
+        } else {
+            current.pageTabs + (page to next)
+        }
+        settings.save(current.copy(pageTabs = pageTabs))
     }
 
     /** 열린 페이지가 [page]일 때만 고친다. */
@@ -405,14 +486,18 @@ class MainViewModel(
         state.copy(cards = cards)
     }
 
-    private fun removeCard(id: String) = _state.update { state ->
-        val closing = state.selectedPage == id
-        state.copy(
-            cards = state.cards.filter { it.id != id },
-            selectedPage = state.selectedPage.takeUnless { closing },
-            page = state.page.takeUnless { closing },
-            pane = if (closing && state.pane == Pane.PAGE) Pane.LIST else state.pane
-        )
+    private fun removeCard(id: String) {
+        _state.update { state ->
+            val closing = state.selectedPage == id
+            state.copy(
+                cards = state.cards.filter { it.id != id },
+                selectedPage = state.selectedPage.takeUnless { closing },
+                page = state.page.takeUnless { closing },
+                tabs = if (closing) TabSet() else state.tabs,
+                pane = if (closing && state.pane == Pane.PAGE) Pane.LIST else state.pane
+            )
+        }
+        saveTabs(id, null)
     }
 
     /** core 요청을 띄운다. 실패하면 상태 줄에 원인을 보인다. */

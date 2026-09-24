@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -53,9 +54,18 @@ import madang.api.model.RunRecord
 import madang.shared.main.dataPreview
 import madang.shared.main.instantOrNull
 
-/** 본문의 블록 하나. 접힌 메시지는 한 줄로 줄고, 클릭하면 펼쳐진다. */
+/**
+ * 본문의 블록 하나. 접힌 메시지는 한 줄로 줄고, 클릭하면 펼쳐진다. [onOpen]이 있으면 블록을
+ * 클릭해 탭으로 연다.
+ */
 @Composable
-fun BlockItem(block: BlockHeader, content: String?, folded: Boolean, onToggle: () -> Unit) {
+fun BlockItem(
+    block: BlockHeader,
+    content: String?,
+    folded: Boolean,
+    onToggle: () -> Unit,
+    onOpen: (() -> Unit)? = null
+) {
     when (block.type) {
         BlockType.MESSAGE -> when (block.role) {
             MessageRole.USER -> UserMessage(block.text.orEmpty(), folded, onToggle)
@@ -63,9 +73,9 @@ fun BlockItem(block: BlockHeader, content: String?, folded: Boolean, onToggle: (
             else -> AgentMessage(block.text.orEmpty(), folded, onToggle)
         }
 
-        BlockType.DOC -> DocBlock(block, content)
+        BlockType.DOC -> DocBlock(block, content, onOpen)
 
-        BlockType.DATA -> DataBlock(block, content)
+        BlockType.DATA -> DataBlock(block, content, onOpen)
 
         BlockType.VIEW -> ViewBlock(block)
 
@@ -157,7 +167,7 @@ private fun AgentMessage(text: String, folded: Boolean, onToggle: () -> Unit) {
 
 /** 본문 크기에 맞춘 마크다운. 제목은 본문 열 안에서 과하게 커지지 않게 줄인다. */
 @Composable
-private fun PageMarkdown(text: String) {
+fun PageMarkdown(text: String) {
     val type = MaterialTheme.typography
     Markdown(
         content = text,
@@ -175,11 +185,11 @@ private fun PageMarkdown(text: String) {
 }
 
 @Composable
-private fun DocBlock(block: BlockHeader, content: String?) {
+private fun DocBlock(block: BlockHeader, content: String?, onOpen: (() -> Unit)?) {
     val strings = LocalStrings.current.navigator
     var more by remember(block.id) { mutableStateOf(false) }
     val long = (content?.lines()?.size ?: 0) > DOC_LINES_BEFORE_MORE
-    BlockFrame(Icons.Outlined.Description, block.title ?: block.file ?: block.id) {
+    BlockFrame(Icons.Outlined.Description, block.title ?: block.file ?: block.id, onOpen) {
         Box(
             modifier = Modifier.fillMaxWidth()
                 .then(if (long && !more) Modifier.heightIn(max = 320.dp) else Modifier)
@@ -196,10 +206,10 @@ private fun DocBlock(block: BlockHeader, content: String?) {
 }
 
 @Composable
-private fun DataBlock(block: BlockHeader, content: String?) {
+private fun DataBlock(block: BlockHeader, content: String?, onOpen: (() -> Unit)?) {
     val strings = LocalStrings.current.navigator
     val preview = content?.let { dataPreview(it, csv = block.format == BlockHeader.Format.CSV) }
-    BlockFrame(Icons.Outlined.TableChart, block.title ?: block.file ?: block.id) {
+    BlockFrame(Icons.Outlined.TableChart, block.title ?: block.file ?: block.id, onOpen) {
         if (preview == null) {
             Text(
                 content.orEmpty().take(RAW_PREVIEW_CHARS),
@@ -222,7 +232,7 @@ private fun DataBlock(block: BlockHeader, content: String?) {
 }
 
 @Composable
-private fun TableRow(cells: List<String>, header: Boolean) {
+fun TableRow(cells: List<String>, header: Boolean) {
     Row {
         for (cell in cells) {
             Text(
@@ -278,10 +288,25 @@ private fun OtherBlock(block: BlockHeader) {
 }
 
 @Composable
-private fun BlockFrame(icon: ImageVector, title: String, content: @Composable () -> Unit) {
+private fun BlockFrame(
+    icon: ImageVector,
+    title: String,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    val shape = RoundedCornerShape(8.dp)
     Column(
         modifier = Modifier.fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .then(
+                if (onClick !=
+                    null
+                ) {
+                    Modifier.clip(shape).clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
             .padding(12.dp)
     ) {
         Row(
@@ -304,15 +329,15 @@ private fun BlockFrame(icon: ImageVector, title: String, content: @Composable ()
     }
 }
 
-/** run 한 줄 카드. 펼치면 종류·등급·바뀐 파일·커밋을 보인다. */
+/** run 한 줄 카드. 펼치면 종류·등급·바뀐 파일·커밋을 보인다. 클릭하면 run 탭을 연다. */
 @Composable
-fun RunItem(run: RunRecord, folded: Boolean, onToggle: () -> Unit) {
+fun RunItem(run: RunRecord, folded: Boolean, onOpen: () -> Unit) {
     val strings = LocalStrings.current.navigator
     val colors = MaterialTheme.colorScheme
     Column(
         modifier = Modifier.fillMaxWidth()
             .background(colors.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-            .clickable(onClick = onToggle)
+            .clickable(onClick = onOpen)
             .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

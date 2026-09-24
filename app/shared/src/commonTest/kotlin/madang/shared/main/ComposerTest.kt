@@ -30,6 +30,17 @@ class ComposerTest {
     }
 
     @Test
+    fun enterWhileAnInputMethodIsComposingDoesNotSend() {
+        assertNull(composerKey(enter = true, tab = false, shift = false, false, composing = true))
+        assertNull(composerKey(enter = true, tab = false, shift = true, false, composing = true))
+        assertNull(composerKey(enter = false, tab = true, shift = false, true, composing = true))
+        assertEquals(
+            ComposerKey.SEND,
+            composerKey(enter = true, tab = false, shift = false, false, composing = false)
+        )
+    }
+
+    @Test
     fun enterSendsShiftEnterBreaksTabCompletes() {
         assertEquals(ComposerKey.SEND, composerKey(enter = true, tab = false, shift = false, false))
         assertEquals(

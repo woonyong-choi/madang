@@ -17,8 +17,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -43,14 +41,18 @@ import madang.shared.main.ComposerState
 import madang.shared.main.FlowItem
 import madang.shared.main.MainState
 import madang.shared.main.MemoryState
+import madang.shared.main.OpenPage
 import madang.shared.main.RunActivity
 import madang.shared.main.foldedKeys
 import madang.shared.main.isFoldable
+import madang.shared.main.tabFor
 
-/** 3열 조작. */
+/** 가운데 열 조작. */
 class PageActions(
     val toggleExpandAll: () -> Unit,
     val toggleFold: (String) -> Unit,
+    val openItem: (FlowItem) -> Unit,
+    val tabs: TabActions,
     val cancelRun: () -> Unit,
     val back: (() -> Unit)?,
     val toggleMemory: () -> Unit,
@@ -61,8 +63,9 @@ class PageActions(
 )
 
 /**
- * 3열: 제목과 상태, 미등록 파일 띠, 사람 결정 카드, 블록 흐름, 끝에 진행 중인 run 카드, 아래
- * 입력창. 메모리 패널이 열리면 오른쪽에 붙는다.
+ * 가운데 열: 위에 탭 줄, 가운데 활성 탭 내용, 아래 입력창 하나. 첫 탭 "페이지"는 문서 흐름이고,
+ * 흐름에서 doc·data·run을 클릭하면 같은 이름의 탭이 열린다. 메모리 패널이 열리면 오른쪽에
+ * 붙는다.
  */
 @Composable
 fun PageColumn(
@@ -73,7 +76,7 @@ fun PageColumn(
     modifier: Modifier
 ) {
     Row(modifier = modifier) {
-        PageBody(state, composer, actions, Modifier.weight(1f).fillMaxHeight())
+        CenterColumn(state, composer, actions, Modifier.weight(1f).fillMaxHeight())
         if (memory.isOpen && state.page != null) {
             VerticalDivider()
             MemoryPanel(memory, actions.memory, Modifier.width(MEMORY_WIDTH).fillMaxHeight())
@@ -82,7 +85,7 @@ fun PageColumn(
 }
 
 @Composable
-private fun PageBody(
+private fun CenterColumn(
     state: MainState,
     composer: ComposerState,
     actions: PageActions,
@@ -101,14 +104,28 @@ private fun PageBody(
             }
             return@Column
         }
-        val page = open.detail
+        TabBar(open.detail, state.tabs, actions.tabs, actions.back)
+        HorizontalDivider()
+        val content = Modifier.weight(1f).fillMaxWidth()
+        when (val tab = state.tabs.active) {
+            null -> PageTab(state, open, actions, content)
+            else -> BlockTabContent(open, tab, actions.tabs, content)
+        }
+        HorizontalDivider()
+        ComposerBar(composer, actions.composer)
+    }
+}
+
+/** 페이지 탭: 제목과 상태, 미등록 파일 띠, 사람 결정 카드, 블록 흐름, 끝에 진행 중인 run 카드. */
+@Composable
+private fun PageTab(state: MainState, open: OpenPage, actions: PageActions, modifier: Modifier) {
+    val strings = LocalStrings.current.navigator
+    val page = open.detail
+    Column(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            actions.back?.let {
-                ToolbarIcon(Icons.AutoMirrored.Outlined.ArrowBack, strings.back, it)
-            }
             Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     page.title,
@@ -156,11 +173,17 @@ private fun PageBody(
             items(items, key = { it.key }) { item ->
                 val isFolded = item.key in folded
                 val toggle = { if (isFoldable(item)) actions.toggleFold(item.key) }
+                val openTab = { actions.openItem(item) }
                 when (item) {
-                    is FlowItem.Block ->
-                        BlockItem(item.header, open.contents[item.header.id], isFolded, toggle)
+                    is FlowItem.Block -> BlockItem(
+                        item.header,
+                        open.contents[item.header.id],
+                        isFolded,
+                        toggle,
+                        onOpen = openTab.takeIf { tabFor(item) != null }
+                    )
 
-                    is FlowItem.Run -> RunItem(item.record, isFolded, toggle)
+                    is FlowItem.Run -> RunItem(item.record, isFolded, openTab)
 
                     is FlowItem.Pending -> PendingMessageItem(item.message.text)
                 }
@@ -169,8 +192,6 @@ private fun PageBody(
                 item(key = "active-run") { RunProgressCard(run, actions.cancelRun) }
             }
         }
-        HorizontalDivider()
-        ComposerBar(composer, actions.composer)
     }
 }
 
