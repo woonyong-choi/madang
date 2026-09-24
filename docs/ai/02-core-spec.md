@@ -62,6 +62,8 @@ created: 2026-09-24T08:10:00+09:00
 updated: 2026-09-24T09:40:00+09:00
 pinned: false
 tags: [지원]
+branch: madang/2026-09-24-resume     # 코드 저장소가 있는 공간에서만. 페이지 생성 시 core가 만든다
+worktree: active                      # none | active | archived. archived = worktree 제거됨, 브랜치가 남아 있으면 복원 가능
 blocks:                # 본문 순서. 진실은 이 목록이다
   - b01                # message는 log.md의 항목 id
   - b02
@@ -248,6 +250,16 @@ early_failure:
 - `run` 노드가 조기 실패(위 패턴)를 감지하면 대체로 1회 재실행한다. 이 재실행은 승격(tier)으로 세지 않는다.
 - `review` 종류의 "반대 도구"를 쓸 수 없으면 같은 도구의 다른 모델로 리뷰하고 state.md에 `cross_review: pending`을 남긴다. 반대 도구가 가용해지면 core가 해당 페이지에 재검증 리뷰를 제안한다(사람 결정 카드).
 - 둘 다 불가면 흐름을 멈추고 `flow.waiting {reason: no_runner}`.
+
+### 3.9 페이지와 worktree (Phase C 적용, 규칙은 지금 확정)
+
+페이지는 기억의 단위이고 worktree는 격리의 단위다. 페이지가 worktree를 가진다.
+
+- 코드 저장소가 연결된 공간에서 페이지를 만들면 core가 `git worktree add`로 페이지 전용 브랜치와 worktree를 만든다(`<repo>/.madang-wt/<page-id>/` 또는 설정 경로). 에이전트 실행의 cwd, term·site·code 블록의 cwd는 이 worktree다. 코드가 없는 공간의 페이지는 `branch: null`, `worktree: none`.
+- term·site·code 블록은 페이지 폴더의 파일이다(명령·cwd·프로필·경로·마지막 출력). 탭을 닫아도 블록은 남고, 문서에서 클릭하면 다시 연다. 프로세스가 없으면 "종료됨 · 다시 실행".
+- 브랜치를 병합·삭제하면 core가 worktree를 제거하고 `worktree: archived`로 바꾼다. 페이지와 블록은 남는다. term·site·code 블록은 "보관됨" 표시가 되고, 브랜치가 남아 있으면 "복원"으로 worktree를 다시 만든다.
+- 페이지 카드에 브랜치 이름을 작게 표시한다. code 탭은 main 대비 diff와 PR 상태를 보여준다.
+- 같은 저장소의 다른 페이지가 같은 파일을 고쳐 충돌하면 병합 시점에 사람 결정 카드로 올린다(자동 해결 없음).
 
 ## 4. 흐름 엔진 (LangGraph)
 
