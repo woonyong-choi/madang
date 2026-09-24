@@ -14,7 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** App root: three-column layout (navigation / list / content). */
+/** 앱 루트. 3열(탐색 / 목록 / 본문) 레이아웃. */
 @Composable
 fun MadangApp() {
     MaterialTheme {

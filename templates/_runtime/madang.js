@@ -1,10 +1,10 @@
 /*
- * madang.js - template runtime for Madang views.
+ * madang.js - Madang 화면용 템플릿 런타임.
  *
- * Runs inside the WebView. Renders a template (page.html with data-bind
- * markers) from slot data, tracks which slot every rendered value came from,
- * handles element selection in edit mode and talks to the host app through
- * a pluggable bridge. No dependencies, no network access.
+ * WebView 안에서 실행된다. 슬롯 데이터로 템플릿(data-bind 표시가 있는
+ * page.html)을 그리고, 렌더된 값이 어느 슬롯에서 왔는지 추적하며, 편집 모드의
+ * 요소 선택을 처리하고, 교체 가능한 브리지로 호스트 앱과 통신한다.
+ * 의존성과 네트워크 접근이 없다.
  */
 (function(global) {
   'use strict';
@@ -37,7 +37,7 @@
     markdownRenderer: null,
   };
 
-  // ---------------------------------------------------------------- paths
+  // ---------------------------------------------------------------- 경로
 
   function parsePath(text) {
     const segs = [];
@@ -85,7 +85,7 @@
     return v;
   }
 
-  // ---------------------------------------------------------------- merge
+  // ---------------------------------------------------------------- 병합
 
   function forgetSubtree(origin, prefix) {
     if (prefix === '') {
@@ -113,7 +113,7 @@
     }
   }
 
-  // Objects merge deeply, everything else (arrays included) is replaced whole.
+  // 객체는 깊게 합치고, 그 외(배열 포함)는 통째로 바꾼다.
   function combine(prev, next, slot, segs, origin) {
     if (next === undefined) return prev;
     if (isPlainObject(prev) && isPlainObject(next)) {
@@ -158,18 +158,18 @@
     state.origin = origin;
   }
 
-  // Paths of fixed template text look like "template:<position>".
+  // 템플릿 고정 텍스트의 경로는 "template:<위치>" 꼴이다.
   function isTemplatePath(path) {
     return typeof path === 'string' &&
         path.indexOf(TEMPLATE_SOURCE + ':') === 0;
   }
 
   /**
-   * Returns the slot that supplied the value at a path. The nearest recorded
-   * ancestor wins; fixed template text belongs to the "template" source.
+   * 경로의 값을 공급한 슬롯을 돌려준다. 기록된 가장 가까운 상위 경로가
+   * 우선하며, 템플릿 고정 텍스트의 출처는 "template"이다.
    *
-   * @param {string|!Array<string|number>} path Data path or its segments.
-   * @return {?string} Slot name, "template", or null when nothing matches.
+   * @param {string|!Array<string|number>} path 데이터 경로 또는 그 마디 배열.
+   * @return {?string} 슬롯 이름, "template", 일치하는 것이 없으면 null.
    */
   function sourceOf(path) {
     if (isTemplatePath(path)) return TEMPLATE_SOURCE;
@@ -181,7 +181,7 @@
     return null;
   }
 
-  // ---------------------------------------------------------------- render
+  // ---------------------------------------------------------------- 렌더
 
   function rootElement() {
     return doc.querySelector('[data-madang-root]') || doc.body;
@@ -203,7 +203,7 @@
     return false;
   }
 
-  // Tag elements holding fixed template text with a stable position key.
+  // 템플릿 고정 텍스트를 가진 요소에 안정적인 위치 키를 붙인다.
   function markTemplateText(el, chain) {
     Array.prototype.forEach.call(el.children, (child, i) => {
       const here = chain.concat(i);
@@ -291,7 +291,7 @@
     });
   }
 
-  // data-if keeps the element when the value is truthy, data-unless when not.
+  // data-if는 값이 참일 때, data-unless는 아닐 때 요소를 남긴다.
   function passesConditions(el, scope) {
     if (el.hasAttribute('data-if') &&
         !truthy(valueAt(el.getAttribute('data-if'), scope))) {
@@ -304,7 +304,7 @@
     return true;
   }
 
-  // Fills data-attr-<name> attributes; returns the first bound path.
+  // data-attr-<name> 속성을 채우고 처음 바인딩된 경로를 돌려준다.
   function bindAttributes(el, scope) {
     let firstPath = null;
     Array.prototype.slice.call(el.attributes).forEach((a) => {
@@ -339,7 +339,7 @@
     el.removeAttribute(ATTR_TPL);
   }
 
-  // Gives fixed template text a "template:<position>[@scope]" path.
+  // 템플릿 고정 텍스트에 "template:<위치>[@범위]" 경로를 붙인다.
   function tagTemplateText(el, scope) {
     if (!el.hasAttribute(ATTR_TPL)) return;
     if (!el.hasAttribute(ATTR_PATH)) {
@@ -385,7 +385,7 @@
     });
   }
 
-  // {color: {accent: x}} becomes {'color.accent': x}.
+  // {color: {accent: x}} 는 {'color.accent': x}가 된다.
   function flattenTheme(theme) {
     const flat = {};
     (function walk(obj, prefix) {
@@ -398,7 +398,7 @@
     return flat;
   }
 
-  // Bare numbers for sizes get a px unit.
+  // 크기가 숫자만 있으면 px 단위를 붙인다.
   function cssValue(key, value) {
     if (typeof value === 'number' && /size|width|gap|radius/.test(key)) {
       return value + 'px';
@@ -417,16 +417,16 @@
   }
 
   /**
-   * Renders a template with slot data and a theme. Failures are reported to
-   * the host as an "error" message instead of being thrown.
+   * 슬롯 데이터와 테마로 템플릿을 그린다. 실패는 예외를 던지지 않고
+   * 호스트에 "error" 메시지로 알린다.
    *
-   * @param {?Object} template `{name, version, slots, html?}`. `slots` is an
-   *     array of names, an array of `{name}`, or an ordered object. When
-   *     `html` is given it replaces the current markup.
-   * @param {?Object} data Slot name to JSON value.
-   * @param {?Object} theme Nested style variables, e.g. `{color: {accent}}`.
-   * @param {string=} mode "view" or "edit"; keeps the current mode if absent.
-   * @return {boolean} Whether rendering succeeded.
+   * @param {?Object} template `{name, version, slots, html?}`. `slots`는
+   *     이름 배열, `{name}` 배열, 또는 순서 있는 객체다. `html`을 주면
+   *     현재 마크업을 바꾼다.
+   * @param {?Object} data 슬롯 이름에서 JSON 값으로의 대응.
+   * @param {?Object} theme 중첩된 스타일 변수. 예: `{color: {accent}}`.
+   * @param {string=} mode "view" 또는 "edit". 없으면 현재 모드를 유지한다.
+   * @return {boolean} 렌더 성공 여부.
    */
   function render(template, data, theme, mode) {
     try {
@@ -460,7 +460,7 @@
     }
   }
 
-  // ---------------------------------------------------------------- data edit
+  // ---------------------------------------------------------------- 데이터 편집
 
   function setAt(obj, segs, value) {
     let cur = obj;
@@ -475,14 +475,14 @@
   }
 
   /**
-   * Replaces one value and repaints at once.
+   * 값 하나를 바꾸고 즉시 다시 그린다.
    *
-   * @param {string} path Data path such as `work[1].company`.
-   * @param {*} value New value; it is copied.
-   * @param {string=} slot Slot to write to. Defaults to the slot that
-   *     supplied the current value, then the first slot with data.
-   * @return {?{slot: string, path: string}} Where the value was written, or
-   *     null on failure.
+   * @param {string} path 데이터 경로. 예: `work[1].company`.
+   * @param {*} value 새 값. 복사해서 쓴다.
+   * @param {string=} slot 값을 쓸 슬롯. 기본은 현재 값을 공급한
+   *     슬롯이고, 없으면 데이터가 있는 첫 슬롯이다.
+   * @return {?{slot: string, path: string}} 값을 쓴 위치. 실패하면
+   *     null.
    */
   function patchData(path, value, slot) {
     try {
@@ -510,7 +510,7 @@
     return state.slotOrder.filter((s) => state.data[s] !== undefined)[0];
   }
 
-  // ---------------------------------------------------------------- selection
+  // ---------------------------------------------------------------- 선택
 
   function elementsFor(path) {
     if (!state.root) return [];
@@ -545,7 +545,7 @@
   }
 
   /**
-   * Describes the current selection in the shape of the "selected" message.
+   * 현재 선택을 "selected" 메시지 모양으로 설명한다.
    *
    * @return {{paths: !Array<string>, slots: !Array<?string>,
    *     rects: !Array<?Object>, htmlFragment: string}}
@@ -576,10 +576,10 @@
   }
 
   /**
-   * Highlights the elements rendered for the given paths.
+   * 주어진 경로로 렌더된 요소를 하이라이트한다.
    *
-   * @param {?Array<string>} paths Data paths; duplicates are dropped.
-   * @return {!Object} Selection info, see selectionInfo().
+   * @param {?Array<string>} paths 데이터 경로. 중복은 버린다.
+   * @return {!Object} 선택 정보. selectionInfo() 참고.
    */
   function select(paths) {
     state.selection = (paths || []).filter((p, i, all) => {
@@ -590,22 +590,22 @@
   }
 
   /**
-   * Clears the selection.
+   * 선택을 해제한다.
    *
-   * @return {!Object} Selection info, see selectionInfo().
+   * @return {!Object} 선택 정보. selectionInfo() 참고.
    */
   function clearSelection() {
     return select([]);
   }
 
-  // ---------------------------------------------------------------- mode
+  // ---------------------------------------------------------------- 모드
 
   /**
-   * Switches between view and edit mode. Leaving edit mode clears the
-   * selection and hover.
+   * 보기 모드와 편집 모드를 전환한다. 편집 모드를 벗어나면 선택과 hover를
+   * 지운다.
    *
-   * @param {string} mode "view" or "edit".
-   * @return {string} The mode now in effect.
+   * @param {string} mode "view" 또는 "edit".
+   * @return {string} 현재 적용된 모드.
    */
   function setMode(mode) {
     if (mode !== 'view' && mode !== 'edit') {
@@ -650,7 +650,7 @@
     else onViewClick(e);
   }
 
-  // Click selects, Ctrl/Cmd+click toggles, a click on nothing clears.
+  // 클릭은 선택, Ctrl/Cmd+클릭은 토글, 빈 곳 클릭은 해제한다.
   function onEditClick(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -676,7 +676,7 @@
     else state.selection.push(path);
   }
 
-  // Links are reported to the host instead of being followed.
+  // 링크는 따라가지 않고 호스트에 보고한다.
   function onViewClick(e) {
     const link = e.target && e.target.closest ?
       e.target.closest('a[href]') : null;
@@ -704,11 +704,10 @@
     if (state.mode === 'edit') setHover(null);
   }
 
-  // ---------------------------------------------------------------- bridge
+  // ---------------------------------------------------------------- 브리지
 
-  // Host adapters: window.madangBridge = { post(json) } (KCEF, Android, iOS).
-  // Without one, messages go out via window.postMessage and a "madang"
-  // CustomEvent.
+  // 호스트 어댑터: window.madangBridge = { post(json) } (KCEF, Android, iOS).
+  // 없으면 window.postMessage와 "madang" CustomEvent로 내보낸다.
   function post(type, payload) {
     const msg = {source: 'madang', type: type, payload: payload || {}};
     const bridge = state.bridge || global.madangBridge;
@@ -725,10 +724,10 @@
   }
 
   /**
-   * Replaces the bridge used to send messages to the host.
+   * 호스트로 메시지를 보내는 브리지를 바꾼다.
    *
-   * @param {?{post: function(string)}} adapter Receives each message as a
-   *     JSON string; null falls back to window.madangBridge or postMessage.
+   * @param {?{post: function(string)}} adapter 각 메시지를 JSON
+   *     문자열로 받는다. null이면 window.madangBridge나 postMessage로 되돌아간다.
    */
   function setBridge(adapter) {
     state.bridge = adapter || null;
@@ -739,16 +738,16 @@
     post('error', {message: message});
   }
 
-  // ---------------------------------------------------------------- markdown
+  // ---------------------------------------------------------------- 마크다운
 
   /**
-   * Renders a markdown block into a target element. Until a renderer is set
-   * with setMarkdownRenderer() the source is shown as preformatted text.
+   * 마크다운 블록을 대상 요소에 그린다. setMarkdownRenderer()로 렌더러를
+   * 붙이기 전에는 원문을 서식 없는 텍스트로 보여 준다.
    *
-   * @param {string} source Markdown source.
-   * @param {{target: (?Element|undefined)}=} options Target element; the
-   *     render root by default. Also passed to the renderer.
-   * @return {boolean} Whether rendering succeeded.
+   * @param {string} source 마크다운 원문.
+   * @param {{target: (?Element|undefined)}=} options 대상 요소. 기본은
+   *     렌더 루트. 렌더러에도 전달한다.
+   * @return {boolean} 렌더 성공 여부.
    */
   function renderMarkdown(source, options) {
     options = options || {};
@@ -773,16 +772,16 @@
   }
 
   /**
-   * Plugs in a markdown renderer.
+   * 마크다운 렌더러를 붙인다.
    *
-   * @param {?function(string, !Object): (?Node|string)} fn Returns a node or
-   *     an HTML string; anything other than a function removes the renderer.
+   * @param {?function(string, !Object): (?Node|string)} fn 노드 또는
+   *     HTML 문자열을 돌려준다. 함수가 아닌 값을 주면 렌더러를 뗀다.
    */
   function setMarkdownRenderer(fn) {
     state.markdownRenderer = typeof fn === 'function' ? fn : null;
   }
 
-  // ---------------------------------------------------------------- style
+  // ---------------------------------------------------------------- 스타일
 
   const CSS = [
     '.' + CLASS_SELECTED +
@@ -806,7 +805,7 @@
     (doc.head || doc.documentElement).appendChild(el);
   }
 
-  // ---------------------------------------------------------------- boot
+  // ---------------------------------------------------------------- 시작
 
   function boot() {
     if (state.ready) return;

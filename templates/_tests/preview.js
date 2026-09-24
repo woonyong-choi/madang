@@ -1,4 +1,4 @@
-// Regenerates <template>/preview.png from each template's sample data.
+// 각 템플릿의 sample 데이터로 <template>/preview.png를 다시 만든다.
 const path = require('path');
 const {chromium} = require('@playwright/test');
 const {TEMPLATES, NAMES, openTemplate} = require('./harness');

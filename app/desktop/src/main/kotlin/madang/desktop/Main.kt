@@ -11,7 +11,7 @@ import androidx.compose.ui.window.rememberWindowState
 import kotlinx.coroutines.delay
 import madang.shared.MadangApp
 
-/** With MADANG_SMOKE=1 the app closes itself 3 seconds after the first frame. */
+/** MADANG_SMOKE=1이면 첫 프레임을 그린 3초 뒤 스스로 종료한다. */
 private val smokeMode = System.getenv("MADANG_SMOKE") == "1"
 
 fun main() = application {

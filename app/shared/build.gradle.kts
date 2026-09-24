@@ -6,7 +6,7 @@ plugins {
     alias(libs.plugins.openapi.generator)
 }
 
-// Contract with core. Override with -Pmadang.openapiSpec=<path> to generate from another file.
+// core와의 계약 파일. -Pmadang.openapiSpec=<경로>로 다른 파일에서 생성할 수 있다.
 val openApiSpec: File = providers.gradleProperty("madang.openapiSpec")
     .map { file(it) }
     .getOrElse(rootProject.file("../core/openapi.yaml"))
@@ -84,7 +84,7 @@ if (hasOpenApiSpec) {
     }
 }
 
-// Kotlin Multiplatform has no plain `test` task; alias it to the JVM tests.
+// Kotlin Multiplatform에는 단순 `test` 작업이 없으므로 JVM 테스트의 별칭으로 둔다.
 if (tasks.findByName("test") == null) {
     tasks.register("test") {
         group = "verification"

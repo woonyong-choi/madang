@@ -13,17 +13,17 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/** Response of `GET /health`. */
+/** `GET /health` 응답. */
 @Serializable
 data class Health(val status: String, val version: String? = null) {
     val isOk: Boolean get() = status == "ok"
 }
 
 /**
- * HTTP client for madang-core.
+ * madang-core용 HTTP 클라이언트.
  *
- * Pass [engine] to swap the transport (tests use MockEngine); otherwise the
- * platform default engine is used.
+ * [engine]을 넘기면 전송 계층을 바꿀 수 있다(테스트는 MockEngine 사용).
+ * 넘기지 않으면 플랫폼 기본 엔진을 쓴다.
  */
 class CoreClient(val baseUrl: String = DEFAULT_BASE_URL, engine: HttpClientEngine? = null) :
     AutoCloseable {

@@ -10,7 +10,7 @@ plugins {
 
 val ktlintVersion = libs.versions.ktlint.cli.get()
 
-// Style rules live in .editorconfig (android_studio code style).
+// 스타일 규칙은 .editorconfig(android_studio 코드 스타일)에 있다.
 allprojects {
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
 

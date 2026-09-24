@@ -1,11 +1,11 @@
-// Google JavaScript Style Guide rules for the template runtime and its tests.
-// The runtime folder re-exports this file so both folders share one config.
+// 템플릿 런타임과 테스트에 적용하는 Google JavaScript 스타일 가이드 규칙.
+// runtime 폴더가 이 파일을 다시 내보내 두 폴더가 설정 하나를 공유한다.
 const js = require('@eslint/js');
 const stylistic = require('@stylistic/eslint-plugin');
 const jsdoc = require('eslint-plugin-jsdoc');
 const globals = require('globals');
 
-// Functions exposed on window.madang; their JSDoc is required.
+// window.madang에 노출되는 함수. JSDoc이 필수다.
 const RUNTIME_API = [
   'render',
   'setMode',
@@ -20,7 +20,7 @@ const RUNTIME_API = [
 ];
 
 const style = {
-  // Continuation lines get +4, as in the style guide.
+  // 이어지는 줄은 스타일 가이드대로 +4 들여쓴다.
   '@stylistic/indent': ['error', 2, {
     SwitchCase: 1,
     CallExpression: {arguments: 2},
