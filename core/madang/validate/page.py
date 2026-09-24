@@ -14,7 +14,14 @@ from madang.validate.state import DEFAULT_TOKEN_LIMIT, validate_state
 
 
 def validate_page(path: Path) -> list[Issue]:
-    """Check the page.md header against the page model."""
+    """Checks the page.md header against the page model.
+
+    Args:
+        path: The page.md file.
+
+    Returns:
+        The issues found; empty when the header is valid.
+    """
     path = Path(path)
     try:
         parts = frontmatter.split(path.read_text(encoding="utf-8"))
@@ -34,7 +41,9 @@ def validate_page(path: Path) -> list[Issue]:
         for err in exc.errors():
             loc = [p for p in err["loc"] if isinstance(p, (str, int))]
             name = ".".join(str(p) for p in loc) or "header"
-            code = "missing-key" if err["type"] == "missing" else "invalid-value"
+            code = (
+                "missing-key" if err["type"] == "missing" else "invalid-value"
+            )
             line = lines.key(*loc) or parts.header_line
             issues.append(Issue(code, f"{name}: {err['msg']}", line, path))
         return issues
@@ -42,7 +51,14 @@ def validate_page(path: Path) -> list[Issue]:
 
 
 def resolve_target(target: Path) -> tuple[Path, Path]:
-    """Return (page folder, state.md path) for a page folder or a state.md path."""
+    """Returns the page folder and state.md path for a validation target.
+
+    Args:
+        target: A page folder or a state.md path.
+
+    Returns:
+        A ``(page folder, state.md path)`` tuple.
+    """
     target = Path(target)
     if target.is_dir():
         return target, target / STATE_FILE
@@ -56,9 +72,17 @@ def validate_target(
     token_limit: int = DEFAULT_TOKEN_LIMIT,
     kinds: Sequence[str] | None = None,
 ) -> list[Issue]:
-    """Validate state.md, and page.md when present, for a page folder or state.md path.
+    """Validates state.md, and page.md when present, of a page.
 
-    Without ``repo`` the space repository is taken from ``space.md``.
+    Args:
+        target: A page folder or a state.md path.
+        repo: The code repository for ``repo:`` artifacts. Without it the
+            space repository is taken from ``space.md``.
+        token_limit: The maximum state.md size in tokens.
+        kinds: The allowed page kinds. Defaults to the bundled routes.yaml.
+
+    Returns:
+        The issues found; empty when the page is valid.
     """
     page_dir, state_path = resolve_target(target)
     if repo is None:
@@ -66,7 +90,9 @@ def validate_target(
             repo = space_repo(page_dir)
         except (frontmatter.FrontmatterError, OSError):
             repo = None
-    issues = validate_state(state_path, repo=repo, token_limit=token_limit, kinds=kinds)
+    issues = validate_state(
+        state_path, repo=repo, token_limit=token_limit, kinds=kinds
+    )
     page_path = page_dir / PAGE_FILE
     if page_path.is_file():
         issues += validate_page(page_path)

@@ -31,7 +31,9 @@ def test_claude_ok() -> None:
     assert parser.finished and parser.error is None
     assert parser.final_text == "ok"
     # input = fresh + cache creation + cache read; cached = cache read
-    assert parser.usage == Usage(input=10 + 9469 + 13689, cached=13689, output=347)
+    assert parser.usage == Usage(
+        input=10 + 9469 + 13689, cached=13689, output=347
+    )
     assert events[1].usage == parser.usage
 
 
@@ -40,9 +42,13 @@ def test_claude_tools() -> None:
     events = replay(parser, "claude-tools.jsonl")
 
     assert types(events) == [
-        "tool_call", "tool_result", "file_changed",
-        "tool_call", "tool_result",
-        "text", "usage",
+        "tool_call",
+        "tool_result",
+        "file_changed",
+        "tool_call",
+        "tool_result",
+        "text",
+        "usage",
     ]
     write, write_result, changed, bash, bash_result, text, _ = events
     assert (write.name, write.summary) == ("Write", "/work/project/hello.txt")
@@ -67,13 +73,38 @@ def test_claude_error_result() -> None:
 
 def test_claude_failed_write_is_not_a_change() -> None:
     parser = ClaudeStreamParser()
-    parser.feed({"type": "assistant", "message": {"content": [
-        {"type": "tool_use", "id": "t1", "name": "Edit", "input": {"file_path": "a.txt"}},
-    ]}})
-    events = parser.feed({"type": "user", "message": {"content": [
-        {"type": "tool_result", "tool_use_id": "t1", "is_error": True,
-         "content": [{"type": "text", "text": "String not found"}]},
-    ]}})
+    parser.feed(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "Edit",
+                        "input": {"file_path": "a.txt"},
+                    },
+                ]
+            },
+        }
+    )
+    events = parser.feed(
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "is_error": True,
+                        "content": [
+                            {"type": "text", "text": "String not found"}
+                        ],
+                    },
+                ]
+            },
+        }
+    )
     assert types(events) == ["tool_result"]
     assert events[0].summary == "error: String not found"
 
@@ -103,20 +134,29 @@ def test_codex_tools() -> None:
     events = replay(parser, "codex-tools.jsonl")
 
     assert types(events) == [
-        "tool_call", "tool_result",
+        "tool_call",
+        "tool_result",
         "text",
-        "file_changed", "file_changed",
-        "tool_call", "tool_result",
-        "tool_call", "tool_result",
-        "text", "usage",
+        "file_changed",
+        "file_changed",
+        "tool_call",
+        "tool_result",
+        "tool_call",
+        "tool_result",
+        "text",
+        "usage",
     ]
     assert (events[0].name, events[0].summary) == ("shell", "bash -lc ls")
     assert events[1].summary == "exit 0: README.md src"
     assert [e.path for e in events if e.type == "file_changed"] == [
-        "/work/project/hello.txt", "/work/project/README.md",
+        "/work/project/hello.txt",
+        "/work/project/README.md",
     ]
     assert events[6].summary.startswith("exit 1: cat: missing.txt")
-    assert (events[7].name, events[7].summary) == ("docs.search", '{"query":"runner"}')
+    assert (events[7].name, events[7].summary) == (
+        "docs.search",
+        '{"query":"runner"}',
+    )
     # the transport retry notice is not an error
     assert parser.error is None
     assert parser.final_text == "done"
@@ -138,10 +178,19 @@ def test_codex_error() -> None:
 
 def test_codex_tool_call_without_start() -> None:
     parser = CodexStreamParser()
-    events = parser.feed({"type": "item.completed", "item": {
-        "id": "x", "type": "command_execution", "command": "true", "aggregated_output": "",
-        "exit_code": 0, "status": "completed",
-    }})
+    events = parser.feed(
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "x",
+                "type": "command_execution",
+                "command": "true",
+                "aggregated_output": "",
+                "exit_code": 0,
+                "status": "completed",
+            },
+        }
+    )
     assert types(events) == ["tool_call", "tool_result"]
     assert events[1].summary == "exit 0"
 
@@ -155,7 +204,12 @@ def test_fixtures_have_no_personal_paths() -> None:
 
 def test_event_to_dict_drops_unset_fields() -> None:
     event = RunEvent("tool_call", name="Bash", summary="ls")
-    assert event.to_dict() == {"type": "tool_call", "name": "Bash", "summary": "ls"}
+    assert event.to_dict() == {
+        "type": "tool_call",
+        "name": "Bash",
+        "summary": "ls",
+    }
     assert RunEvent("usage", usage=Usage(1, 0, 2)).to_dict() == {
-        "type": "usage", "usage": {"input": 1, "cached": 0, "output": 2},
+        "type": "usage",
+        "usage": {"input": 1, "cached": 0, "output": 2},
     }

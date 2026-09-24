@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -21,8 +21,11 @@ app = typer.Typer(
 )
 
 HomeOption = Annotated[
-    Optional[Path],
-    typer.Option("--home", help="App home directory. Defaults to $MADANG_HOME or ~/.madang."),
+    Path | None,
+    typer.Option(
+        "--home",
+        help="App home directory. Defaults to $MADANG_HOME or ~/.madang.",
+    ),
 ]
 
 
@@ -36,7 +39,12 @@ def _version(value: bool) -> None:
 def root(
     version: Annotated[
         bool,
-        typer.Option("--version", callback=_version, is_eager=True, help="Show version and exit."),
+        typer.Option(
+            "--version",
+            callback=_version,
+            is_eager=True,
+            help="Show version and exit.",
+        ),
     ] = False,
 ) -> None:
     """Madang core command line."""
@@ -61,13 +69,23 @@ def init(home: HomeOption = None) -> None:
 
 @app.command()
 def validate(
-    target: Annotated[Path, typer.Argument(help="state.md path or page folder.")],
+    target: Annotated[
+        Path, typer.Argument(help="state.md path or page folder.")
+    ],
     repo: Annotated[
-        Optional[Path],
-        typer.Option("--repo", help="Code repository for repo: artifacts. Defaults to repo in space.md."),
+        Path | None,
+        typer.Option(
+            "--repo",
+            help=(
+                "Code repository for repo: artifacts. "
+                "Defaults to repo in space.md."
+            ),
+        ),
     ] = None,
     home: HomeOption = None,
-    as_json: Annotated[bool, typer.Option("--json", help="Print issues as JSON.")] = False,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print issues as JSON.")
+    ] = False,
 ) -> None:
     """Check state.md (and page.md) of a page. Exit 1 when issues are found."""
     if not target.exists():
@@ -85,7 +103,10 @@ def validate(
         kinds=cfg.routes.kinds,
     )
     if as_json:
-        payload = {"ok": not issues, "issues": [issue.to_dict() for issue in issues]}
+        payload = {
+            "ok": not issues,
+            "issues": [issue.to_dict() for issue in issues],
+        }
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         for issue in issues:
@@ -98,6 +119,7 @@ cli_agent.register(app)
 
 
 def main() -> None:
+    """Runs the madang command line."""
     app()
 
 

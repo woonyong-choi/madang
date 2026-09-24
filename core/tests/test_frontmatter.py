@@ -30,7 +30,9 @@ def test_round_trip_fixture_files() -> None:
 
 
 def test_parse_header_and_body() -> None:
-    header, body = frontmatter.parse("---\nstatus: doing\ntags: [a, b]\n---\n## 목표\n")
+    header, body = frontmatter.parse(
+        "---\nstatus: doing\ntags: [a, b]\n---\n## 목표\n"
+    )
     assert header == {"status": "doing", "tags": ["a", "b"]}
     assert body == "## 목표\n"
 
@@ -58,9 +60,14 @@ def test_invalid_yaml_reports_line() -> None:
 
 
 def test_dumps_keeps_body_and_order() -> None:
-    text = frontmatter.dumps({"status": "doing", "kind": "build"}, "## 목표\n본문\n")
+    text = frontmatter.dumps(
+        {"status": "doing", "kind": "build"}, "## 목표\n본문\n"
+    )
     assert text == "---\nstatus: doing\nkind: build\n---\n## 목표\n본문\n"
-    assert frontmatter.parse(text) == ({"status": "doing", "kind": "build"}, "## 목표\n본문\n")
+    assert frontmatter.parse(text) == (
+        {"status": "doing", "kind": "build"},
+        "## 목표\n본문\n",
+    )
 
 
 def test_load_page_model() -> None:

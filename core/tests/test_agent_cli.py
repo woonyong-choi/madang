@@ -15,7 +15,12 @@ runner = CliRunner()
 
 
 def sh(cwd: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True).stdout
+    return subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
 
 
 @dataclass
@@ -78,7 +83,9 @@ def refused(*args: str, match: str = ""):
 # page selection
 
 
-def test_refuses_without_page(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_refuses_without_page(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.delenv("MADANG_PAGE")
     for args in (
         ["task", "T1", "--status", "doing", "--title", "x"],
@@ -91,13 +98,44 @@ def test_refuses_without_page(env: Env, monkeypatch: pytest.MonkeyPatch) -> None
     ):
         refused(*args, match="MADANG_PAGE is not set")
     ok("task", "T1", "--status", "doing", "--title", "x", "--page", PAGE_ID)
-    assert env.state()["tasks"] == [{"id": "T1", "title": "x", "status": "doing"}]
+    assert env.state()["tasks"] == [
+        {"id": "T1", "title": "x", "status": "doing"}
+    ]
 
 
 def test_home_option_and_unknown_page(env: Env, tmp_path: Path) -> None:
-    refused("task", "T1", "--status", "doing", "--title", "x", "--page", "2026-01-01-none", match="not found")
-    refused("task", "T1", "--status", "doing", "--title", "x", "--home", str(tmp_path / "nohome"), match="does not exist")
-    ok("task", "T1", "--status", "doing", "--title", "x", "--home", str(env.home))
+    refused(
+        "task",
+        "T1",
+        "--status",
+        "doing",
+        "--title",
+        "x",
+        "--page",
+        "2026-01-01-none",
+        match="not found",
+    )
+    refused(
+        "task",
+        "T1",
+        "--status",
+        "doing",
+        "--title",
+        "x",
+        "--home",
+        str(tmp_path / "nohome"),
+        match="does not exist",
+    )
+    ok(
+        "task",
+        "T1",
+        "--status",
+        "doing",
+        "--title",
+        "x",
+        "--home",
+        str(env.home),
+    )
 
 
 def test_app_home_is_not_committed(env: Env) -> None:
@@ -116,7 +154,12 @@ def test_task_add_and_update(env: Env) -> None:
     ok("task", "T1", "--status", "done", "--due", "2026-09-26")
     ok("task", "T2", "--status", "doing", "--title", "잠금")
     assert env.state()["tasks"] == [
-        {"id": "T1", "title": "원인 분석", "status": "done", "due": date(2026, 9, 26)},
+        {
+            "id": "T1",
+            "title": "원인 분석",
+            "status": "done",
+            "due": date(2026, 9, 26),
+        },
         {"id": "T2", "title": "잠금", "status": "doing"},
     ]
     assert (env.page / "state.md").read_text().endswith(body)
@@ -125,9 +168,35 @@ def test_task_add_and_update(env: Env) -> None:
 def test_task_refusals(env: Env) -> None:
     before = (env.page / "state.md").read_bytes()
     refused("task", "T9", "--status", "doing", match="pass --title")
-    refused("task", "T1", "--status", "finished", "--title", "x", match="is not one of")
-    refused("task", "T1", "--status", "doing", "--title", "x", "--due", "tomorrow", match="YYYY-MM-DD")
-    refused("task", "bad id", "--status", "doing", "--title", "x", match="invalid task id")
+    refused(
+        "task",
+        "T1",
+        "--status",
+        "finished",
+        "--title",
+        "x",
+        match="is not one of",
+    )
+    refused(
+        "task",
+        "T1",
+        "--status",
+        "doing",
+        "--title",
+        "x",
+        "--due",
+        "tomorrow",
+        match="YYYY-MM-DD",
+    )
+    refused(
+        "task",
+        "bad id",
+        "--status",
+        "doing",
+        "--title",
+        "x",
+        match="invalid task id",
+    )
     assert (env.page / "state.md").read_bytes() == before
 
 
@@ -135,7 +204,9 @@ def test_write_rolled_back_when_page_is_invalid(env: Env) -> None:
     state = env.page / "state.md"
     state.write_text(state.read_text().replace("## 다음 할 일", "## 다른 절"))
     before = state.read_bytes()
-    result = refused("task", "T1", "--status", "doing", "--title", "x", match="rolled back")
+    result = refused(
+        "task", "T1", "--status", "doing", "--title", "x", match="rolled back"
+    )
     assert "missing-section" in result.output
     assert state.read_bytes() == before
 
@@ -146,20 +217,64 @@ def test_write_rolled_back_when_page_is_invalid(env: Env) -> None:
 def test_decide_and_supersede(env: Env) -> None:
     (env.page / "runs").mkdir()
     (env.page / "runs" / ".last").write_text("3\n")
-    ok("decide", "D1", "--topic", "갱신 경합", "--choice", "refresh-lock", "--options", "refresh-lock, sliding-session")
-    ok("decide", "D2", "--topic", "갱신 경합", "--choice", "client-retry", "--options", "refresh-lock,client-retry",
-       "--supersedes", "D1", "--by", "claude/claude-opus-5-5")
+    ok(
+        "decide",
+        "D1",
+        "--topic",
+        "갱신 경합",
+        "--choice",
+        "refresh-lock",
+        "--options",
+        "refresh-lock, sliding-session",
+    )
+    ok(
+        "decide",
+        "D2",
+        "--topic",
+        "갱신 경합",
+        "--choice",
+        "client-retry",
+        "--options",
+        "refresh-lock,client-retry",
+        "--supersedes",
+        "D1",
+        "--by",
+        "claude/claude-opus-5-5",
+    )
     d1, d2 = env.state()["decisions"]
     assert d1 == {
-        "id": "D1", "topic": "갱신 경합", "choice": "refresh-lock", "options": ["refresh-lock", "sliding-session"],
-        "by": "agent", "run": 3, "state": "superseded", "supersedes": None,
+        "id": "D1",
+        "topic": "갱신 경합",
+        "choice": "refresh-lock",
+        "options": ["refresh-lock", "sliding-session"],
+        "by": "agent",
+        "run": 3,
+        "state": "superseded",
+        "supersedes": None,
     }
-    assert d2["state"] == "confirmed" and d2["supersedes"] == "D1" and d2["by"] == "claude/claude-opus-5-5"
+    assert (
+        d2["state"] == "confirmed"
+        and d2["supersedes"] == "D1"
+        and d2["by"] == "claude/claude-opus-5-5"
+    )
 
 
-def test_decide_by_human_has_no_run(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_decide_by_human_has_no_run(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.delenv("MADANG_PAGE")
-    ok("decide", "D1", "--topic", "t", "--choice", "a", "--options", "a,b", "--page", PAGE_ID)
+    ok(
+        "decide",
+        "D1",
+        "--topic",
+        "t",
+        "--choice",
+        "a",
+        "--options",
+        "a,b",
+        "--page",
+        PAGE_ID,
+    )
     decision = env.state()["decisions"][0]
     assert decision["by"] == "human" and decision["run"] is None
 
@@ -167,11 +282,65 @@ def test_decide_by_human_has_no_run(env: Env, monkeypatch: pytest.MonkeyPatch) -
 def test_decide_refusals(env: Env) -> None:
     ok("decide", "D1", "--topic", "t", "--choice", "a", "--options", "a,b")
     before = (env.page / "state.md").read_bytes()
-    refused("decide", "D2", "--topic", "t", "--choice", "c", "--options", "a,b", match="not in options")
-    refused("decide", "D1", "--topic", "t", "--choice", "a", "--options", "a,b", match="already exists")
-    refused("decide", "D2", "--topic", "t", "--choice", "a", "--options", "a,b", "--supersedes", "D9", match="does not exist")
-    refused("decide", "D2", "--topic", "t", "--choice", "a", "--options", ",", match="at least one")
-    refused("decide", "D2", "--topic", "t", "--choice", "a", "--options", "a,b", "--state", "maybe", match="is not one of")
+    refused(
+        "decide",
+        "D2",
+        "--topic",
+        "t",
+        "--choice",
+        "c",
+        "--options",
+        "a,b",
+        match="not in options",
+    )
+    refused(
+        "decide",
+        "D1",
+        "--topic",
+        "t",
+        "--choice",
+        "a",
+        "--options",
+        "a,b",
+        match="already exists",
+    )
+    refused(
+        "decide",
+        "D2",
+        "--topic",
+        "t",
+        "--choice",
+        "a",
+        "--options",
+        "a,b",
+        "--supersedes",
+        "D9",
+        match="does not exist",
+    )
+    refused(
+        "decide",
+        "D2",
+        "--topic",
+        "t",
+        "--choice",
+        "a",
+        "--options",
+        ",",
+        match="at least one",
+    )
+    refused(
+        "decide",
+        "D2",
+        "--topic",
+        "t",
+        "--choice",
+        "a",
+        "--options",
+        "a,b",
+        "--state",
+        "maybe",
+        match="is not one of",
+    )
     assert (env.page / "state.md").read_bytes() == before
 
 
@@ -188,12 +357,18 @@ def test_artifact_add(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     result = ok("artifact", "add", "src/lock.ts")
     assert "already registered" in result.output
     ok("artifact", "add", "repo:README.md")
-    assert env.state()["artifacts"] == ["blocks/b01-race.md", "repo:src/lock.ts", "repo:README.md"]
+    assert env.state()["artifacts"] == [
+        "blocks/b01-race.md",
+        "repo:src/lock.ts",
+        "repo:README.md",
+    ]
 
 
 def test_artifact_refusals(env: Env, tmp_path: Path) -> None:
     before = (env.page / "state.md").read_bytes()
-    result = refused("artifact", "add", "blocks/missing.md", match="rolled back")
+    result = refused(
+        "artifact", "add", "blocks/missing.md", match="rolled back"
+    )
     assert "artifact-missing" in result.output
     refused("artifact", "add", "repo:src/none.ts", match="artifact-missing")
     outside = tmp_path / "elsewhere.txt"
@@ -225,11 +400,15 @@ def test_commit_refusals(env: Env) -> None:
 
 def test_commit_refused_without_repo(env: Env) -> None:
     space = env.home / "spaces" / "work" / "space.md"
-    space.write_text(space.read_text().replace(f"repo: {env.repo}", "repo: null"))
+    space.write_text(
+        space.read_text().replace(f"repo: {env.repo}", "repo: null")
+    )
     refused("commit", "-m", "x", match="no code repository")
     refused("push", match="no code repository")
     refused("promote", "b01", match="no code repository")
-    space.write_text(space.read_text().replace("repo: null", f"repo: {env.home / 'nothing'}"))
+    space.write_text(
+        space.read_text().replace("repo: null", f"repo: {env.home / 'nothing'}")
+    )
     refused("commit", "-m", "x", match="does not exist")
 
 
@@ -279,7 +458,10 @@ def test_promote(env: Env) -> None:
     result = ok("promote", "b01")
     assert "docs/race-analysis.md" in result.output
     assert (env.repo / "docs" / "race-analysis.md").read_text() == "# 분석\n"
-    assert sh(env.repo, "log", "-1", "--format=%s").strip() == f"docs: promote b01 from {PAGE_ID}"
+    assert (
+        sh(env.repo, "log", "-1", "--format=%s").strip()
+        == f"docs: promote b01 from {PAGE_ID}"
+    )
     assert sh(env.repo, "status", "--porcelain") == ""
     assert env.state()["artifacts"] == ["repo:docs/race-analysis.md"]
     assert "already up to date" in ok("promote", "b01").output
@@ -314,11 +496,23 @@ def test_view_create(env: Env) -> None:
     (env.page / "blocks" / "b01-cv.json").write_text("{}")
     (env.page / "blocks" / "b02-extra.json").write_text("{}")
     pages.append_block(env.page, "b01")
-    result = ok("view", "create", "--template", "resume", "--data", "overlay=b02", "--data", "b01")
+    result = ok(
+        "view",
+        "create",
+        "--template",
+        "resume",
+        "--data",
+        "overlay=b02",
+        "--data",
+        "b01",
+    )
     assert "created view b03" in result.output
     header, _ = frontmatter.read(env.page / "blocks" / "b03-resume.view.md")
     assert header == {
-        "type": "view", "template": "resume@1", "bindings": {"base": "b01", "overlay": "b02"}, "created_by": "run 2",
+        "type": "view",
+        "template": "resume@1",
+        "bindings": {"base": "b01", "overlay": "b02"},
+        "created_by": "run 2",
     }
     assert env.page_header()["blocks"] == ["b01", "b03"]
     ok("view", "create", "--template", "table@1", "--data", "b01")
@@ -328,32 +522,107 @@ def test_view_create(env: Env) -> None:
 def test_view_uses_home_template(env: Env) -> None:
     tpl = env.home / "templates" / "cards"
     tpl.mkdir()
-    (tpl / "template.yaml").write_text("name: cards\nversion: 2\nslots:\n  items: {required: true}\n")
+    (tpl / "template.yaml").write_text(
+        "name: cards\nversion: 2\nslots:\n  items: {required: true}\n"
+    )
     (env.page / "blocks" / "b01-items.csv").write_text("a\n")
     ok("view", "create", "--template", "cards", "--data", "b01")
-    assert frontmatter.read(env.page / "blocks" / "b02-cards.view.md")[0]["template"] == "cards@2"
+    assert (
+        frontmatter.read(env.page / "blocks" / "b02-cards.view.md")[0][
+            "template"
+        ]
+        == "cards@2"
+    )
 
 
 def test_view_refusals(env: Env) -> None:
     (env.page / "blocks" / "b01-cv.json").write_text("{}")
     (env.page / "blocks" / "b02-note.md").write_text("x")
     before = sorted(p.name for p in (env.page / "blocks").iterdir())
-    refused("view", "create", "--template", "nope", "--data", "b01", match="not found")
-    refused("view", "create", "--template", "table@3", "--data", "b01", match="version 1")
-    refused("view", "create", "--template", "table", "--data", "b09", match="not found in blocks/")
-    refused("view", "create", "--template", "table", "--data", "b02", match="not found in blocks/")
-    refused("view", "create", "--template", "table", "--data", "x=b01", match="no slot 'x'")
-    refused("view", "create", "--template", "table", "--data", "b01", "--data", "b01", match="too many")
-    refused("view", "create", "--template", "resume", "--data", "overlay=b01", match="required slot")
+    refused(
+        "view",
+        "create",
+        "--template",
+        "nope",
+        "--data",
+        "b01",
+        match="not found",
+    )
+    refused(
+        "view",
+        "create",
+        "--template",
+        "table@3",
+        "--data",
+        "b01",
+        match="version 1",
+    )
+    refused(
+        "view",
+        "create",
+        "--template",
+        "table",
+        "--data",
+        "b09",
+        match="not found in blocks/",
+    )
+    refused(
+        "view",
+        "create",
+        "--template",
+        "table",
+        "--data",
+        "b02",
+        match="not found in blocks/",
+    )
+    refused(
+        "view",
+        "create",
+        "--template",
+        "table",
+        "--data",
+        "x=b01",
+        match="no slot 'x'",
+    )
+    refused(
+        "view",
+        "create",
+        "--template",
+        "table",
+        "--data",
+        "b01",
+        "--data",
+        "b01",
+        match="too many",
+    )
+    refused(
+        "view",
+        "create",
+        "--template",
+        "resume",
+        "--data",
+        "overlay=b01",
+        match="required slot",
+    )
     assert sorted(p.name for p in (env.page / "blocks").iterdir()) == before
 
 
 def test_view_rolled_back_when_page_is_invalid(env: Env) -> None:
     (env.page / "blocks" / "b01-cv.json").write_text("{}")
     page_md = env.page / "page.md"
-    page_md.write_text(page_md.read_text().replace("status: planning", "status: nope"))
+    page_md.write_text(
+        page_md.read_text().replace("status: planning", "status: nope")
+    )
     before = page_md.read_bytes()
-    refused("view", "create", "--template", "table", "--data", "b01", match="rolled back")
+    refused(
+        "view",
+        "create",
+        "--template",
+        "table",
+        "--data",
+        "b01",
+        match="rolled back",
+    )
     assert page_md.read_bytes() == before
     assert not list((env.page / "blocks").glob("*.view.md"))
 
@@ -363,7 +632,16 @@ def test_view_rolled_back_when_page_is_invalid(env: Env) -> None:
 
 def test_help() -> None:
     result = ok("help")
-    for name in ("task", "decide", "artifact add", "commit", "push", "promote", "view create", "help"):
+    for name in (
+        "task",
+        "decide",
+        "artifact add",
+        "commit",
+        "push",
+        "promote",
+        "view create",
+        "help",
+    ):
         assert f"madang {name}" in result.output
     assert "--supersedes" in ok("help", "decide").output
     assert "--template" in ok("help", "view", "create").output
@@ -372,4 +650,6 @@ def test_help() -> None:
 
 def test_malformed_state_is_reported(env: Env) -> None:
     (env.page / "state.md").write_text("---\nstatus: [\n---\n## 목표\n")
-    refused("task", "T1", "--status", "doing", "--title", "x", match="invalid YAML")
+    refused(
+        "task", "T1", "--status", "doing", "--title", "x", match="invalid YAML"
+    )

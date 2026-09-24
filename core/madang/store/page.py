@@ -18,7 +18,13 @@ SPACE_FILE = "space.md"
 RUNS_DIR = "runs"
 
 PageStatus = Literal["planning", "doing", "blocked", "review", "done"]
-PAGE_STATUSES: tuple[str, ...] = ("planning", "doing", "blocked", "review", "done")
+PAGE_STATUSES: tuple[str, ...] = (
+    "planning",
+    "doing",
+    "blocked",
+    "review",
+    "done",
+)
 
 _RUN_FILE = re.compile(r"^(\d+)\.json$")
 
@@ -40,13 +46,32 @@ class Page(BaseModel):
 
 
 def load_page(page_dir: Path) -> tuple[Page, str]:
-    """Read page.md from a page folder. Returns (header model, body)."""
+    """Reads page.md from a page folder.
+
+    Args:
+        page_dir: The page folder.
+
+    Returns:
+        A ``(header, body)`` tuple.
+
+    Raises:
+        OSError: page.md cannot be read.
+        FrontmatterError: The front matter cannot be parsed.
+        pydantic.ValidationError: The header does not match ``Page``.
+    """
     header, body = frontmatter.read(page_dir / PAGE_FILE)
     return Page.model_validate(header), body
 
 
 def space_dir(page_dir: Path) -> Path | None:
-    """Return the space folder for a page at ``spaces/<slug>/pages/<id>/``."""
+    """Returns the space folder of a page at ``spaces/<slug>/pages/<id>/``.
+
+    Args:
+        page_dir: The page folder.
+
+    Returns:
+        The space folder, or None when the page is not inside ``pages/``.
+    """
     pages = page_dir.resolve().parent
     if pages.name != "pages":
         return None
@@ -54,6 +79,7 @@ def space_dir(page_dir: Path) -> Path | None:
 
 
 def space_header(page_dir: Path) -> dict[str, Any] | None:
+    """Returns the space.md header of a page's space, or None if missing."""
     space = space_dir(page_dir)
     if space is None or not (space / SPACE_FILE).is_file():
         return None
@@ -62,10 +88,17 @@ def space_header(page_dir: Path) -> dict[str, Any] | None:
 
 
 def space_repo(page_dir: Path) -> Path | None:
-    """Code repository of the page's space, from ``repo`` in space.md.
+    """Returns the code repository of the page's space.
 
-    Relative paths are taken from the space folder. ``None`` when the space has
-    no repository or cannot be found.
+    The path comes from ``repo`` in space.md. Relative paths are taken from
+    the space folder.
+
+    Args:
+        page_dir: The page folder.
+
+    Returns:
+        The repository path, or None when the space has no repository or
+        cannot be found.
     """
     space = space_dir(page_dir)
     header = space_header(page_dir)
@@ -76,9 +109,16 @@ def space_repo(page_dir: Path) -> Path | None:
 
 
 def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:
-    """Return the highest numbered ``runs/N.json`` and its content.
+    """Returns the highest numbered ``runs/N.json`` and its content.
 
-    Raises ``ValueError`` when that file is not a JSON object.
+    Args:
+        page_dir: The page folder.
+
+    Returns:
+        A ``(path, data)`` tuple, or None when the page has no run.
+
+    Raises:
+        ValueError: That file is not a JSON object.
     """
     runs = page_dir / RUNS_DIR
     if not runs.is_dir():

@@ -1,4 +1,7 @@
-"""Run a runner for a page and keep ``runs/N.json`` and ``runs/N.events.jsonl``."""
+"""Runs a runner for a page and keeps its run record and event log.
+
+The record is ``runs/N.json`` and the log is ``runs/N.events.jsonl``.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +18,15 @@ from madang.store import runs
 
 @dataclass
 class RecordedRun:
+    """A finished run and where its record was written.
+
+    Attributes:
+        n: The run number.
+        result: The runner result.
+        record: The record written to ``runs/N.json``.
+        path: The path of that record.
+    """
+
     n: int
     result: RunResult
     record: runs.RunRecord
@@ -22,7 +34,15 @@ class RecordedRun:
 
 
 def timeout_seconds(config: Config, kind: str) -> float | None:
-    """``limits.run_timeout_minutes[kind]`` in seconds, ``None`` when not set."""
+    """Returns the run timeout for ``kind``.
+
+    Args:
+        config: The loaded app home configuration.
+        kind: The run kind.
+
+    Returns:
+        ``limits.run_timeout_minutes[kind]`` in seconds, or None when unset.
+    """
     minutes = config.madang.limits.run_timeout_minutes.get(kind)
     return float(minutes) * 60 if minutes else None
 
@@ -42,9 +62,26 @@ def run_page(
     trigger: dict[str, Any] | None = None,
     input: dict[str, Any] | None = None,
 ) -> RecordedRun:
-    """Allocate the next run number, execute, and write the summary record.
+    """Allocates the next run number, runs, and writes the run record.
 
     The page id (folder name) is passed to the agent as ``MADANG_PAGE``.
+
+    Args:
+        runner: The runner to use.
+        config: The loaded app home configuration.
+        page_dir: The page folder.
+        cwd: The working directory of the run.
+        prompt: The prompt.
+        model: The model name.
+        effort: The reasoning effort.
+        kind: The run kind. Selects the timeout.
+        on_event: Called with each event as it arrives.
+        tier: The routing tier, if any.
+        trigger: What started the run, if recorded.
+        input: The run input, if recorded.
+
+    Returns:
+        The finished run.
     """
     n = runs.allocate(page_dir)
     started = datetime.now().astimezone()
@@ -70,9 +107,13 @@ def run_page(
         effort=effort,
         input=input,
         usage=runs.RunUsage(
-            input=result.usage.input, cached=result.usage.cached, output=result.usage.output
+            input=result.usage.input,
+            cached=result.usage.cached,
+            output=result.usage.output,
         ),
-        changed_files=[_relative(p, page_dir, cwd) for p in result.changed_files],
+        changed_files=[
+            _relative(p, page_dir, cwd) for p in result.changed_files
+        ],
         result_status=result.status,
         events_log=runs.events_rel(n),
     )

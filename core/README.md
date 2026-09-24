@@ -12,6 +12,13 @@ uv sync
 uv run pytest -q
 ```
 
+코드는 Google Python Style Guide를 따르며 ruff로 검사한다(80열, Google 형식 docstring, import 정렬).
+
+```
+uv run ruff check .
+uv run ruff format --check .
+```
+
 ## 사용
 
 ```

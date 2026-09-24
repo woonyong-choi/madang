@@ -35,6 +35,7 @@ class ClaudeStreamParser:
         self._pending_writes: dict[str, str] = {}
 
     def feed(self, obj: dict[str, Any]) -> list[RunEvent]:
+        """Returns the events for one decoded JSON line."""
         kind = obj.get("type")
         if kind == "assistant":
             return self._assistant(obj)
@@ -52,7 +53,11 @@ class ClaudeStreamParser:
                 events.append(RunEvent("text", text=part["text"]))
             elif ptype == "tool_use":
                 name = str(part.get("name") or "tool")
-                args = part.get("input") if isinstance(part.get("input"), dict) else {}
+                args = (
+                    part.get("input")
+                    if isinstance(part.get("input"), dict)
+                    else {}
+                )
                 key = _SUMMARY_KEYS.get(name)
                 summary = summarize(args[key] if key and key in args else args)
                 events.append(RunEvent("tool_call", name=name, summary=summary))
@@ -68,7 +73,12 @@ class ClaudeStreamParser:
                 continue
             failed = bool(part.get("is_error"))
             summary = summarize(_result_text(part.get("content")))
-            events.append(RunEvent("tool_result", summary=("error: " if failed else "") + summary))
+            events.append(
+                RunEvent(
+                    "tool_result",
+                    summary=("error: " if failed else "") + summary,
+                )
+            )
             path = self._pending_writes.pop(str(part.get("tool_use_id")), None)
             if path and not failed:
                 events.append(RunEvent("file_changed", path=path))
@@ -85,7 +95,9 @@ class ClaudeStreamParser:
         self.final_text = text if isinstance(text, str) else ""
         if obj.get("is_error") or obj.get("subtype") != "success":
             errors = obj.get("errors")
-            detail = self.final_text or (summarize(errors, 500) if errors else "")
+            detail = self.final_text or (
+                summarize(errors, 500) if errors else ""
+            )
             self.error = detail or f"claude run failed ({obj.get('subtype')})"
             events.append(RunEvent("error", message=self.error))
         return events
@@ -94,14 +106,22 @@ class ClaudeStreamParser:
 def _content(obj: dict[str, Any]) -> list[dict[str, Any]]:
     message = obj.get("message")
     content = message.get("content") if isinstance(message, dict) else None
-    return [p for p in content if isinstance(p, dict)] if isinstance(content, list) else []
+    return (
+        [p for p in content if isinstance(p, dict)]
+        if isinstance(content, list)
+        else []
+    )
 
 
 def _result_text(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        texts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+        texts = [
+            p.get("text", "")
+            for p in content
+            if isinstance(p, dict) and p.get("type") == "text"
+        ]
         return " ".join(t for t in texts if t)
     return ""
 
@@ -110,11 +130,18 @@ def _usage(raw: dict[str, Any]) -> Usage:
     fresh = int(raw.get("input_tokens") or 0)
     created = int(raw.get("cache_creation_input_tokens") or 0)
     read = int(raw.get("cache_read_input_tokens") or 0)
-    return Usage(input=fresh + created + read, cached=read, output=int(raw.get("output_tokens") or 0))
+    return Usage(
+        input=fresh + created + read,
+        cached=read,
+        output=int(raw.get("output_tokens") or 0),
+    )
 
 
 class ClaudeRunner(CliRunner):
+    """Runs the Claude Code."""
+
     name = "claude"
 
     def new_parser(self) -> ClaudeStreamParser:
+        """Returns a fresh claude stream parser."""
         return ClaudeStreamParser()

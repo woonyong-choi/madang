@@ -1,4 +1,4 @@
-"""state.md checks: header schema, decisions, artifacts, body sections, size, done."""
+"""state.md checks: header, decisions, artifacts, sections, size, and done."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ _HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*#*[ \t]*$")
 
 @lru_cache(maxsize=1)
 def default_kinds() -> tuple[str, ...]:
+    """Returns the kinds listed in the bundled routes.yaml."""
     data = yaml.safe_load(config.default_text("routes.yaml")) or {}
     return tuple(data.get("kinds") or ())
 
@@ -41,10 +42,16 @@ def _encoding() -> Any:
 
 
 def count_tokens(text: str) -> int:
-    """Token count with tiktoken cl100k_base.
+    """Counts tokens with tiktoken ``cl100k_base``.
 
-    Without the encoding file, fall back to a conservative estimate of one token
-    per three UTF-8 bytes.
+    Without the encoding file, falls back to a conservative estimate of one
+    token per three UTF-8 bytes.
+
+    Args:
+        text: The text to count.
+
+    Returns:
+        The token count.
     """
     enc = _encoding()
     if enc is not None:
@@ -67,18 +74,31 @@ def validate_state(
     token_limit: int = DEFAULT_TOKEN_LIMIT,
     kinds: Sequence[str] | None = None,
 ) -> list[Issue]:
-    """Check a state.md file. Never modifies it.
+    """Checks a state.md file. Never modifies it.
 
-    ``repo`` is the space's code repository used for ``repo:`` artifacts.
-    ``kinds`` defaults to the kinds of the bundled routes.yaml.
+    Args:
+        path: The state.md file.
+        repo: The space's code repository used for ``repo:`` artifacts.
+        token_limit: The maximum file size in tokens.
+        kinds: The allowed page kinds. Defaults to the bundled routes.yaml.
+
+    Returns:
+        The issues found; empty when the file is valid.
     """
     path = Path(path)
     page_dir = path.parent
     kinds = tuple(kinds) if kinds is not None else default_kinds()
     issues: list[Issue] = []
 
-    def add(code: str, message: str, line: int | None = None, where: Path | None = None) -> None:
-        issues.append(Issue(code=code, message=message, line=line, path=where or path))
+    def add(
+        code: str,
+        message: str,
+        line: int | None = None,
+        where: Path | None = None,
+    ) -> None:
+        issues.append(
+            Issue(code=code, message=message, line=line, path=where or path)
+        )
 
     try:
         text = path.read_text(encoding="utf-8")
@@ -91,7 +111,11 @@ def validate_state(
 
     tokens = count_tokens(text)
     if tokens > token_limit:
-        add("token-limit", f"{tokens} tokens exceeds limit {token_limit}; summarize the file", 1)
+        add(
+            "token-limit",
+            f"{tokens} tokens exceeds limit {token_limit}; summarize the file",
+            1,
+        )
 
     try:
         parts = frontmatter.split(text)
@@ -113,26 +137,48 @@ def validate_state(
     return issues
 
 
-def _check_header(header: dict[str, Any], lines: Lines, kinds: Sequence[str], add: Any) -> None:
+def _check_header(
+    header: dict[str, Any], lines: Lines, kinds: Sequence[str], add: Any
+) -> None:
     for key in REQUIRED_KEYS:
         if key not in header or header[key] is None:
-            add("missing-key", f"required key '{key}' is missing", lines.key(key) or lines.offset)
+            add(
+                "missing-key",
+                f"required key '{key}' is missing",
+                lines.key(key) or lines.offset,
+            )
 
     status = header.get("status")
     if status is not None and status not in PAGE_STATUSES:
-        add("invalid-value", f"status '{status}' is not one of {_enum(PAGE_STATUSES)}", lines.key("status"))
+        add(
+            "invalid-value",
+            f"status '{status}' is not one of {_enum(PAGE_STATUSES)}",
+            lines.key("status"),
+        )
 
     kind = header.get("kind")
     if kind is not None and kinds and kind not in kinds:
-        add("invalid-value", f"kind '{kind}' is not one of {_enum(kinds)}", lines.key("kind"))
+        add(
+            "invalid-value",
+            f"kind '{kind}' is not one of {_enum(kinds)}",
+            lines.key("kind"),
+        )
 
     tier = header.get("tier")
     if tier is not None and not (_is_int(tier) and tier >= 1):
-        add("invalid-value", f"tier must be an integer >= 1, got {tier!r}", lines.key("tier"))
+        add(
+            "invalid-value",
+            f"tier must be an integer >= 1, got {tier!r}",
+            lines.key("tier"),
+        )
 
     attempts = header.get("attempts")
     if attempts is not None and not (_is_int(attempts) and attempts >= 0):
-        add("invalid-value", f"attempts must be an integer >= 0, got {attempts!r}", lines.key("attempts"))
+        add(
+            "invalid-value",
+            f"attempts must be an integer >= 0, got {attempts!r}",
+            lines.key("attempts"),
+        )
 
 
 def _check_decisions(decisions: Any, lines: Lines, add: Any) -> None:
@@ -151,14 +197,22 @@ def _check_decisions(decisions: Any, lines: Lines, add: Any) -> None:
         if did is None:
             add("missing-key", f"decisions[{i}] has no id", line)
         elif str(did) in seen:
-            add("duplicate-decision", f"decision id '{did}' is used more than once", lines.key("decisions", i, "id"))
+            add(
+                "duplicate-decision",
+                f"decision id '{did}' is used more than once",
+                lines.key("decisions", i, "id"),
+            )
         else:
             seen[str(did)] = i
 
         options = item.get("options")
         choice = item.get("choice")
         if options is not None and not isinstance(options, list):
-            add("invalid-value", f"decisions[{i}].options must be a list", lines.key("decisions", i, "options"))
+            add(
+                "invalid-value",
+                f"decisions[{i}].options must be a list",
+                lines.key("decisions", i, "options"),
+            )
         elif choice is not None and choice not in (options or []):
             add(
                 "choice-not-in-options",
@@ -170,7 +224,8 @@ def _check_decisions(decisions: Any, lines: Lines, add: Any) -> None:
         if state is not None and state not in DECISION_STATES:
             add(
                 "invalid-value",
-                f"decision '{did}' state '{state}' is not one of {_enum(DECISION_STATES)}",
+                f"decision '{did}' state '{state}' "
+                f"is not one of {_enum(DECISION_STATES)}",
                 lines.key("decisions", i, "state"),
             )
 
@@ -186,7 +241,9 @@ def _inside(base: Path, rel: str) -> Path | None:
     return target
 
 
-def _check_artifacts(artifacts: Any, lines: Lines, page_dir: Path, repo: Path | None, add: Any) -> None:
+def _check_artifacts(
+    artifacts: Any, lines: Lines, page_dir: Path, repo: Path | None, add: Any
+) -> None:
     if artifacts is None:
         return
     if not isinstance(artifacts, list):
@@ -200,16 +257,29 @@ def _check_artifacts(artifacts: Any, lines: Lines, page_dir: Path, repo: Path | 
         if item.startswith(REPO_PREFIX):
             rel = item[len(REPO_PREFIX) :]
             if repo is None:
-                add("repo-unset", f"artifact '{item}' needs a code repository but the space has none", line)
+                add(
+                    "repo-unset",
+                    f"artifact '{item}' needs a code repository "
+                    "but the space has none",
+                    line,
+                )
                 continue
             base, where = repo, "space repository"
         else:
             rel, base, where = item, page_dir, "page folder"
         target = _inside(base, rel)
         if target is None:
-            add("invalid-artifact", f"artifact '{item}' must be a relative path inside the {where}", line)
+            add(
+                "invalid-artifact",
+                f"artifact '{item}' must be a relative path inside the {where}",
+                line,
+            )
         elif not target.exists():
-            add("artifact-missing", f"artifact '{item}' does not exist in the {where}", line)
+            add(
+                "artifact-missing",
+                f"artifact '{item}' does not exist in the {where}",
+                line,
+            )
 
 
 def _check_sections(body: str, first_line: int, add: Any) -> None:
@@ -224,7 +294,11 @@ def _check_sections(body: str, first_line: int, add: Any) -> None:
             found.add(m.group(1))
     for name in REQUIRED_SECTIONS:
         if name not in found:
-            add("missing-section", f"required section '## {name}' is missing", first_line)
+            add(
+                "missing-section",
+                f"required section '## {name}' is missing",
+                first_line,
+            )
 
 
 def _check_done(page_dir: Path, lines: Lines, add: Any) -> None:
@@ -232,10 +306,18 @@ def _check_done(page_dir: Path, lines: Lines, add: Any) -> None:
     try:
         run = latest_run(page_dir)
     except (OSError, ValueError) as exc:
-        add("done-without-verify", f"status is done but the last run cannot be read: {exc}", line)
+        add(
+            "done-without-verify",
+            f"status is done but the last run cannot be read: {exc}",
+            line,
+        )
         return
     if run is None:
-        add("done-without-verify", "status is done but there is no run record", line)
+        add(
+            "done-without-verify",
+            "status is done but there is no run record",
+            line,
+        )
         return
     run_path, data = run
     verify = data.get("verify")
@@ -243,6 +325,7 @@ def _check_done(page_dir: Path, lines: Lines, add: Any) -> None:
     if ok is not True:
         add(
             "done-without-verify",
-            f"status is done but {run_path.parent.name}/{run_path.name} verify.ok is {ok!r}",
+            f"status is done but {run_path.parent.name}/{run_path.name} "
+            f"verify.ok is {ok!r}",
             line,
         )

@@ -11,18 +11,29 @@ import yaml
 
 @dataclass(frozen=True)
 class Issue:
+    """One validation problem.
+
+    Attributes:
+        code: A short kebab-case identifier, e.g. ``missing-key``.
+        message: What is wrong.
+        line: The 1-based file line, if known.
+        path: The file, if known.
+    """
+
     code: str
     message: str
     line: int | None = None
     path: Path | None = None
 
     def format(self) -> str:
+        """Returns ``path:line: code message`` for terminal output."""
         where = str(self.path) if self.path is not None else "-"
         if self.line is not None:
             where = f"{where}:{self.line}"
         return f"{where}: {self.code} {self.message}"
 
     def to_dict(self) -> dict[str, Any]:
+        """Returns the issue as a JSON-ready dict."""
         data = asdict(self)
         data["path"] = str(self.path) if self.path is not None else None
         return data
@@ -47,17 +58,33 @@ class Lines:
         return self.offset + node.start_mark.line
 
     def key(self, *path: str | int) -> int | None:
-        """Line of the key (or item) at ``path``; falls back to the nearest parent."""
+        """Returns the file line of the key or item at ``path``.
+
+        Args:
+            *path: Mapping keys and sequence indexes from the root.
+
+        Returns:
+            The line of the deepest node found on ``path``, or None when not
+            even the first part is found.
+        """
         node = self.root
         line = None
         for part in path:
             found = None
             if isinstance(node, yaml.MappingNode):
                 found = next(
-                    ((k, v) for k, v in node.value if isinstance(k, yaml.ScalarNode) and k.value == part),
+                    (
+                        (k, v)
+                        for k, v in node.value
+                        if isinstance(k, yaml.ScalarNode) and k.value == part
+                    ),
                     None,
                 )
-            elif isinstance(node, yaml.SequenceNode) and isinstance(part, int) and 0 <= part < len(node.value):
+            elif (
+                isinstance(node, yaml.SequenceNode)
+                and isinstance(part, int)
+                and 0 <= part < len(node.value)
+            ):
                 found = (node.value[part], node.value[part])
             if found is None:
                 return line

@@ -26,13 +26,35 @@ _KEEP = ".gitkeep"
 
 @dataclass
 class InitResult:
+    """What ``init_home`` did.
+
+    Attributes:
+        home: The app home directory.
+        created: Paths of the files it created, relative to the home.
+        committed: Whether it made a commit.
+    """
+
     home: Path
     created: list[str] = field(default_factory=list)
     committed: bool = False
 
 
 def init_home(home: Path) -> InitResult:
-    """Create the app home layout. Existing files are never overwritten."""
+    """Creates the app home layout and commits it.
+
+    Existing files are never overwritten. Managed files that are not yet
+    committed are committed with the init message.
+
+    Args:
+        home: The app home directory.
+
+    Returns:
+        What was created and whether a commit was made.
+
+    Raises:
+        GitError: A git command fails.
+        OSError: A file cannot be written.
+    """
     home.mkdir(parents=True, exist_ok=True)
     result = InitResult(home=home)
 

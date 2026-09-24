@@ -1,4 +1,4 @@
-"""Runner protocol, tool-neutral run events, and the shared CLI subprocess driver.
+"""Runner protocol, tool-neutral run events, and the shared CLI driver.
 
 Every run starts a fresh CLI process. The adapter only differs in how it turns
 one line of the tool's JSON stream into ``RunEvent`` values.
@@ -24,7 +24,9 @@ from madang.config import HOME_ENV, RunnerSpec
 PAGE_ENV = "MADANG_PAGE"
 CORE_URL_ENV = "MADANG_CORE_URL"
 
-EventType = Literal["text", "tool_call", "tool_result", "file_changed", "usage", "done", "error"]
+EventType = Literal[
+    "text", "tool_call", "tool_result", "file_changed", "usage", "done", "error"
+]
 RunStatus = Literal["done", "error", "blocked", "cancelled"]
 
 SUMMARY_LIMIT = 200
@@ -41,16 +43,20 @@ class Usage:
     output: int = 0
 
     def __add__(self, other: Usage) -> Usage:
-        return Usage(self.input + other.input, self.cached + other.cached, self.output + other.output)
+        return Usage(
+            self.input + other.input,
+            self.cached + other.cached,
+            self.output + other.output,
+        )
 
 
 @dataclass(frozen=True)
 class RunEvent:
     """One normalized event. Only the fields that belong to ``type`` are set.
 
-    text: ``text`` · tool_call: ``name``, ``summary`` · tool_result: ``summary`` ·
-    file_changed: ``path`` · usage: ``usage`` · done: ``text`` (final answer) ·
-    error: ``message``.
+    text: ``text`` · tool_call: ``name``, ``summary`` ·
+    tool_result: ``summary`` · file_changed: ``path`` · usage: ``usage`` ·
+    done: ``text`` (final answer) · error: ``message``.
     """
 
     type: EventType
@@ -62,11 +68,25 @@ class RunEvent:
     message: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Returns the fields that are set, as a JSON-ready dict."""
         return {k: v for k, v in asdict(self).items() if v is not None}
 
 
 @dataclass
 class RunResult:
+    """The outcome of one run.
+
+    Attributes:
+        status: How the run ended.
+        usage: Token counts reported by the tool.
+        final_text: The final answer.
+        events_log: The file that holds the raw stream, if any.
+        exit_code: The process exit code, or None when it did not start.
+        duration: Wall time in seconds.
+        error: Why the run did not finish, if it did not.
+        events: Every event emitted during the run.
+    """
+
     status: RunStatus
     usage: Usage = field(default_factory=Usage)
     final_text: str = ""
@@ -78,6 +98,7 @@ class RunResult:
 
     @property
     def changed_files(self) -> list[str]:
+        """Paths from ``file_changed`` events, in first-seen order."""
         seen: dict[str, None] = {}
         for event in self.events:
             if event.type == "file_changed" and event.path:
@@ -86,6 +107,8 @@ class RunResult:
 
 
 class Runner(Protocol):
+    """Something that runs one agent turn and reports events."""
+
     name: str
 
     def exec(
@@ -96,11 +119,21 @@ class Runner(Protocol):
         model: str,
         effort: str,
         on_event: Callable[[RunEvent], None],
-    ) -> RunResult: ...
+    ) -> RunResult:
+        """Runs once and blocks until the run ends."""
+        ...
 
 
 def summarize(value: Any, limit: int = SUMMARY_LIMIT) -> str:
-    """One line, at most ``limit`` characters."""
+    """Returns ``value`` as one line of at most ``limit`` characters.
+
+    Args:
+        value: A string, or any JSON-serializable value.
+        limit: The maximum length. Longer lines end with an ellipsis.
+
+    Returns:
+        The summary line.
+    """
     if not isinstance(value, str):
         value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     line = " ".join(value.split())
@@ -115,14 +148,27 @@ class StreamParser(Protocol):
     error: str | None
     finished: bool
 
-    def feed(self, obj: dict[str, Any]) -> list[RunEvent]: ...
+    def feed(self, obj: dict[str, Any]) -> list[RunEvent]:
+        """Returns the events for one decoded JSON line."""
+        ...
 
 
 _VAR = re.compile(r"\{([a-z_]+)\}")
 
 
 def render_args(args: list[str], values: Mapping[str, str | None]) -> list[str]:
-    """Substitute ``{name}`` placeholders. Unknown or unset names are errors."""
+    """Substitutes ``{name}`` placeholders in runner arguments.
+
+    Args:
+        args: Argument templates.
+        values: Placeholder values. None means unset for this run.
+
+    Returns:
+        The rendered arguments.
+
+    Raises:
+        ValueError: A placeholder is unknown or unset.
+    """
 
     def sub(match: re.Match[str]) -> str:
         name = match.group(1)
@@ -130,14 +176,25 @@ def render_args(args: list[str], values: Mapping[str, str | None]) -> list[str]:
             raise ValueError(f"unknown runner argument variable {{{name}}}")
         value = values[name]
         if value is None:
-            raise ValueError(f"runner argument variable {{{name}}} has no value for this run")
+            raise ValueError(
+                f"runner argument variable {{{name}}} has no value for this run"
+            )
         return value
 
     return [_VAR.sub(sub, arg) for arg in args]
 
 
 class CliRunner:
-    """Runs a subscription CLI as a fresh subprocess and parses its JSON stream."""
+    """Runs a subscription CLI as a fresh subprocess and parses its stream.
+
+    Subclasses set ``name`` and implement ``new_parser``.
+
+    Attributes:
+        spec: How to start the CLI.
+        home: The app home passed to the agent.
+        core_url: The core API URL passed to the agent, if any.
+        kill_grace: Seconds between SIGTERM and SIGKILL when stopping.
+    """
 
     name: str = ""
 
@@ -158,11 +215,35 @@ class CliRunner:
         self._stop_reason: RunStatus | None = None
 
     def new_parser(self) -> StreamParser:
+        """Returns a fresh parser for one run's stream."""
         raise NotImplementedError
 
     def command(
-        self, *, cwd: Path, prompt: str, model: str, effort: str, page: str | None = None
+        self,
+        *,
+        cwd: Path,
+        prompt: str,
+        model: str,
+        effort: str,
+        page: str | None = None,
     ) -> list[str]:
+        """Builds the command line for one run.
+
+        The prompt is appended after ``--`` unless the arguments place it.
+
+        Args:
+            cwd: The working directory of the run.
+            prompt: The prompt.
+            model: The model name.
+            effort: The reasoning effort.
+            page: The page id, if the run belongs to a page.
+
+        Returns:
+            The command and its arguments.
+
+        Raises:
+            ValueError: An argument placeholder is unknown or unset.
+        """
         values = {
             "model": model,
             "effort": effort,
@@ -174,11 +255,19 @@ class CliRunner:
         uses_prompt = any("{prompt}" in arg for arg in self.spec.args)
         args = render_args(self.spec.args, values)
         if not uses_prompt:
-            # "--" keeps a prompt that starts with "-" from being read as an option.
+            # "--" keeps a prompt starting with "-" from reading as an option.
             args += ["--", prompt]
         return [self.spec.bin, *args]
 
     def environment(self, page: str | None) -> dict[str, str]:
+        """Returns the process environment with the madang variables set.
+
+        Args:
+            page: The page id, or None to remove ``MADANG_PAGE``.
+
+        Returns:
+            A copy of ``os.environ`` with the madang variables applied.
+        """
         env = dict(os.environ)
         env[HOME_ENV] = str(self.home)
         if page:
@@ -201,13 +290,28 @@ class CliRunner:
         timeout: float | None = None,
         events_log: Path | None = None,
     ) -> RunResult:
-        """Run once and block until the process ends.
+        """Runs once and blocks until the process ends.
 
-        ``timeout`` is in seconds; when it passes, the whole process group is
-        stopped and the result status is ``blocked``. The raw stream is copied
-        line by line to ``events_log`` when given.
+        Args:
+            cwd: The working directory of the run.
+            prompt: The prompt.
+            model: The model name.
+            effort: The reasoning effort.
+            on_event: Called with each event as it arrives.
+            page: The page id, if the run belongs to a page.
+            timeout: Seconds before the whole process group is stopped and
+                the run ends as ``blocked``.
+            events_log: A file the raw stream is appended to line by line.
+
+        Returns:
+            The result of the run.
+
+        Raises:
+            ValueError: An argument placeholder is unknown or unset.
         """
-        cmd = self.command(cwd=cwd, prompt=prompt, model=model, effort=effort, page=page)
+        cmd = self.command(
+            cwd=cwd, prompt=prompt, model=model, effort=effort, page=page
+        )
         parser = self.new_parser()
         events: list[RunEvent] = []
 
@@ -233,16 +337,27 @@ class CliRunner:
         except OSError as exc:
             message = f"cannot start {self.spec.bin}: {exc}"
             emit(RunEvent("error", message=message))
-            return RunResult(status="error", error=message, events=events, events_log=events_log)
+            return RunResult(
+                status="error",
+                error=message,
+                events=events,
+                events_log=events_log,
+            )
 
         with self._lock:
             self._proc = proc
             self._stop_reason = None
 
         stderr_tail: deque[str] = deque(maxlen=STDERR_TAIL_LINES)
-        drain = threading.Thread(target=_drain, args=(proc.stderr, stderr_tail), daemon=True)
+        drain = threading.Thread(
+            target=_drain, args=(proc.stderr, stderr_tail), daemon=True
+        )
         drain.start()
-        timer = threading.Timer(timeout, self._stop, args=("blocked",)) if timeout else None
+        timer = (
+            threading.Timer(timeout, self._stop, args=("blocked",))
+            if timeout
+            else None
+        )
         if timer:
             timer.daemon = True
             timer.start()
@@ -275,20 +390,9 @@ class CliRunner:
                 self._proc = None
         duration = round(time.monotonic() - started, 3)
 
-        stop = self._stop_reason
-        error: str | None = None
-        if stop == "blocked":
-            status: RunStatus = "blocked"
-            error = f"timed out after {timeout:g}s"
-        elif stop == "cancelled":
-            status = "cancelled"
-            error = "cancelled"
-        elif parser.error or exit_code != 0 or not parser.finished:
-            status = "error"
-            error = parser.error or _failure_message(exit_code, stderr_tail, parser.finished)
-        else:
-            status = "done"
-
+        status, error = _outcome(
+            self._stop_reason, parser, exit_code, stderr_tail, timeout
+        )
         if status == "done":
             emit(RunEvent("done", text=parser.final_text))
         elif error and error != parser.error:
@@ -306,7 +410,10 @@ class CliRunner:
         )
 
     def cancel(self) -> None:
-        """Stop the running process group, if any. The run ends as ``cancelled``."""
+        """Stops the running process group, if any.
+
+        The run ends as ``cancelled``.
+        """
         self._stop("cancelled")
 
     def _stop(self, reason: RunStatus) -> None:
@@ -349,10 +456,32 @@ def _decode(line: str) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _failure_message(exit_code: int, stderr_tail: deque[str], finished: bool) -> str:
+def _outcome(
+    stop: RunStatus | None,
+    parser: StreamParser,
+    exit_code: int,
+    stderr_tail: deque[str],
+    timeout: float | None,
+) -> tuple[RunStatus, str | None]:
+    if stop == "blocked":
+        return "blocked", f"timed out after {timeout:g}s"
+    if stop == "cancelled":
+        return "cancelled", "cancelled"
+    if parser.error or exit_code != 0 or not parser.finished:
+        return "error", parser.error or _failure_message(
+            exit_code, stderr_tail, parser.finished
+        )
+    return "done", None
+
+
+def _failure_message(
+    exit_code: int, stderr_tail: deque[str], finished: bool
+) -> str:
     lines = [line for line in stderr_tail if line.strip()]
     if lines:
         return summarize(" | ".join(lines[-3:]), 500)
     if exit_code != 0:
         return f"exited with code {exit_code}"
-    return "stream ended without a final result" if not finished else "run failed"
+    return (
+        "stream ended without a final result" if not finished else "run failed"
+    )

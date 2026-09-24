@@ -1,24 +1,40 @@
-"""Typer wiring for the agent commands: task, decide, artifact, commit, push, promote, view, help."""
+"""Typer wiring for the agent commands.
+
+The commands are task, decide, artifact, commit, push, promote, view, and help.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
 from madang.cli_agent import ops
-from madang.cli_agent.context import AgentError, PageContext, ValidationFailed, resolve
+from madang.cli_agent.context import (
+    AgentError,
+    PageContext,
+    PageValidationError,
+    resolve,
+)
 from madang.store import frontmatter, git
 
 PageOption = Annotated[
-    Optional[str],
-    typer.Option("--page", help="Page id. Required outside an agent run; defaults to $MADANG_PAGE."),
+    str | None,
+    typer.Option(
+        "--page",
+        help=(
+            "Page id. Required outside an agent run; defaults to $MADANG_PAGE."
+        ),
+    ),
 ]
 HomeOption = Annotated[
-    Optional[Path],
-    typer.Option("--home", help="App home directory. Defaults to $MADANG_HOME or ~/.madang."),
+    Path | None,
+    typer.Option(
+        "--home",
+        help="App home directory. Defaults to $MADANG_HOME or ~/.madang.",
+    ),
 ]
 
 OVERVIEW = """\
@@ -42,32 +58,55 @@ madang agent commands (act on the page in $MADANG_PAGE, or --page <id>):
       Show this list, or the options of one command.
 
 Every change is checked against the page validators and undone when a check fails.
-"""
+"""  # noqa: E501
 
-artifact_app = typer.Typer(help="Manage state.md artifacts.", no_args_is_help=True, add_completion=False)
-view_app = typer.Typer(help="Manage view blocks.", no_args_is_help=True, add_completion=False)
+artifact_app = typer.Typer(
+    help="Manage state.md artifacts.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+view_app = typer.Typer(
+    help="Manage view blocks.", no_args_is_help=True, add_completion=False
+)
 
 
-def _run(page: str | None, home: Path | None, action: Callable[[PageContext], str]) -> None:
+def _run(
+    page: str | None, home: Path | None, action: Callable[[PageContext], str]
+) -> None:
     try:
         ctx = resolve(page, home)
         message = action(ctx)
-    except ValidationFailed as exc:
+    except PageValidationError as exc:
         typer.echo(f"error: {exc}", err=True)
         for issue in exc.issues:
             typer.echo(f"  {issue.format()}", err=True)
         raise typer.Exit(1) from exc
-    except (AgentError, frontmatter.FrontmatterError, git.GitError, OSError) as exc:
+    except (
+        AgentError,
+        frontmatter.FrontmatterError,
+        git.GitError,
+        OSError,
+    ) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc
     typer.echo(message)
 
 
 def task(
-    task_id: Annotated[str, typer.Argument(metavar="ID", help="Task id, e.g. T2.")],
-    status: Annotated[str, typer.Option("--status", help="todo | doing | blocked | review | done")],
-    title: Annotated[Optional[str], typer.Option("--title", help="Task title (required for a new task).")] = None,
-    due: Annotated[Optional[str], typer.Option("--due", help="Due date, YYYY-MM-DD.")] = None,
+    task_id: Annotated[
+        str, typer.Argument(metavar="ID", help="Task id, e.g. T2.")
+    ],
+    status: Annotated[
+        str,
+        typer.Option("--status", help="todo | doing | blocked | review | done"),
+    ],
+    title: Annotated[
+        str | None,
+        typer.Option("--title", help="Task title (required for a new task)."),
+    ] = None,
+    due: Annotated[
+        str | None, typer.Option("--due", help="Due date, YYYY-MM-DD.")
+    ] = None,
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
@@ -76,17 +115,33 @@ def task(
 
 
 def decide(
-    decision_id: Annotated[str, typer.Argument(metavar="ID", help="Decision id, e.g. D2.")],
+    decision_id: Annotated[
+        str, typer.Argument(metavar="ID", help="Decision id, e.g. D2.")
+    ],
     topic: Annotated[str, typer.Option("--topic", help="What was decided.")],
     choice: Annotated[str, typer.Option("--choice", help="The chosen option.")],
-    options: Annotated[str, typer.Option("--options", help="Comma separated options, including the choice.")],
+    options: Annotated[
+        str,
+        typer.Option(
+            "--options", help="Comma separated options, including the choice."
+        ),
+    ],
     supersedes: Annotated[
-        Optional[str], typer.Option("--supersedes", help="Id of the decision this one replaces.")
+        str | None,
+        typer.Option(
+            "--supersedes", help="Id of the decision this one replaces."
+        ),
     ] = None,
     state: Annotated[
-        str, typer.Option("--state", help="proposed | confirmed | superseded | deferred")
+        str,
+        typer.Option(
+            "--state", help="proposed | confirmed | superseded | deferred"
+        ),
     ] = "confirmed",
-    by: Annotated[Optional[str], typer.Option("--by", help="Who decided. Defaults to $MADANG_BY.")] = None,
+    by: Annotated[
+        str | None,
+        typer.Option("--by", help="Who decided. Defaults to $MADANG_BY."),
+    ] = None,
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
@@ -95,15 +150,29 @@ def decide(
         page,
         home,
         lambda ctx: ops.decide(
-            ctx, decision_id, topic=topic, choice=choice, options=options,
-            supersedes=supersedes, state=state, by=by,
+            ctx,
+            decision_id,
+            topic=topic,
+            choice=choice,
+            options=options,
+            supersedes=supersedes,
+            state=state,
+            by=by,
         ),
     )
 
 
 @artifact_app.command("add")
 def artifact_add(
-    path: Annotated[str, typer.Argument(help="blocks/... in the page, a file in the code repository, or repo:<path>.")],
+    path: Annotated[
+        str,
+        typer.Argument(
+            help=(
+                "blocks/... in the page, a file in the code repository, "
+                "or repo:<path>."
+            )
+        ),
+    ],
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
@@ -112,7 +181,9 @@ def artifact_add(
 
 
 def commit(
-    message: Annotated[str, typer.Option("-m", "--message", help="Commit message.")],
+    message: Annotated[
+        str, typer.Option("-m", "--message", help="Commit message.")
+    ],
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
@@ -126,7 +197,9 @@ def push(page: PageOption = None, home: HomeOption = None) -> None:
 
 
 def promote(
-    block: Annotated[str, typer.Argument(metavar="BLOCK", help="Block id, e.g. b05.")],
+    block: Annotated[
+        str, typer.Argument(metavar="BLOCK", help="Block id, e.g. b05.")
+    ],
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
@@ -136,11 +209,22 @@ def promote(
 
 @view_app.command("create")
 def view_create(
-    template: Annotated[str, typer.Option("--template", help="Template name, optionally name@version.")],
-    data: Annotated[
-        list[str], typer.Option("--data", help="Data block for the next slot, or slot=bNN. Repeatable.")
+    template: Annotated[
+        str,
+        typer.Option(
+            "--template", help="Template name, optionally name@version."
+        ),
     ],
-    title: Annotated[Optional[str], typer.Option("--title", help="View title.")] = None,
+    data: Annotated[
+        list[str],
+        typer.Option(
+            "--data",
+            help="Data block for the next slot, or slot=bNN. Repeatable.",
+        ),
+    ],
+    title: Annotated[
+        str | None, typer.Option("--title", help="View title.")
+    ] = None,
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
@@ -149,7 +233,11 @@ def view_create(
 
 
 def register(root: typer.Typer) -> None:
-    """Add the agent commands to the root ``madang`` app."""
+    """Adds the agent commands to the root ``madang`` app.
+
+    Args:
+        root: The root ``madang`` Typer app.
+    """
     root.command()(task)
     root.command()(decide)
     root.add_typer(artifact_app, name="artifact")
@@ -161,7 +249,11 @@ def register(root: typer.Typer) -> None:
     @root.command("help")
     def help_command(
         command: Annotated[
-            Optional[list[str]], typer.Argument(metavar="[COMMAND]...", help="Command, e.g. task or view create.")
+            list[str] | None,
+            typer.Argument(
+                metavar="[COMMAND]...",
+                help="Command, e.g. task or view create.",
+            ),
         ] = None,
     ) -> None:
         """Show agent command usage."""
@@ -170,7 +262,13 @@ def register(root: typer.Typer) -> None:
             return
         group = typer.main.get_command(root)
         try:
-            group.main(args=[*command, "--help"], prog_name="madang", standalone_mode=False)
+            group.main(
+                args=[*command, "--help"],
+                prog_name="madang",
+                standalone_mode=False,
+            )
         except Exception as exc:  # unknown command
-            typer.echo(f"error: unknown command '{' '.join(command)}'", err=True)
+            typer.echo(
+                f"error: unknown command '{' '.join(command)}'", err=True
+            )
             raise typer.Exit(1) from exc

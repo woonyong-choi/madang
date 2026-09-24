@@ -24,6 +24,7 @@ class CodexStreamParser:
         self._started: set[str] = set()
 
     def feed(self, obj: dict[str, Any]) -> list[RunEvent]:
+        """Returns the events for one decoded JSON line."""
         kind = obj.get("type")
         if kind == "item.started":
             return self._item_started(_item(obj))
@@ -33,7 +34,9 @@ class CodexStreamParser:
             return self._turn_completed(obj)
         if kind == "turn.failed":
             err = obj.get("error")
-            return self._fail(err.get("message") if isinstance(err, dict) else err)
+            return self._fail(
+                err.get("message") if isinstance(err, dict) else err
+            )
         if kind == "error":
             message = obj.get("message")
             # Transport retries are reported as errors but the turn goes on.
@@ -58,7 +61,11 @@ class CodexStreamParser:
             self.final_text = text
             return [RunEvent("text", text=text)]
         if itype == "file_change":
-            changes = item.get("changes") if isinstance(item.get("changes"), list) else []
+            changes = (
+                item.get("changes")
+                if isinstance(item.get("changes"), list)
+                else []
+            )
             if item.get("status") == "failed":
                 return []
             return [
@@ -103,12 +110,26 @@ def _item(obj: dict[str, Any]) -> dict[str, Any]:
 def _tool_call(item: dict[str, Any]) -> RunEvent | None:
     itype = item.get("type")
     if itype == "command_execution":
-        return RunEvent("tool_call", name="shell", summary=summarize(item.get("command", "")))
+        return RunEvent(
+            "tool_call",
+            name="shell",
+            summary=summarize(item.get("command", "")),
+        )
     if itype == "mcp_tool_call":
-        name = ".".join(str(p) for p in (item.get("server"), item.get("tool")) if p)
-        return RunEvent("tool_call", name=name or "mcp", summary=summarize(item.get("arguments") or ""))
+        name = ".".join(
+            str(p) for p in (item.get("server"), item.get("tool")) if p
+        )
+        return RunEvent(
+            "tool_call",
+            name=name or "mcp",
+            summary=summarize(item.get("arguments") or ""),
+        )
     if itype == "web_search":
-        return RunEvent("tool_call", name="web_search", summary=summarize(item.get("query", "")))
+        return RunEvent(
+            "tool_call",
+            name="web_search",
+            summary=summarize(item.get("query", "")),
+        )
     return None
 
 
@@ -125,7 +146,10 @@ def _tool_result(item: dict[str, Any]) -> str:
 
 
 class CodexRunner(CliRunner):
+    """Runs the Codex CLI."""
+
     name = "codex"
 
     def new_parser(self) -> CodexStreamParser:
+        """Returns a fresh codex stream parser."""
         return CodexStreamParser()

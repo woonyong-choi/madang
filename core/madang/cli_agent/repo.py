@@ -33,10 +33,22 @@ SENSITIVE_NAMES = (
 
 
 def require_repo(ctx: PageContext) -> Path:
-    """The space's code repository; refuse when there is none or it is not a git work tree."""
+    """Returns the space's code repository.
+
+    Args:
+        ctx: The page whose space owns the repository.
+
+    Returns:
+        The repository work tree.
+
+    Raises:
+        AgentError: The space has no repository or it is not a git work tree.
+    """
     repo = ctx.repo()
     if repo is None:
-        raise AgentError("this page's space has no code repository (set repo in space.md)")
+        raise AgentError(
+            "this page's space has no code repository (set repo in space.md)"
+        )
     if not repo.is_dir():
         raise AgentError(f"code repository {repo} does not exist")
     proc = git.run(repo, "rev-parse", "--is-inside-work-tree", check=False)
@@ -46,13 +58,21 @@ def require_repo(ctx: PageContext) -> Path:
 
 
 def sensitive(paths: list[str]) -> list[str]:
+    """Returns the paths whose file name matches ``SENSITIVE_NAMES``."""
     return [
-        p for p in paths if any(fnmatch.fnmatch(PurePosixPath(p).name, pat) for pat in SENSITIVE_NAMES)
+        p
+        for p in paths
+        if any(
+            fnmatch.fnmatch(PurePosixPath(p).name, pat)
+            for pat in SENSITIVE_NAMES
+        )
     ]
 
 
 def _changed_paths(repo: Path) -> list[str]:
-    out = git.run(repo, "status", "--porcelain", "-z", "--untracked-files=all").stdout
+    out = git.run(
+        repo, "status", "--porcelain", "-z", "--untracked-files=all"
+    ).stdout
     paths: list[str] = []
     entries = iter(out.split("\0"))
     for entry in entries:
@@ -66,11 +86,24 @@ def _changed_paths(repo: Path) -> list[str]:
 
 
 def head(repo: Path) -> str:
+    """Returns the short hash of HEAD."""
     return git.run(repo, "rev-parse", "--short", "HEAD").stdout.strip()
 
 
 def commit_all(repo: Path, message: str) -> str:
-    """Stage every change in the repository and commit. Returns the short hash."""
+    """Stages every change in the repository and commits it.
+
+    Args:
+        repo: The repository work tree.
+        message: The commit message.
+
+    Returns:
+        The short hash of the new commit.
+
+    Raises:
+        AgentError: The message is empty, nothing changed, a changed file
+            looks sensitive, or git fails.
+    """
     if not message.strip():
         raise AgentError("commit message is empty")
     changed = _changed_paths(repo)
@@ -78,7 +111,10 @@ def commit_all(repo: Path, message: str) -> str:
         raise AgentError("nothing to commit in the code repository")
     blocked = sensitive(changed)
     if blocked:
-        raise AgentError("refusing to commit files that may hold secrets: " + ", ".join(blocked))
+        raise AgentError(
+            "refusing to commit files that may hold secrets: "
+            + ", ".join(blocked)
+        )
     try:
         git.run(repo, "add", "-A")
         if not git.has_staged_changes(repo):
@@ -90,10 +126,28 @@ def commit_all(repo: Path, message: str) -> str:
 
 
 def commit_paths(repo: Path, paths: list[str], message: str) -> str | None:
-    """Commit only ``paths``. Returns the short hash, or ``None`` when they are unchanged."""
+    """Commits only ``paths``.
+
+    Args:
+        repo: The repository work tree.
+        paths: Paths relative to the repository.
+        message: The commit message.
+
+    Returns:
+        The short hash of the new commit, or None when the paths are
+        unchanged.
+
+    Raises:
+        AgentError: git fails. The paths are unstaged again.
+    """
     try:
         git.add(repo, paths)
-        if git.run(repo, "diff", "--cached", "--quiet", "--", *paths, check=False).returncode == 0:
+        if (
+            git.run(
+                repo, "diff", "--cached", "--quiet", "--", *paths, check=False
+            ).returncode
+            == 0
+        ):
             return None
         git.commit(repo, message, paths)
     except git.GitError as exc:
@@ -103,21 +157,39 @@ def commit_paths(repo: Path, paths: list[str], message: str) -> str | None:
 
 
 def push_current(repo: Path) -> tuple[str, str]:
-    """Push the current branch to its remote without force. Returns (remote, branch)."""
-    proc = git.run(repo, "symbolic-ref", "--quiet", "--short", "HEAD", check=False)
+    """Pushes the current branch to its remote without force.
+
+    Args:
+        repo: The repository work tree.
+
+    Returns:
+        A ``(remote, branch)`` tuple.
+
+    Raises:
+        AgentError: HEAD is detached, there is no remote, or the push fails.
+    """
+    proc = git.run(
+        repo, "symbolic-ref", "--quiet", "--short", "HEAD", check=False
+    )
     branch = proc.stdout.strip()
     if proc.returncode != 0 or not branch:
         raise AgentError("HEAD is detached; check out a branch before pushing")
-    remote = git.run(repo, "config", f"branch.{branch}.remote", check=False).stdout.strip()
+    remote = git.run(
+        repo, "config", f"branch.{branch}.remote", check=False
+    ).stdout.strip()
     remotes = git.run(repo, "remote").stdout.split()
     if not remote or remote == ".":
         if "origin" not in remotes:
             raise AgentError("the code repository has no remote to push to")
         remote = "origin"
     elif remote not in remotes:
-        raise AgentError(f"remote '{remote}' of branch '{branch}' does not exist")
+        raise AgentError(
+            f"remote '{remote}' of branch '{branch}' does not exist"
+        )
     ref = f"refs/heads/{branch}"
     proc = git.run(repo, "push", remote, f"{ref}:{ref}", check=False)
     if proc.returncode != 0:
-        raise AgentError(f"push to {remote}/{branch} failed: {proc.stderr.strip()}")
+        raise AgentError(
+            f"push to {remote}/{branch} failed: {proc.stderr.strip()}"
+        )
     return remote, branch

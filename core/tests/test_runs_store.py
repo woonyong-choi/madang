@@ -41,10 +41,17 @@ def test_allocate_continues_after_existing_records(page_dir: Path) -> None:
 
 def test_write_and_read(page_dir: Path) -> None:
     record = runs.RunRecord(
-        n=1, kind="small", tier=1, runner="codex", model="gpt-6-luna", effort="high",
+        n=1,
+        kind="small",
+        tier=1,
+        runner="codex",
+        model="gpt-6-luna",
+        effort="high",
         usage=runs.RunUsage(input=29104, cached=24310, output=612),
-        changed_files=["blocks/b03.json"], result_status="done",
-        verify=runs.RunVerify(cmd="pytest", ok=True), events_log=runs.events_rel(1),
+        changed_files=["blocks/b03.json"],
+        result_status="done",
+        verify=runs.RunVerify(cmd="pytest", ok=True),
+        events_log=runs.events_rel(1),
         custom="kept",
     )
     path = runs.write_run(page_dir, record)
@@ -74,8 +81,9 @@ def test_timeout_by_kind(tmp_path: Path) -> None:
     assert timeout_seconds(config, "unknown") is None
 
 
-def test_run_page_records(page_dir: Path, fake_spec: RunnerSpec,
-                          monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_page_records(
+    page_dir: Path, fake_spec: RunnerSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
     home = page_dir.parents[3]
     config = load_config(home)
     monkeypatch.setenv("FAKE_STREAM", str(STREAMS / "codex-tools.jsonl"))
@@ -83,43 +91,113 @@ def test_run_page_records(page_dir: Path, fake_spec: RunnerSpec,
     seen = []
 
     run = run_page(
-        runner, config=config, page_dir=page_dir, cwd=page_dir,
-        prompt="p", model="gpt-6-luna", effort="high", kind="small", tier=1,
-        trigger={"message": "b06", "mode": "edit"}, on_event=seen.append,
+        runner,
+        config=config,
+        page_dir=page_dir,
+        cwd=page_dir,
+        prompt="p",
+        model="gpt-6-luna",
+        effort="high",
+        kind="small",
+        tier=1,
+        trigger={"message": "b06", "mode": "edit"},
+        on_event=seen.append,
     )
 
     assert run.n == 1
     assert run.result.status == "done"
     assert seen == run.result.events
     record = runs.read_run(page_dir, 1)
-    assert record.runner == "codex" and record.kind == "small" and record.tier == 1
+    assert (
+        record.runner == "codex" and record.kind == "small" and record.tier == 1
+    )
     assert record.usage == runs.RunUsage(input=15230, cached=11904, output=402)
     assert record.result_status == "done"
     assert record.events_log == "runs/1.events.jsonl"
     assert record.trigger == {"message": "b06", "mode": "edit"}
     assert record.started <= record.finished
-    assert record.changed_files == ["/work/project/hello.txt", "/work/project/README.md"]
-    assert runs.events_path(page_dir, 1).read_text() == (STREAMS / "codex-tools.jsonl").read_text()
+    assert record.changed_files == [
+        "/work/project/hello.txt",
+        "/work/project/README.md",
+    ]
+    assert (
+        runs.events_path(page_dir, 1).read_text()
+        == (STREAMS / "codex-tools.jsonl").read_text()
+    )
 
-    assert run_page(runner, config=config, page_dir=page_dir, cwd=page_dir, prompt="p",
-                    model="m", effort="low", kind="small").n == 2
+    assert (
+        run_page(
+            runner,
+            config=config,
+            page_dir=page_dir,
+            cwd=page_dir,
+            prompt="p",
+            model="m",
+            effort="low",
+            kind="small",
+        ).n
+        == 2
+    )
 
 
-def test_changed_files_relative_to_page(page_dir: Path, tmp_path: Path, fake_spec: RunnerSpec,
-                                        monkeypatch: pytest.MonkeyPatch) -> None:
+def test_changed_files_relative_to_page(
+    page_dir: Path,
+    tmp_path: Path,
+    fake_spec: RunnerSpec,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     stream = tmp_path / "s.jsonl"
     target = page_dir / "blocks" / "b03.json"
-    stream.write_text("\n".join(json.dumps(o) for o in [
-        {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": "t", "name": "Write", "input": {"file_path": str(target)}}]}},
-        {"type": "user", "message": {"content": [
-            {"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}},
-        {"type": "result", "subtype": "success", "is_error": False, "result": "ok",
-         "usage": {"input_tokens": 1, "output_tokens": 1}},
-    ]) + "\n")
+    stream.write_text(
+        "\n".join(
+            json.dumps(o)
+            for o in [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "t",
+                                "name": "Write",
+                                "input": {"file_path": str(target)},
+                            }
+                        ]
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "t",
+                                "content": "ok",
+                            }
+                        ]
+                    },
+                },
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": "ok",
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                },
+            ]
+        )
+        + "\n"
+    )
     monkeypatch.setenv("FAKE_STREAM", str(stream))
     home = page_dir.parents[3]
-    run = run_page(ClaudeRunner(fake_spec, home=home), config=load_config(home),
-                   page_dir=page_dir, cwd=tmp_path, prompt="p", model="m", effort="low",
-                   kind="small")
+    run = run_page(
+        ClaudeRunner(fake_spec, home=home),
+        config=load_config(home),
+        page_dir=page_dir,
+        cwd=tmp_path,
+        prompt="p",
+        model="m",
+        effort="low",
+        kind="small",
+    )
     assert run.record.changed_files == ["blocks/b03.json"]

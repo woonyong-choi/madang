@@ -13,13 +13,16 @@ runner = CliRunner()
 
 def git(home: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", "-C", str(home), *args], capture_output=True, text=True, check=True
+        ["git", "-C", str(home), *args],
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
 
 
 @pytest.fixture(autouse=True)
 def isolated_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep user and system git config (signing, hooks, templates) out of tests."""
+    """Keeps user and system git config (signing, hooks, ...) out of tests."""
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
@@ -75,13 +78,25 @@ def test_init_is_idempotent(home: Path) -> None:
 def test_init_restores_missing_file(home: Path) -> None:
     assert runner.invoke(app, ["init", "--home", str(home)]).exit_code == 0
     git(home, "rm", "-q", "root.md")
-    git(home, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "drop root")
+    git(
+        home,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "-q",
+        "-m",
+        "drop root",
+    )
 
     result = runner.invoke(app, ["init", "--home", str(home)])
     assert result.exit_code == 0, result.output
     assert (home / "root.md").is_file()
     assert git(home, "log", "--format=%s").splitlines()[0] == "[home] init"
-    assert git(home, "show", "--name-only", "--format=", "HEAD").split() == ["root.md"]
+    assert git(home, "show", "--name-only", "--format=", "HEAD").split() == [
+        "root.md"
+    ]
     assert git(home, "status", "--porcelain") == ""
 
 
@@ -143,7 +158,9 @@ def test_model_defaults_match_bundled(home: Path) -> None:
     runner.invoke(app, ["init", "--home", str(home)])
     cfg = load_config(home)
     assert MadangConfig() == cfg.madang
-    bare = RoutesConfig(kinds=cfg.routes.kinds, default_kind=cfg.routes.default_kind)
+    bare = RoutesConfig(
+        kinds=cfg.routes.kinds, default_kind=cfg.routes.default_kind
+    )
     assert bare.limits == cfg.routes.limits
     assert bare.decider == cfg.routes.decider
 
@@ -155,7 +172,9 @@ def test_load_config_reads_home_files(home: Path) -> None:
     assert load_config(home).madang.core.port == 7480
 
 
-def test_resolve_home_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_home_precedence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MADANG_HOME", str(tmp_path / "env"))
     assert resolve_home(tmp_path / "arg") == (tmp_path / "arg").resolve()
     assert resolve_home() == (tmp_path / "env").resolve()
@@ -164,7 +183,9 @@ def test_resolve_home_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert resolve_home() == (tmp_path / "user/.madang").resolve()
 
 
-def test_init_uses_env_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_init_uses_env_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MADANG_HOME", str(tmp_path / "env"))
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert (tmp_path / "env/root.md").is_file()

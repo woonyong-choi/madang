@@ -1,7 +1,7 @@
-"""YAML front matter: split a Markdown file into header and body and join it back.
+"""YAML front matter: split a Markdown file into header and body and back.
 
-``split`` followed by ``join`` returns the original text byte for byte, so callers
-can read the header without disturbing the body.
+``split`` followed by ``join`` returns the original text byte for byte, so
+callers can read the header without disturbing the body.
 """
 
 from __future__ import annotations
@@ -16,6 +16,12 @@ FENCE = "---"
 
 
 class FrontmatterError(ValueError):
+    """Front matter that cannot be split or parsed.
+
+    Attributes:
+        line: The 1-based file line of the problem, if known.
+    """
+
     def __init__(self, message: str, line: int | None = None) -> None:
         super().__init__(message)
         self.line = line
@@ -25,9 +31,9 @@ class FrontmatterError(ValueError):
 class Parts:
     """A file cut at its front matter fences.
 
-    ``header`` is the raw YAML between the fences (``None`` when the file has no
-    front matter). ``open_nl``/``close_nl`` keep the fence line endings so that
-    ``join`` is lossless.
+    ``header`` is the raw YAML between the fences (``None`` when the file has
+    no front matter). ``open_nl``/``close_nl`` keep the fence line endings so
+    that ``join`` is lossless.
     """
 
     header: str | None
@@ -57,6 +63,18 @@ def _line_ending(line: str) -> str:
 
 
 def split(text: str) -> Parts:
+    """Cuts a file at its front matter fences.
+
+    Args:
+        text: The file contents.
+
+    Returns:
+        The parts. ``header`` is None when the text does not start with
+        ``---``.
+
+    Raises:
+        FrontmatterError: The front matter is not closed.
+    """
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].rstrip("\r\n") != FENCE:
         return Parts(header=None, body=text)
@@ -72,43 +90,74 @@ def split(text: str) -> Parts:
 
 
 def join(parts: Parts) -> str:
+    """Returns the file text for ``parts``; the inverse of ``split``."""
     if parts.header is None:
         return parts.body
-    return f"{FENCE}{parts.open_nl}{parts.header}{FENCE}{parts.close_nl}{parts.body}"
+    return (
+        f"{FENCE}{parts.open_nl}{parts.header}"
+        f"{FENCE}{parts.close_nl}{parts.body}"
+    )
 
 
 def load_header(parts: Parts) -> dict[str, Any]:
-    """Parse the header as a YAML mapping (empty dict when there is none)."""
+    """Parses the header as a YAML mapping.
+
+    Args:
+        parts: The split file.
+
+    Returns:
+        The header mapping, or an empty dict when there is none.
+
+    Raises:
+        FrontmatterError: The header is not valid YAML or not a mapping.
+    """
     if parts.header is None:
         return {}
     try:
         data = yaml.safe_load(parts.header)
     except yaml.YAMLError as exc:
         mark = getattr(exc, "problem_mark", None)
-        line = parts.header_line + mark.line if mark is not None else parts.header_line
+        line = (
+            parts.header_line + mark.line
+            if mark is not None
+            else parts.header_line
+        )
         raise FrontmatterError(f"invalid YAML: {exc}", line=line) from exc
     if data is None:
         return {}
     if not isinstance(data, dict):
-        raise FrontmatterError("front matter must be a mapping", line=parts.header_line)
+        raise FrontmatterError(
+            "front matter must be a mapping", line=parts.header_line
+        )
     return data
 
 
 def parse(text: str) -> tuple[dict[str, Any], str]:
-    """Return (header mapping, body)."""
+    """Parses a file into its header mapping and body.
+
+    Args:
+        text: The file contents.
+
+    Returns:
+        A ``(header, body)`` tuple.
+
+    Raises:
+        FrontmatterError: The front matter cannot be split or parsed.
+    """
     parts = split(text)
     return load_header(parts), parts.body
 
 
 def read(path: Path) -> tuple[dict[str, Any], str]:
+    """Reads and parses a file as in ``parse``."""
     return parse(path.read_text(encoding="utf-8"))
 
 
 def dump_header(header: dict[str, Any]) -> str:
-    """Serialize a header mapping as the YAML text between the fences."""
+    """Returns a header mapping as the YAML text between the fences."""
     return yaml.safe_dump(header, sort_keys=False, allow_unicode=True)
 
 
 def dumps(header: dict[str, Any], body: str) -> str:
-    """Build a new file from a header mapping and a body."""
+    """Returns new file text from a header mapping and a body."""
     return join(Parts(header=dump_header(header), body=body))
