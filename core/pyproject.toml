@@ -1,7 +1,7 @@
 [project]
 name = "madang"
 version = "0.1.0"
-description = "Madang core: flow engine, runners, validators, app home storage, and the madang CLI"
+description = "Madang core: flow engine, runners, validators, project record storage, and the madang CLI"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

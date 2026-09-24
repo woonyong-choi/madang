@@ -1,6 +1,6 @@
 """실행 하나의 프롬프트를 조립하고 부분별 크기를 추정한다.
 
-프롬프트는 루트 메모리, 스페이스 노트, 페이지 상태, 공통 작업 지시, 대상
+프롬프트는 루트 메모리, 프로젝트 노트, 페이지 상태, 공통 작업 지시, 대상
 블록, 요청 순서로 구성한다. 러너 자체의 시스템 프롬프트와 도구는 프롬프트에
 들어가지 않으며, 그 크기는 러너별 추정값(runners.yaml의 ``system_est``)이다.
 """
@@ -20,7 +20,7 @@ from madang import contract
 from madang.cli_agent.views import BUILTIN_TEMPLATES
 from madang.config import Config, default_text
 from madang.store import frontmatter, pages
-from madang.store.page import SPACE_FILE, STATE_FILE, space_dir, work_dir
+from madang.store.page import STATE_FILE, project_memory, work_dir
 from madang.validate import tokens
 
 ROOT_FILE = "root.md"
@@ -121,7 +121,7 @@ def assemble(
     truncated: list[str] = []
     sections = [
         ("root", "root", _root_text(cfg.home)),
-        ("space", "space", _space_text(page_dir)),
+        ("project", "project", _project_text(page_dir)),
         ("state", "state", _state_text(page_dir, tier)),
         (
             "contract",
@@ -210,9 +210,9 @@ def _root_text(home: Path) -> str:
     return _body(home / ROOT_FILE)
 
 
-def _space_text(page_dir: Path) -> str:
-    space = space_dir(page_dir)
-    return _body(space / SPACE_FILE) if space else ""
+def _project_text(page_dir: Path) -> str:
+    memory = project_memory(page_dir)
+    return _body(memory) if memory else ""
 
 
 def _state_text(page_dir: Path, tier: int) -> str:

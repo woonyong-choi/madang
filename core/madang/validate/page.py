@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from madang.store import frontmatter
-from madang.store.page import PAGE_FILE, STATE_FILE, Page, space_repo
+from madang.store.page import PAGE_FILE, STATE_FILE, Page, project_root
 from madang.validate.issues import Issue, Lines
 from madang.validate.state import DEFAULT_TOKEN_LIMIT, validate_state
 
@@ -76,8 +76,8 @@ def validate_target(
 
     Args:
         target: 페이지 폴더 또는 state.md 경로.
-        repo: ``repo:`` 산출물의 코드 저장소. 없으면 ``space.md``의 공간
-            저장소를 쓴다.
+        repo: ``repo:`` 산출물의 기준 폴더. 없으면 페이지가 속한 프로젝트
+            폴더를 쓴다.
         token_limit: state.md의 최대 토큰 수.
         kinds: 허용하는 페이지 종류. 기본값은 내장 routes.yaml.
 
@@ -86,10 +86,7 @@ def validate_target(
     """
     page_dir, state_path = resolve_target(target)
     if repo is None:
-        try:
-            repo = space_repo(page_dir)
-        except (frontmatter.FrontmatterError, OSError):
-            repo = None
+        repo = project_root(page_dir)
     issues = validate_state(
         state_path, repo=repo, token_limit=token_limit, kinds=kinds
     )

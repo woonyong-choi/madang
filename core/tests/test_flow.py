@@ -1,5 +1,4 @@
 import json
-import subprocess
 import threading
 from pathlib import Path
 
@@ -9,20 +8,11 @@ from typer.testing import CliRunner
 
 from madang import cli
 from madang.config import load_config
-from madang.graph import Flow, build_graph, resume, steps
+from madang.graph import Flow, build_graph, resume
 from madang.graph.nodes import FlowNodes
 from madang.runners.base import RunEvent, RunResult, Usage
-from madang.store import frontmatter, pages
+from madang.store import frontmatter, pages, projects
 from madang.store.home import init_home
-
-
-def git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
 
 
 def set_status(status: str, todo: str | None = None):
@@ -103,12 +93,15 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def home(tmp_path: Path) -> Path:
     root = tmp_path / "home"
     init_home(root)
+    (tmp_path / "work").mkdir()
+    projects.add(root, tmp_path / "work")
     return root
 
 
 @pytest.fixture
 def page(home: Path) -> Path:
-    return pages.create_page(home, "root", "이력서", slug="resume")
+    pages_dir = projects.get(home, "work").pages_dir
+    return pages.create_page(pages_dir, "이력서", slug="resume")
 
 
 def flow(home: Path, script: Script, seen: list | None = None) -> Flow:
@@ -148,7 +141,7 @@ def test_graph_has_every_node(home: Path) -> None:
         "repair",
         "judge",
         "review_run",
-        "commit",
+        "finish",
         "ask_human",
     }
 
@@ -173,12 +166,7 @@ def test_done_after_opposite_review(home: Path, page: Path) -> None:
     assert record(page, 2)["verify"]["ok"] is True
     state = header(page)
     assert state["status"] == "done" and state["owner"] == "codex/gpt-6-sol"
-    assert git(home, "status", "--porcelain") == ""
-    subjects = git(home, "log", "--format=%s").splitlines()
-    assert subjects[0].endswith(
-        "· claude/claude-opus-5-5 · runs/2.json, state.md"
-    )
-    assert sum(" run " in s for s in subjects) == 3
+    assert not (home / ".git").exists()
 
     names = [name for name, _ in seen]
     for name in ("run.assembled", "run.started", "run.progress"):
@@ -187,37 +175,6 @@ def test_done_after_opposite_review(home: Path, page: Path) -> None:
     progress = next(p for n, p in seen if n == "run.progress")
     assert progress["n"] == 1 and progress["event"]["type"] == "text"
     assert "flow.waiting" not in names
-
-
-class CountingLock:
-    """들어와 있는 동안 ``held``가 참인 잠금."""
-
-    held = False
-
-    def __enter__(self) -> None:
-        self.held = True
-
-    def __exit__(self, *exc) -> None:
-        self.held = False
-
-
-def test_run_commit_holds_the_injected_lock(
-    home: Path, page: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    lock = CountingLock()
-    commit_run = steps.commit_run
-    held_during_commit: list[bool] = []
-
-    def spy(*args, **kwargs):
-        held_during_commit.append(lock.held)
-        return commit_run(*args, **kwargs)
-
-    monkeypatch.setattr(steps, "commit_run", spy)
-    script = Script(set_status("review"), set_status("review"))
-    Flow(load_config(home), runners=script.runner, lock=lock).start(
-        page.name, "로그인 화면 만들어줘"
-    )
-    assert held_during_commit and all(held_during_commit)
 
 
 def test_blocked_promotes_then_done(home: Path, page: Path) -> None:
@@ -295,7 +252,6 @@ def test_limit_waits_and_resumes(home: Path, page: Path) -> None:
     assert result.state["tier"] == 3 and len(script.calls) == 2
     waiting = [p for n, p in seen if n == "flow.waiting"]
     assert waiting[0]["thread_id"] == result.thread_id
-    assert git(home, "status", "--porcelain", "--", "spaces") == ""
 
     with pytest.raises(ValueError, match="not one of"):
         flow(home, script).resume(result.thread_id, "maybe")
@@ -530,7 +486,7 @@ def test_waiting_on_lists_paused_flows_of_a_page(
 
     first = runner.start(page.name, "구조를 검토해줘")
     second = runner.start(page.name, "구조를 점검해줘")
-    other = pages.create_page(home, "root", "다른", slug="other")
+    other = pages.create_page(page.parent, "다른", slug="other")
     runner.start(other.name, "구조를 검토해줘")
 
     found = runner.waiting_on(page.name)

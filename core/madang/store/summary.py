@@ -1,4 +1,4 @@
-"""앱이 보여 줄 요약: 공간 목록, 페이지 카드, 페이지 상세.
+"""앱이 보여 줄 요약: 프로젝트 목록, 페이지 카드, 페이지 상세.
 
 카드와 상세의 상태는 state.md의 status다. 흐름은 state.md만 갱신하므로
 page.md의 status보다 최신이다. state.md를 읽을 수 없으면 page.md의
@@ -14,12 +14,8 @@ from typing import Any
 
 from madang.store import blocks, frontmatter, pages, runs
 from madang.store.log import read_messages
-from madang.store.page import (
-    PAGE_STATUSES,
-    SPACE_FILE,
-    STATE_FILE,
-    load_page,
-)
+from madang.store.page import PAGE_STATUSES, STATE_FILE, load_page
+from madang.store.projects import Project
 
 ACTIVE_STATUSES = ("doing", "blocked")
 PREVIEW_CHARS = 120
@@ -28,55 +24,35 @@ SORTS = ("updated", "created", "title")
 KEEP_FILE = ".gitkeep"
 
 
-# 공간
+# 프로젝트
 
 
-def space_dirs(home: Path) -> list[Path]:
-    """space.md가 있는 공간 폴더를 슬러그 순서로 반환한다."""
-    root = home / pages.SPACES_DIR
-    if not root.is_dir():
-        return []
-    return sorted(p for p in root.iterdir() if (p / SPACE_FILE).is_file())
-
-
-def page_dirs(space: Path) -> list[Path]:
-    """공간 안의 페이지 폴더(page.md가 있는 폴더)를 반환한다."""
-    folder = space / pages.PAGES_DIR
-    if not folder.is_dir():
+def page_dirs(pages_dir: Path) -> list[Path]:
+    """``.madang/pages`` 안의 페이지 폴더(page.md가 있는 폴더)를 반환한다."""
+    if not pages_dir.is_dir():
         return []
     return sorted(
         p
-        for p in folder.iterdir()
+        for p in pages_dir.iterdir()
         if p.name != KEEP_FILE and (p / "page.md").is_file()
     )
 
 
-def space_summary(space: Path) -> dict[str, Any]:
-    """공간 하나의 요약(space.md 머리부와 페이지 수)을 반환한다."""
-    header, _ = frontmatter.read(space / SPACE_FILE)
-    found = page_dirs(space)
+def project_summary(project: Project) -> dict[str, Any]:
+    """프로젝트 하나의 요약(등록 설정과 페이지 수)을 반환한다."""
+    found = page_dirs(project.pages_dir)
     active = sum(page_status(p) in ACTIVE_STATUSES for p in found)
-    summary: dict[str, Any] = {
-        "slug": space.name,
-        "title": str(header.get("title") or space.name),
-        "repo": _optional(header.get("repo")),
-        "parent": _optional(header.get("parent")),
-        "icon": _optional(header.get("icon")),
-        "color": _optional(header.get("color")),
-        "sort": _sort(header),
+    return {
+        "id": project.id,
+        "title": project.title,
+        "path": str(project.root),
+        "parent": project.parent,
+        "icon": project.icon,
+        "color": project.color,
+        "sort": project.sort if project.sort in SORTS else "updated",
         "pages": len(found),
         "active_pages": active,
     }
-    return summary
-
-
-def _optional(value: Any) -> str | None:
-    return None if value is None else str(value)
-
-
-def _sort(header: dict[str, Any]) -> str:
-    value = header.get("sort")
-    return value if value in SORTS else "updated"
 
 
 # 페이지 카드
@@ -94,11 +70,12 @@ def page_status(page_dir: Path) -> str:
     return "planning"
 
 
-def page_card(page_dir: Path) -> dict[str, Any]:
+def page_card(page_dir: Path, project: str) -> dict[str, Any]:
     """페이지 목록의 카드 하나를 반환한다.
 
     Args:
         page_dir: 페이지 폴더.
+        project: 페이지가 속한 프로젝트 id.
 
     Returns:
         제목, 상태, 마지막 메시지 한 줄, 블록 종류별 개수, 마지막 실행,
@@ -112,7 +89,7 @@ def page_card(page_dir: Path) -> dict[str, Any]:
         counts["run"] = len(numbers)
     card: dict[str, Any] = {
         "id": page.id,
-        "space": page_dir.parent.parent.name,
+        "project": project,
         "title": page.title,
         "kind": page.kind,
         "status": page_status(page_dir),
@@ -163,7 +140,7 @@ def _run_ref(page_dir: Path, n: int) -> dict[str, Any] | None:
 
 
 def sort_cards(cards: list[dict[str, Any]], order: str) -> list[dict[str, Any]]:
-    """고정 카드를 먼저, 그다음 공간의 정렬 기준으로 카드를 정렬한다.
+    """고정 카드를 먼저, 그다음 프로젝트의 정렬 기준으로 카드를 정렬한다.
 
     Args:
         cards: 페이지 카드.
@@ -188,13 +165,14 @@ def _stamp(value: Any) -> float:
 # 페이지 상세
 
 
-def page_detail(page_dir: Path) -> dict[str, Any]:
+def page_detail(page_dir: Path, project: str) -> dict[str, Any]:
     """page.md, 본문 순서의 블록 머리부, 실행 기록을 반환한다.
 
     ``unknown_files``와 ``waiting``은 호출자가 채운다.
 
     Args:
         page_dir: 페이지 폴더.
+        project: 페이지가 속한 프로젝트 id.
 
     Returns:
         페이지 상세.
@@ -213,7 +191,7 @@ def page_detail(page_dir: Path) -> dict[str, Any]:
             header["run"] = triggered[header["id"]]
     return {
         "id": page.id,
-        "space": page_dir.parent.parent.name,
+        "project": project,
         "title": page.title,
         "kind": page.kind,
         "status": page_status(page_dir),
@@ -240,7 +218,7 @@ def _records(page_dir: Path) -> list[runs.RunRecord]:
 INPUT_PARTS = (
     "system_est",
     "root",
-    "space",
+    "project",
     "state",
     "contract",
     "target",

@@ -122,13 +122,11 @@ def test_done_uses_highest_numbered_run(tmp_path: Path) -> None:
     assert codes(validate_target(tmp_path)) == {"done-without-verify"}
 
 
-def make_space(tmp_path: Path, repo: str) -> Path:
-    space = tmp_path / "spaces" / "work"
-    page = space / "pages" / "2026-09-24-lock"
+def make_page(tmp_path: Path, *, in_project: bool = True) -> Path:
+    """``repo:`` 산출물을 가진 페이지. 프로젝트 밖이면 느슨한 폴더에 둔다."""
+    base = tmp_path / "code" / ".madang" if in_project else tmp_path / "loose"
+    page = base / "pages" / "2026-09-24-lock"
     (page / "blocks").mkdir(parents=True)
-    (space / "space.md").write_text(
-        f"---\nslug: work\ntitle: Work\nrepo: {repo}\n---\n", encoding="utf-8"
-    )
     (page / "blocks" / "b05-race.md").write_text("분석\n", encoding="utf-8")
     (page / "state.md").write_text(
         STATE.format(artifacts="  - blocks/b05-race.md\n  - repo:src/lock.ts"),
@@ -137,36 +135,27 @@ def make_space(tmp_path: Path, repo: str) -> Path:
     return page
 
 
-def test_repo_artifact_resolved_from_space(tmp_path: Path) -> None:
+def test_repo_artifact_resolved_from_project(tmp_path: Path) -> None:
+    page = make_page(tmp_path)
     code = tmp_path / "code"
     (code / "src").mkdir(parents=True)
     (code / "src" / "lock.ts").write_text("export {}\n")
-    page = make_space(tmp_path, str(code))
     assert validate_target(page) == []
     assert validate_target(page / "state.md") == []
 
 
-def test_repo_relative_to_space(tmp_path: Path) -> None:
-    page = make_space(tmp_path, "../../code")
-    code = tmp_path / "code"
-    (code / "src").mkdir(parents=True)
-    (code / "src" / "lock.ts").write_text("export {}\n")
-    assert validate_target(page) == []
-
-
-def test_repo_artifact_missing_in_repo(tmp_path: Path) -> None:
-    (tmp_path / "code").mkdir()
-    page = make_space(tmp_path, str(tmp_path / "code"))
+def test_repo_artifact_missing_in_project(tmp_path: Path) -> None:
+    page = make_page(tmp_path)
     assert codes(validate_target(page)) == {"artifact-missing"}
 
 
-def test_repo_artifact_without_repo(tmp_path: Path) -> None:
-    page = make_space(tmp_path, "null")
+def test_repo_artifact_outside_a_project(tmp_path: Path) -> None:
+    page = make_page(tmp_path, in_project=False)
     assert codes(validate_target(page)) == {"repo-unset"}
 
 
 def test_repo_override(tmp_path: Path) -> None:
-    page = make_space(tmp_path, "null")
+    page = make_page(tmp_path, in_project=False)
     other = tmp_path / "other"
     (other / "src").mkdir(parents=True)
     (other / "src" / "lock.ts").write_text("export {}\n")
@@ -234,7 +223,7 @@ def test_cli_uses_home_token_limit(isolated_home: Path) -> None:
 
 
 def test_cli_repo_option(tmp_path: Path) -> None:
-    page = make_space(tmp_path, "null")
+    page = make_page(tmp_path, in_project=False)
     other = tmp_path / "other"
     (other / "src").mkdir(parents=True)
     (other / "src" / "lock.ts").write_text("export {}\n")

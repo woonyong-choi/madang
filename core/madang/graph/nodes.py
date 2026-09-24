@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +21,7 @@ from madang.graph import events, steps
 from madang.graph.state import FlowState
 from madang.runners.base import CliRunner, RunEvent
 from madang.runners.record import RecordedRun
-from madang.store import pages, runs
+from madang.store import pages, projects, runs
 from madang.store.page import STATE_FILE
 from madang.validate import Issue
 
@@ -72,8 +71,6 @@ class FlowNodes:
         on_event: 이벤트를 받는 콜백.
         cancelled: 설정되면 다음 실행을 시작하지 않고 진행 중인 실행을
             멈춘다.
-        lock: 실행 커밋을 하는 동안 잡는 잠금. 앱 홈에 쓰는 다른 작업과
-            git index.lock이 겹치지 않게 한다.
     """
 
     def __init__(
@@ -82,10 +79,8 @@ class FlowNodes:
         make_runner: RunnerFactory,
         on_event: events.EventHook,
         cancelled: threading.Event,
-        lock: AbstractContextManager[Any] | None = None,
     ) -> None:
         self.cfg = cfg
-        self.lock = lock or nullcontext()
         self.make_runner = make_runner
         self.on_event = on_event
         self.cancelled = cancelled
@@ -141,7 +136,7 @@ class FlowNodes:
         return Command(goto="validate", update=update)
 
     def validate(self, state: FlowState, config: RunnableConfig) -> Command:
-        """실행 뒤 페이지를 검사하고 실행을 커밋한다."""
+        """실행 뒤 페이지를 검사한다."""
         issues = self._check(state)
         if not _blocking(issues):
             return Command(goto="judge")
@@ -179,7 +174,7 @@ class FlowNodes:
         if status == "blocked":
             return self._promote(state, config)
         if status == "done" and record.verify.ok:
-            return Command(goto="commit", update={"result_status": "done"})
+            return Command(goto="finish", update={"result_status": "done"})
         if status in ("done", "review"):
             if status == "done":
                 _set_status(page_dir, "review")
@@ -218,26 +213,19 @@ class FlowNodes:
         }
         return Command(goto="validate", update=update)
 
-    def commit(self, state: FlowState) -> dict[str, Any]:
-        """페이지를 done으로 표시하고 남은 변경을 앱 홈에 커밋한다.
+    def finish(self, state: FlowState) -> dict[str, Any]:
+        """페이지를 done으로 표시한다.
 
         리뷰를 통과한 실행은 그 리뷰가 검증이므로 ``verify.ok``를 참으로
         남긴다.
         """
         page_dir = self._page_dir(state)
         record = runs.read_run(page_dir, state["run_n"])
-        changed = []
         if not record.verify.ok:
             record.verify.ok = True
             runs.write_run(page_dir, record)
-            changed.append(runs.record_path(page_dir, record.n))
         if steps.state_status(page_dir) != "done":
             _set_status(page_dir, "done")
-            changed.append(page_dir / STATE_FILE)
-        if changed:
-            files = [p.relative_to(page_dir).as_posix() for p in changed]
-            with self.lock:
-                steps.commit_run(page_dir, self.cfg.home, record, sorted(files))
         return {"result_status": "done"}
 
     def ask_human(self, state: FlowState) -> Command:
@@ -269,7 +257,7 @@ class FlowNodes:
             again = "pick" if state["kind"] == REVIEW_KIND else "review_run"
             return self._wait(state, config, WAIT_REVIEW, retry=again)
         if status in ("review", "done"):
-            return Command(goto="commit", update={"result_status": "done"})
+            return Command(goto="finish", update={"result_status": "done"})
         _set_status(self._page_dir(state), "doing")
         update = {"result_status": "doing"}
         if state["kind"] == REVIEW_KIND:
@@ -405,7 +393,7 @@ class FlowNodes:
         self.on_event(name, payload)
 
     def _check(self, state: FlowState) -> list[Issue]:
-        """실행을 검사하고, 미등록 파일을 알리고, 커밋한다."""
+        """실행을 검사하고 미등록 파일을 알린다."""
         page_dir = self._page_dir(state)
         issues = steps.check(page_dir, self.cfg, state["run_n"])
         record = runs.read_run(page_dir, state["run_n"])
@@ -416,20 +404,13 @@ class FlowNodes:
                 "files": record.unknown_files,
             }
             self.on_event(events.PAGE_UNKNOWN_FILES, payload)
-        with self.lock:
-            steps.commit_run(page_dir, self.cfg.home, record)
         return issues
 
     # 라우팅 표
 
     def _page_dir(self, state: FlowState) -> Path:
-        return (
-            self.cfg.home
-            / pages.SPACES_DIR
-            / state["space"]
-            / pages.PAGES_DIR
-            / state["page"]
-        )
+        project = projects.get(self.cfg.home, state["project"])
+        return project.pages_dir / state["page"]
 
     def _tiers(self, kind: str, *, required: bool = True) -> list[Tier]:
         tiers = self.cfg.routes.tiers.get(kind) or []

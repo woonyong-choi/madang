@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import date
@@ -10,7 +11,7 @@ from typer.testing import CliRunner
 from madang.api.app import create_app
 from madang.cli import app
 from madang.cli_agent import client
-from madang.store import frontmatter, git, pages
+from madang.store import frontmatter, git, pages, projects
 from madang.store.home import init_home
 
 PAGE_ID = "2026-09-24-lock"
@@ -60,10 +61,8 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     sh(repo, "add", "README.md")
     git.commit(repo, "init")
 
-    pages.create_space(home, "work", title="Work", repo=str(repo))
-    page = pages.create_page(home, "work", "lock", day=date(2026, 9, 24))
-    git.add(home, ["spaces"])
-    git.commit(home, "fixture")
+    project = projects.add(home, repo, project_id="work", title="Work")
+    page = pages.create_page(project.pages_dir, "lock", day=date(2026, 9, 24))
     monkeypatch.setenv("MADANG_HOME", str(home))
     monkeypatch.setenv("MADANG_PAGE", PAGE_ID)
     monkeypatch.delenv("MADANG_CORE_URL", raising=False)
@@ -113,7 +112,6 @@ def test_refuses_without_page(
         ["artifact", "add", "blocks/x.md"],
         ["commit", "-m", "x"],
         ["push"],
-        ["promote", "b01"],
         ["view", "create", "--template", "table", "--data", "b01"],
     ):
         refused(*args, match="MADANG_PAGE가 설정돼 있지 않다")
@@ -185,24 +183,13 @@ def test_unreachable_core_exits_with_2(
     assert "madang serve" in result.output
 
 
-def test_core_commits_state_changes(env: Env) -> None:
-    before = git.log_oneline(env.home)
+def test_state_changes_are_not_committed(env: Env) -> None:
     ok("task", "T1", "--status", "doing", "--title", "x")
     ok("decide", "D1", "--topic", "t", "--choice", "a", "--options", "a,b")
-    added = git.log_oneline(env.home)[: -len(before)]
-    assert [line.split(" ", 1)[1] for line in added] == [
-        f"[{PAGE_ID}] edit state.md",
-        f"[{PAGE_ID}] edit state.md",
-    ]
-
-
-def test_state_change_waits_for_the_running_flow_to_commit(
-    env: Env, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(env.core.flows, "busy", lambda page: True)
-    before = git.log_oneline(env.home)
-    ok("task", "T1", "--status", "doing", "--title", "x")
-    assert git.log_oneline(env.home) == before
+    assert env.state()["tasks"][0]["id"] == "T1"
+    assert not (env.home / ".git").exists()
+    assert len(sh(env.repo, "log", "--oneline").splitlines()) == 1
+    assert sh(env.repo, "status", "--porcelain") == ""
 
 
 # 과업
@@ -325,6 +312,9 @@ def test_decide_and_supersede(
 def test_decide_by_human_has_no_run(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    (env.page / "runs").mkdir()
+    (env.page / "runs" / ".last").write_text("3\n")
+    monkeypatch.setattr(env.core.flows, "busy", lambda page: True)
     monkeypatch.delenv("MADANG_PAGE")
     ok(
         "decide",
@@ -340,6 +330,20 @@ def test_decide_by_human_has_no_run(
     )
     decision = env.state()["decisions"][0]
     assert decision["by"] == "human" and decision["run"] is None
+
+    (env.page / "blocks" / "b01-cv.json").write_text("{}")
+    ok(
+        "view",
+        "create",
+        "--template",
+        "table",
+        "--data",
+        "b01",
+        "--page",
+        PAGE_ID,
+    )
+    header, _ = frontmatter.read(env.page / "blocks" / "b02-table.view.md")
+    assert "created_by" not in header
 
 
 def test_decide_refusals(env: Env) -> None:
@@ -441,11 +445,11 @@ def test_artifact_add_rejects_parent_paths(
     env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     before = (env.page / "state.md").read_bytes()
-    (env.page.parent / "outside.md").write_text("x\n")
+    (tmp_path / "outside.md").write_text("x\n")
     refused("artifact", "add", "../outside.md", match="상위 폴더")
     refused("artifact", "add", "repo:../x", match="상위 폴더")
     monkeypatch.chdir(env.page)
-    refused("artifact", "add", "../outside.md", match="밖에 있다")
+    refused("artifact", "add", "../../../../outside.md", match="밖에 있다")
     assert (env.page / "state.md").read_bytes() == before
 
 
@@ -476,18 +480,10 @@ def test_commit_refusals(env: Env) -> None:
 
 
 def test_commit_refused_without_repo(env: Env) -> None:
-    space = env.home / "spaces" / "work" / "space.md"
-    space.write_text(
-        space.read_text().replace(f"repo: {env.repo}", "repo: null")
-    )
+    shutil.rmtree(env.repo / ".git")
     (env.page / "blocks" / "b01-x.md").write_text("x\n")
-    refused("commit", "-m", "x", match="코드 저장소가 없다")
-    refused("push", match="코드 저장소가 없다")
-    refused("promote", "b01", match="코드 저장소가 없다")
-    space.write_text(
-        space.read_text().replace("repo: null", f"repo: {env.home / 'nothing'}")
-    )
-    refused("commit", "-m", "x", match="가 없다")
+    refused("commit", "-m", "x", match="git 저장소가 아니다")
+    refused("push", match="git 저장소가 아니다")
 
 
 # 푸시
@@ -528,50 +524,6 @@ def test_push_refusals(env: Env, tmp_path: Path) -> None:
     refused("push", match="분리")
 
 
-# 승격
-
-
-def test_promote(env: Env) -> None:
-    (env.page / "blocks" / "b01-race-analysis.md").write_text("# 분석\n")
-    result = ok("promote", "b01")
-    assert "docs/race-analysis.md" in result.output
-    assert (env.repo / "docs" / "race-analysis.md").read_text() == "# 분석\n"
-    assert (
-        sh(env.repo, "log", "-1", "--format=%s").strip()
-        == f"docs: promote b01 from {PAGE_ID}"
-    )
-    assert sh(env.repo, "status", "--porcelain") == ""
-    assert env.state()["artifacts"] == ["repo:docs/race-analysis.md"]
-    assert "이미 최신" in ok("promote", "b01").output
-
-
-def test_promote_refusals(env: Env) -> None:
-    refused("promote", "b01", match="has no file")
-    refused("promote", "x1", match="has no file")
-    (env.page / "blocks" / "b01-race.md").write_text("new\n")
-    (env.repo / "docs").mkdir()
-    (env.repo / "docs" / "race.md").write_text("local edit\n")
-    refused("promote", "b01", match="커밋하지 않은 변경")
-    assert (env.repo / "docs" / "race.md").read_text() == "local edit\n"
-    assert env.state()["artifacts"] == []
-
-
-def test_promote_refuses_sensitive_names(env: Env) -> None:
-    (env.page / "blocks" / "b03-secrets.yaml").write_text("key: x\n")
-    refused("promote", "b03", match="승격하지 않는다: docs/secrets.yaml")
-    assert not (env.repo / "docs").exists()
-    assert env.state()["artifacts"] == []
-
-
-def test_promote_rolled_back_when_page_is_invalid(env: Env) -> None:
-    (env.page / "blocks" / "b01-race.md").write_text("x\n")
-    state = env.page / "state.md"
-    state.write_text(state.read_text().replace("## 목표", "## 목적"))
-    refused("promote", "b01", match="되돌렸다")
-    assert not (env.repo / "docs" / "race.md").exists()
-    assert len(sh(env.repo, "log", "--oneline").splitlines()) == 1
-
-
 # 보기
 
 
@@ -608,7 +560,7 @@ def test_view_create(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_view_uses_home_template(env: Env) -> None:
     tpl = env.home / "templates" / "cards"
-    tpl.mkdir()
+    tpl.mkdir(parents=True)
     (tpl / "template.yaml").write_text(
         "name: cards\nversion: 2\nslots:\n  items: {required: true}\n"
     )
@@ -725,7 +677,6 @@ def test_help() -> None:
         "artifact add",
         "commit",
         "push",
-        "promote",
         "view create",
         "help",
     ):

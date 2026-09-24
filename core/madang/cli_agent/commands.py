@@ -1,6 +1,6 @@
 """에이전트 명령의 Typer 연결.
 
-명령은 task, decide, artifact, commit, push, promote, view, help이다.
+명령은 task, decide, artifact, commit, push, view, help이다.
 """
 
 from __future__ import annotations
@@ -43,13 +43,11 @@ madang 에이전트 명령($MADANG_PAGE 또는 --page <id>의 페이지에 작�
   madang decide <id> --topic T --choice C --options a,b,c [--supersedes D0]
       state.md에 결정을 기록한다.
   madang artifact add <path>
-      이 페이지가 만든 파일을 등록한다(blocks/... 또는 코드 저장소의 파일).
+      이 페이지가 만든 파일을 등록한다(blocks/... 또는 프로젝트 폴더의 파일).
   madang commit -m "message"
-      스페이스 코드 저장소의 모든 변경을 커밋한다.
+      프로젝트 저장소의 모든 변경을 커밋한다.
   madang push
-      코드 저장소의 현재 브랜치를 푸시한다. 강제 푸시는 하지 않는다.
-  madang promote <bNN>
-      블록 파일을 코드 저장소의 docs/로 복사하고 커밋한다.
+      프로젝트 저장소의 현재 브랜치를 푸시한다. 강제 푸시는 하지 않는다.
   madang view create --template T --data bNN [--data slot=bNN]
       템플릿으로 데이터 블록을 보여 주는 뷰 블록을 만든다.
   madang help [command]
@@ -195,6 +193,7 @@ def decide(
                 "options": [o.strip() for o in options.split(",")],
                 "state": state,
                 "by": by or os.environ.get(BY_ENV) or _default_by(from_env),
+                "in_run": from_env,
                 **({"supersedes": supersedes} if supersedes else {}),
             }
         )
@@ -209,7 +208,7 @@ def artifact_add(
     path: Annotated[
         str,
         typer.Argument(
-            help=("페이지의 blocks/..., 코드 저장소의 파일, 또는 repo:<path>.")
+            help="페이지의 blocks/..., 프로젝트 폴더의 파일, 또는 repo:<path>.",
         ),
     ],
     page: PageOption = None,
@@ -231,7 +230,7 @@ def commit(
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
-    """스페이스 코드 저장소의 모든 변경을 커밋한다."""
+    """프로젝트 저장소의 모든 변경을 커밋한다."""
 
     def act(core: CoreClient, from_env: bool) -> str:
         return f"커밋했다: {core.commit(message)}"
@@ -240,29 +239,11 @@ def commit(
 
 
 def push(page: PageOption = None, home: HomeOption = None) -> None:
-    """코드 저장소의 현재 브랜치를 푸시한다(강제 푸시 없음)."""
+    """프로젝트 저장소의 현재 브랜치를 푸시한다(강제 푸시 없음)."""
 
     def act(core: CoreClient, from_env: bool) -> str:
         pushed = core.push()
         return f"푸시했다: {pushed['branch']} -> {pushed['remote']}"
-
-    _run(page, home, act)
-
-
-def promote(
-    block: Annotated[
-        str, typer.Argument(metavar="BLOCK", help="블록 id. 예: b05.")
-    ],
-    page: PageOption = None,
-    home: HomeOption = None,
-) -> None:
-    """블록 파일을 코드 저장소의 docs/로 복사하고 커밋한다."""
-
-    def act(core: CoreClient, from_env: bool) -> str:
-        done = core.promote(block)
-        if done.get("commit") is None:
-            return f"{done['path']}는 코드 저장소에 이미 최신이다"
-        return f"승격했다: {block} -> {done['path']} ({done['commit']})"
 
     _run(page, home, act)
 
@@ -289,7 +270,7 @@ def view_create(
     """데이터 블록에 묶인 뷰 블록을 만든다."""
 
     def act(core: CoreClient, from_env: bool) -> str:
-        made = core.create_view(template, data, title)
+        made = core.create_view(template, data, title, in_run=from_env)
         return f"뷰 {made['id']} 생성({made['file']})"
 
     _run(page, home, act)
@@ -306,7 +287,6 @@ def register(root: typer.Typer) -> None:
     root.add_typer(artifact_app, name="artifact")
     root.command()(commit)
     root.command()(push)
-    root.command()(promote)
     root.add_typer(view_app, name="view")
 
     @root.command("help")

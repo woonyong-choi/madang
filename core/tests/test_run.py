@@ -11,9 +11,9 @@ from typer.testing import CliRunner
 
 from madang.cli import app, execute_run
 from madang.config import load_config
-from madang.graph.steps import environment, run_commit_message
+from madang.graph.steps import environment
 from madang.runners.base import RunResult, Usage
-from madang.store import frontmatter, pages
+from madang.store import frontmatter, pages, projects
 from madang.store.home import init_home
 
 cli_runner = CliRunner()
@@ -74,12 +74,15 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def home(tmp_path: Path) -> Path:
     root = tmp_path / "home"
     init_home(root)
+    (tmp_path / "work").mkdir()
+    projects.add(root, tmp_path / "work")
     return root
 
 
 @pytest.fixture
 def page(home: Path) -> Path:
-    return pages.create_page(home, "root", "이력서", slug="resume")
+    pages_dir = projects.get(home, "work").pages_dir
+    return pages.create_page(pages_dir, "이력서", slug="resume")
 
 
 def run(page: Path, home: Path, runner: FakeRunner, **kw):
@@ -92,10 +95,10 @@ def record(page: Path, n: int) -> dict:
     return json.loads((page / f"runs/{n}.json").read_text())
 
 
-def test_run_records_checks_and_commits(home: Path, page: Path) -> None:
+def test_run_records_and_checks(home: Path, page: Path) -> None:
     runner = FakeRunner(act=write_design)
     outcome = run(page, home, runner)
-    assert outcome.ok and outcome.commit
+    assert outcome.ok
 
     data = record(page, 1)
     assert data["trigger"] == {"message": "b01", "target": "page"}
@@ -106,7 +109,7 @@ def test_run_records_checks_and_commits(home: Path, page: Path) -> None:
     assert list(parts) == [
         "system_est",
         "root",
-        "space",
+        "project",
         "state",
         "contract",
         "request",
@@ -123,19 +126,9 @@ def test_run_records_checks_and_commits(home: Path, page: Path) -> None:
     assert data["state_check"] == {"ok": True, "issues": []}
     assert data["duration"] == 1.5
 
-    subject = git(home, "log", "-1", "--format=%s").strip()
-    assert subject == (
-        "[" + page.name + "] run 1 · claude/m-1 · "
-        "blocks/b05-design.md, blocks/b06-notes.md, state.md"
-    )
-    assert git(home, "rev-parse", "--short", "HEAD").strip() == outcome.commit
-    assert git(home, "log", "--format=%s").count("\n") == 2
-    assert git(home, "status", "--porcelain") == ""
-    tracked = git(home, "ls-files", str(page)).split()
-    rel = page.relative_to(home).as_posix()
-    assert f"{rel}/runs/.last" in tracked
-    assert f"{rel}/runs/1.json" in tracked
-    assert not any("/scratch/" in p for p in tracked)
+    assert "commit" not in data
+    assert not (home / ".git").exists()
+    assert (page / "runs/.last").is_file()
     assert (page / "scratch/b01.prompt.md").read_text() == (
         runner.calls[0]["prompt"]
     )
@@ -161,7 +154,7 @@ def test_runner_gets_fresh_session_inputs(home: Path, page: Path) -> None:
     run(page, home, runner, request="first")
     run(page, home, runner, request="second")
     first, second = runner.calls
-    assert first["cwd"] == page and first["page"] == page.name
+    assert first["cwd"] == page.parents[2] and first["page"] == page.name
     assert first["by"] == "claude/m-1"
     assert "MADANG_BY" not in os.environ
     # 이전 답변은 다음 프롬프트에 전달되지 않는다
@@ -169,7 +162,6 @@ def test_runner_gets_fresh_session_inputs(home: Path, page: Path) -> None:
     assert "first" not in second["prompt"]
     assert "second" in second["prompt"]
     assert record(page, 2)["trigger"]["message"] == "b03"
-    assert git(home, "log", "--format=%s").count("\n") == 3
 
 
 def test_target_and_promoted_tier(home: Path, page: Path) -> None:
@@ -201,17 +193,21 @@ def test_codex_runner_path(home: Path, page: Path) -> None:
     assert data["runner"] == "codex"
     assert data["input"]["parts"]["system_est"] == 24000
     assert runner.calls[0]["by"] == "codex/gpt-6-sol"
-    subject = git(home, "log", "-1", "--format=%s").strip()
-    assert subject == f"[{page.name}] run 1 · codex/gpt-6-sol · no file changes"
+    assert data["changed_files"] == []
     assert outcome.ok
 
 
-def test_code_repository_changes(home: Path, tmp_path: Path) -> None:
+@pytest.mark.parametrize("with_git", [True, False])
+def test_project_folder_changes(
+    home: Path, tmp_path: Path, with_git: bool
+) -> None:
     repo = tmp_path / "code"
     repo.mkdir()
-    git(repo, "init", "-q")
-    pages.create_space(home, "work", repo=str(repo))
-    page_dir = pages.create_page(home, "work", "Task", slug="task")
+    if with_git:
+        git(repo, "init", "-q")
+    (repo / "README.md").write_text("x\n")
+    project = projects.add(home, repo)
+    page_dir = pages.create_page(project.pages_dir, "Task", slug="task")
 
     def act(cwd: Path, page_dir: Path) -> None:
         (cwd / "src").mkdir()
@@ -224,7 +220,7 @@ def test_code_repository_changes(home: Path, tmp_path: Path) -> None:
 
     runner = FakeRunner(act=act)
     outcome = run(page_dir, home, runner)
-    assert runner.calls[0]["cwd"] == repo
+    assert runner.calls[0]["cwd"] == repo.resolve()
     data = record(page_dir, 1)
     assert data["changed_files"] == [
         "state.md",
@@ -233,8 +229,9 @@ def test_code_repository_changes(home: Path, tmp_path: Path) -> None:
     ]
     assert data["unknown_files"] == ["repo:src/extra.py"]
     assert outcome.ok
-    # 새 space는 첫 run과 함께 커밋된다
-    assert "spaces/work/space.md" in git(home, "ls-files").split()
+    if with_git:
+        status = git(repo, "status", "--porcelain")
+        assert ".madang" not in status and "src/" in status
 
 
 def test_failed_run_is_still_recorded(home: Path, page: Path) -> None:
@@ -244,7 +241,6 @@ def test_failed_run_is_still_recorded(home: Path, page: Path) -> None:
     assert data["result_status"] == "error"
     assert data["error"] == "boom"
     assert "error: boom" in (page / "log.md").read_text()
-    assert git(home, "status", "--porcelain") == ""
 
 
 def test_invalid_state_is_reported(home: Path, page: Path) -> None:
@@ -255,16 +251,6 @@ def test_invalid_state_is_reported(home: Path, page: Path) -> None:
     assert not outcome.ok and outcome.issues
     check = record(page, 1)["state_check"]
     assert check["ok"] is False and check["issues"]
-
-
-def test_commit_message_summary() -> None:
-    files = ["a", "b", "c", "d", "e"]
-    assert run_commit_message("p", 3, "claude", "m", files) == (
-        "[p] run 3 · claude/m · a, b +3 more"
-    )
-    assert run_commit_message("p", 1, "codex", "m", ["a"]) == (
-        "[p] run 1 · codex/m · a"
-    )
 
 
 # 명령줄
@@ -304,7 +290,7 @@ def test_run_command(
     assert result.exit_code == 0, result.output
     line = result.output.strip().splitlines()[-1]
     assert line.startswith("run 1 · claude/claude-sonnet-5 · done · input est ")
-    assert " / actual " in line and "commit " in line
+    assert " / actual " in line and "commit " not in line
     assert record(page, 1)["effort"] == "low"
 
 
@@ -316,18 +302,13 @@ def test_run_command_errors(home: Path, page: Path) -> None:
     assert result.exit_code == 1 and "unknown runner" in result.output
 
 
-def test_page_and_space_new(home: Path) -> None:
-    result = cli_runner.invoke(
-        app,
-        ["space", "new", "work", "--title", "Work", "--home", str(home)],
-    )
-    assert result.exit_code == 0 and result.output.strip() == "work"
+def test_page_new_kind(home: Path) -> None:
     result = cli_runner.invoke(
         app,
         [
             "page",
             "new",
-            "--space",
+            "--project",
             "work",
             "--title",
             "이력서",
@@ -340,11 +321,22 @@ def test_page_and_space_new(home: Path) -> None:
     assert result.exit_code == 0, result.output
     page_id = result.output.strip()
     assert page_id.endswith("-이력서")
-    page_dir = home / "spaces/work/pages" / page_id
+    page_dir = projects.get(home, "work").pages_dir / page_id
     assert pages.read_header(page_dir / "state.md")["kind"] == "design"
     result = cli_runner.invoke(
         app,
-        ["page", "new", "--title", "x", "--kind", "bad", "--home", str(home)],
+        [
+            "page",
+            "new",
+            "--project",
+            "work",
+            "--title",
+            "x",
+            "--kind",
+            "bad",
+            "--home",
+            str(home),
+        ],
     )
     assert result.exit_code == 1 and "unknown kind" in result.output
 

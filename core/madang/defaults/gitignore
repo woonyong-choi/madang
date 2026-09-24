@@ -1,4 +1,3 @@
-scratch/
-secrets.yaml
-core.db
-core.port
+# Madang 기록(.madang/)은 기본으로 커밋하지 않는다.
+# 커밋하려면 아래 "*" 줄을 두 줄 "pages/*/scratch/"와 "trash/"로 바꾼다.
+*

@@ -1,4 +1,4 @@
-"""앱 홈 저장소용 git CLI 얇은 래퍼."""
+"""프로젝트 저장소용 git CLI 얇은 래퍼."""
 
 from __future__ import annotations
 
@@ -57,42 +57,6 @@ def run(
     return proc
 
 
-def is_repo(repo: Path) -> bool:
-    """``repo``에 ``.git`` 항목이 있는지 반환한다."""
-    return (repo / ".git").exists()
-
-
-def init(repo: Path) -> None:
-    """``main``을 초기 브랜치로 하는 저장소를 만든다."""
-    run(repo, "init", "-q", "-b", "main")
-
-
-def add(repo: Path, paths: Sequence[str]) -> None:
-    """``paths``를 스테이징한다. 비어 있으면 아무것도 하지 않는다."""
-    if paths:
-        run(repo, "add", "--", *paths)
-
-
-def committed_paths(repo: Path, paths: Sequence[str]) -> set[str]:
-    """``paths`` 중 HEAD에 있는 부분집합을 반환한다.
-
-    Args:
-        repo: 저장소 디렉터리.
-        paths: 저장소 기준 상대 경로.
-
-    Returns:
-        커밋된 경로. 아직 커밋이 없으면 빈 집합.
-    """
-    if not paths:
-        return set()
-    proc = run(
-        repo, "ls-tree", "-r", "--name-only", "HEAD", "--", *paths, check=False
-    )
-    if proc.returncode != 0:
-        return set()
-    return set(proc.stdout.splitlines())
-
-
 def has_staged_changes(repo: Path) -> bool:
     """인덱스가 HEAD와 다른지 반환한다."""
     return run(repo, "diff", "--cached", "--quiet", check=False).returncode != 0
@@ -108,11 +72,7 @@ def _identity_args(repo: Path) -> list[str]:
 
 
 def commit(
-    repo: Path,
-    message: str,
-    paths: Sequence[str] | None = None,
-    *,
-    unsigned: bool = False,
+    repo: Path, message: str, paths: Sequence[str] | None = None
 ) -> None:
     """스테이징된 변경을 커밋한다.
 
@@ -122,18 +82,14 @@ def commit(
         repo: 저장소 디렉터리.
         message: 커밋 메시지.
         paths: 주어지면 커밋을 이 경로들로 제한한다.
-        unsigned: 커밋 서명을 건너뛰어, 헤드리스 커밋이 서명 프롬프트를
-            기다리지 않게 한다.
 
     Raises:
         GitError: 커밋이 실패했다.
     """
     extra = ["--", *paths] if paths else []
-    sign = ["-c", "commit.gpgsign=false"] if unsigned else []
     run(
         repo,
         *_identity_args(repo),
-        *sign,
         "commit",
         "-q",
         "-m",
@@ -142,54 +98,9 @@ def commit(
     )
 
 
-def commit_changes(
-    repo: Path, paths: Sequence[str], message: str
-) -> str | None:
-    """``paths`` 아래의 모든 변경(삭제 포함)을 커밋한다.
-
-    있는 경로는 ``git add -A``로 스테이징한다. 지운 경로는 호출자가 이미
-    ``git rm``했다고 본다. 서명하지 않는다.
-
-    Args:
-        repo: 저장소 디렉터리.
-        paths: 저장소 기준 상대 경로.
-        message: 커밋 메시지.
-
-    Returns:
-        새 커밋의 짧은 해시. 커밋할 변경이 없으면 None.
-
-    Raises:
-        GitError: git이 실패했다.
-    """
-    present = [p for p in paths if (repo / p).exists()]
-    if present:
-        run(repo, "add", "-A", "--", *present)
-    staged = run(
-        repo,
-        "diff",
-        "--cached",
-        "--name-only",
-        "--no-renames",
-        "-z",
-        "--",
-        *paths,
-    ).stdout
-    files = [f for f in staged.split("\0") if f]
-    if not files:
-        return None
-    commit(repo, message, files, unsigned=True)
-    return head(repo)
-
-
 def head(repo: Path) -> str:
     """HEAD의 짧은 해시를 반환한다."""
     return run(repo, "rev-parse", "--short", "HEAD").stdout.strip()
-
-
-def log_oneline(repo: Path) -> list[str]:
-    """``git log --oneline`` 줄을 반환한다. 커밋이 없으면 빈 목록."""
-    out = run(repo, "log", "--oneline", check=False).stdout
-    return [line for line in out.splitlines() if line]
 
 
 def status(directory: Path) -> dict[str, str]:

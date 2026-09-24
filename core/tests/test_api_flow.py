@@ -4,7 +4,7 @@ import threading
 from contextlib import contextmanager
 from urllib.parse import quote
 
-from api_support import WS, git, page_dir, set_status, subjects
+from api_support import WS, page_dir, set_status
 
 from madang.store import pages
 
@@ -37,6 +37,14 @@ def join(client, page_id: str) -> None:
 
 def types(events: list[dict]) -> list[str]:
     return [e["type"] for e in events]
+
+
+def files(root) -> dict[str, bytes]:
+    return {
+        p.relative_to(root).as_posix(): p.read_bytes()
+        for p in sorted(root.rglob("*"))
+        if p.is_file()
+    }
 
 
 def test_message_runs_flow_and_streams_events(
@@ -83,7 +91,7 @@ def test_message_runs_flow_and_streams_events(
     assert [r["n"] for r in detail["runs"]] == [1, 2]
     assert detail["blocks"][0]["run"] == 1
     assert "waiting" not in detail
-    assert git(home, "status", "--porcelain") == ""
+    assert not (home / ".git").exists()
 
     record = contract.check(client.get(f"/pages/{page}/runs/1"), 200)
     assert record["runner"] == "codex" and record["trigger"]["message"] == "b01"
@@ -179,7 +187,7 @@ def test_ambiguous_kind_waits_for_answer(
     assert "waiting" not in detail and detail["status"] == "done"
 
 
-def test_preview_input(client, home, page, contract) -> None:
+def test_preview_input(client, home, project_root, page, contract) -> None:
     url = f"/pages/{page}/preview-input"
     plain = contract.check(
         client.get(url, params={"text": "로그인 만들어줘"}), 200
@@ -197,6 +205,7 @@ def test_preview_input(client, home, page, contract) -> None:
         f"/pages/{page}/blocks",
         json={"type": "doc", "name": "cv", "content": "경력\n" * 50},
     )
+    before = files(project_root)
     element = contract.check(
         client.get(
             url,
@@ -212,7 +221,7 @@ def test_preview_input(client, home, page, contract) -> None:
     assert element["kind"] == "small" and element["parts"]["target"] > 0
     contract.check(client.get(url, params={"target": "b09"}), 404)
     # 미리보기는 아무것도 쓰지 않는다
-    assert git(home, "status", "--porcelain") == ""
+    assert files(project_root) == before
 
 
 def test_unknown_files_are_reported_and_resolved(
@@ -263,5 +272,3 @@ def test_unknown_files_are_reported_and_resolved(
     contract.check(resolve("blocks/junk.txt", "delete"), 404)
     contract.check(resolve("../../secrets.yaml", "delete"), 404)
     contract.check(resolve("blocks/keep.txt", "burn"), 400)
-    assert subjects(home)[0] == f"[{page}] delete blocks/junk.txt"
-    assert git(home, "status", "--porcelain") == ""

@@ -19,12 +19,12 @@ from madang.api.availability import Probe, probe_cli
 from madang.api.contract import contract_document
 from madang.api.core import Core
 from madang.api.guard import LocalOnly
-from madang.api.routes import agent, files, messages, pages, spaces, system
+from madang.api.routes import agent, files, messages, pages, projects, system
 from madang.graph.nodes import RunnerFactory
 
 ROUTERS = (
     system.router,
-    spaces.router,
+    projects.router,
     pages.router,
     messages.router,
     files.router,

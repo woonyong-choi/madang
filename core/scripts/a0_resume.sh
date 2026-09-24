@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 # Resume check: one page taken through three independent runs (design, write,
-# review), each in a fresh claude session, in a temporary app home. Prints the
-# input estimate and the reported usage of each run, then checks that there
-# are three run records, three run commits after init, and that every input
-# estimate stays within the budget.
+# review), each in a fresh claude session. The app home and the project folder
+# are new temporary folders; the project is a git repository whose .madang/
+# records stay out of git. Prints the input estimate and the reported usage of
+# each run, then checks that there are three run records, that every input
+# estimate stays within the budget, that the app home is not a git repository,
+# and that the project repository has no new commits and no .madang/ changes.
 #
 # Usage: bash scripts/a0_resume.sh
-# Env:   A0_HOME    app home to use (default: a new temporary folder)
-#        A0_BUDGET  input estimate limit per run in tokens (default: 35000)
+# Env:   A0_HOME     app home to use (default: a new temporary folder)
+#        A0_PROJECT  project folder to use (default: a new temporary folder)
+#        A0_BUDGET   input estimate limit per run in tokens (default: 35000)
 
 set -euo pipefail
 
 core="$(cd "$(dirname "$0")/.." && pwd)"
 tmp="${TMPDIR:-/tmp}"
-home="${A0_HOME:-$(mktemp -d "${tmp%/}/madang-a0.XXXXXX")}"
+home="${A0_HOME:-$(mktemp -d "${tmp%/}/madang-a0-home.XXXXXX")}"
+project="${A0_PROJECT:-$(mktemp -d "${tmp%/}/madang-a0-project.XXXXXX")}"
 budget="${A0_BUDGET:-35000}"
 
 madang() {
@@ -25,14 +29,23 @@ step() {
   echo "== $label: claude/$model/$effort"
   if ! madang run "$page" --home "$home" --tool claude --model "$model" \
       --effort "$effort" "$request"; then
-    echo "   (run reported a problem; see runs/ in $home)"
+    echo "   (run reported a problem; see .madang/pages/$page/runs/ in $project)"
   fi
 }
 
 echo "app home: $home"
+echo "project:  $project"
 madang init --home "$home"
-page="$(madang page new --home "$home" --title "이력서" --slug resume \
-  --kind design)"
+if [ ! -d "$project/.git" ]; then
+  git -C "$project" init -q -b main
+  printf '# 이력서 작업\n' > "$project/README.md"
+  git -C "$project" add README.md
+  git -C "$project" -c user.name=a0 -c user.email=a0@localhost \
+    -c commit.gpgsign=false commit -q -m "init"
+fi
+project_id="$(madang project add "$project" --id resume-work --home "$home")"
+page="$(madang page new --home "$home" --project "$project_id" \
+  --title "이력서" --slug resume --kind design)"
 echo "page: $page"
 
 step design claude-opus-5-5 medium \
@@ -51,14 +64,16 @@ step review claude-opus-5-5 low \
 하나로 blocks/에 남기고 artifacts에 등록한 뒤, state.md의 현재 상태와 다음 \
 할 일을 갱신한다."
 
-uv run --quiet --project "$core" python - "$home" "$page" "$budget" <<'PY'
+uv run --quiet --project "$core" python - "$home" "$project" "$page" \
+  "$budget" <<'PY'
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-home, page, budget = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
-page_dir = next(home.glob(f"spaces/*/pages/{page}"))
+home, project = Path(sys.argv[1]), Path(sys.argv[2])
+page, budget = sys.argv[3], int(sys.argv[4])
+page_dir = project / ".madang" / "pages" / page
 records = sorted(
     (json.loads(p.read_text()) for p in page_dir.glob("runs/*.json")),
     key=lambda r: r["n"],
@@ -67,7 +82,7 @@ records = sorted(
 
 def git(*args: str) -> str:
     return subprocess.run(
-        ["git", "-C", str(home), *args],
+        ["git", "-C", str(project), *args],
         capture_output=True,
         text=True,
         check=True,
@@ -76,10 +91,9 @@ def git(*args: str) -> str:
 
 rows = [
     ("run", "model/effort", "input_est", "usage.input", "cached", "output",
-     "seconds", "status", "commit"),
+     "seconds", "status", "unknown"),
 ]
 for r in records:
-    rel = (page_dir / f"runs/{r['n']}.json").relative_to(home)
     rows.append((
         str(r["n"]),
         f"{r['model']}/{r['effort']}",
@@ -89,7 +103,7 @@ for r in records:
         str(r["usage"]["output"]),
         f"{r.get('duration') or 0:.1f}",
         str(r.get("result_status")),
-        git("log", "-1", "--format=%h", "--", str(rel)),
+        str(len(r.get("unknown_files") or [])),
     ))
 print()
 print("| " + " | ".join(rows[0]) + " |")
@@ -97,22 +111,20 @@ print("|" + "---|" * len(rows[0]))
 for row in rows[1:]:
     print("| " + " | ".join(row) + " |")
 
-subjects = git("log", "--format=%s").splitlines()
-run_commits = [s for s in subjects if s.startswith(f"[{page}] run ")]
 checks = {
     "3 run records": len(records) == 3,
-    "3 run commits + init": len(run_commits) == 3
-    and subjects[-1] == "[home] init"
-    and len(subjects) == 4,
     f"every input_est <= {budget}": all(
         r["input"]["total_est"] <= budget for r in records
     ),
-    "clean app home": git("status", "--porcelain") == "",
+    "app home is not a git repository": not (home / ".git").exists(),
+    "no new project commits": git("log", "--format=%s").splitlines()
+    == ["init"],
+    "records stay out of git": ".madang" not in git(
+        "status", "--porcelain", "--untracked-files=all", "--ignored=no"
+    ),
 }
 print()
 for name, ok in checks.items():
     print(f"{'ok  ' if ok else 'FAIL'} {name}")
-print()
-print("\n".join(subjects))
 sys.exit(0 if all(checks.values()) else 1)
 PY

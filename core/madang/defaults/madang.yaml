@@ -1,4 +1,3 @@
-home_remote: null   # 선택. 예: git@github.com:<user>/madang-home.git
 core:
   port: 7470
   bind: 127.0.0.1
@@ -11,3 +10,7 @@ limits:
   run_timeout_minutes: {design: 30, build: 20, small: 5, review: 10, explore: 5}
 ui:
   language: ko
+# 참이면 새 프로젝트의 .madang/을 git에 커밋할 수 있게 둔다(scratch/, trash/만 제외).
+commit_records: false
+# madang project add가 관리한다. 항목: id, path, title, parent, icon, color, sort
+projects: []

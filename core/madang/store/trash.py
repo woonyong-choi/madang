@@ -1,26 +1,29 @@
-"""휴지통: 앱 홈 git 이력에서 찾은 페이지·블록 삭제와 그 복원.
+"""휴지통: 지운 페이지·블록을 ``<project>/.madang/trash/``에 옮겨 둔다.
 
-삭제 커밋 메시지는 ``[<page-id>] delete page`` 또는
-``[<page-id>] delete bNN``이다. 목록은 ``git log --diff-filter=D``로 만들고,
-복원은 ``git checkout <commit>^ -- <path>`` 뒤 커밋한다. 경로가 다시 있는
-삭제(이미 복원한 것)는 목록에서 뺀다.
+삭제 하나는 ``trash/<id>/``다. ``entry.json``에 무엇을 지웠는지 적고,
+지운 파일은 ``.madang/`` 기준 경로 그대로 ``files/`` 아래에 둔다. 복원은
+파일을 원래 자리로 되돌려 옮기고 항목 폴더를 지운다. id는
+``<YYYYMMDDTHHMMSSffffff>-<page|bNN>``이다.
 """
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from madang.store import frontmatter, git, pages
-from madang.store.page import PAGE_FILE
+from madang.store import blocks, pages
+from madang.store.page import MADANG_DIR, PAGE_FILE
+from madang.store.projects import Project
 
 DELETE_PAGE = "page"
-_SUBJECT = re.compile(r"^\[(?P<page>[^\]]+)\] delete (?P<what>\S+)$")
-_RECORD = "\x1e"
-_FIELD = "\x1f"
-_SHA = re.compile(r"^[0-9a-f]{4,40}$")
+ENTRY_FILE = "entry.json"
+FILES_DIR = "files"
+_ID = re.compile(r"^\d{8}T\d{12}-(page|b\d+)$")
 
 
 class TrashError(ValueError):
@@ -29,174 +32,211 @@ class TrashError(ValueError):
 
 @dataclass
 class TrashEntry:
-    """삭제 커밋 하나.
+    """휴지통 항목 하나.
 
     Attributes:
-        commit: 삭제 커밋의 짧은 해시.
-        deleted: 커밋 시각(ISO 8601).
-        space: 공간 슬러그.
+        id: 항목 id. ``trash/`` 안의 폴더 이름이다.
+        deleted: 지운 시각(ISO 8601).
+        project: 프로젝트 id.
         page: 페이지 id.
         block: 블록 id. 페이지 전체면 None.
-        paths: 지워진 앱 홈 기준 경로. 페이지면 페이지 폴더 하나.
-        message: 커밋 메시지.
+        paths: 지운 프로젝트 기준 경로. 페이지면 페이지 폴더 하나.
+        order: 블록을 지우기 전 page.md의 ``blocks`` 순서.
     """
 
-    commit: str
+    id: str
     deleted: str
-    space: str
+    project: str
     page: str
     block: str | None
     paths: list[str] = field(default_factory=list)
-    message: str = ""
+    order: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """API 형태로 반환한다."""
         return {
-            "commit": self.commit,
+            "id": self.id,
             "deleted": self.deleted,
-            "space": self.space,
+            "project": self.project,
             "page": self.page,
             "block": self.block,
             "paths": list(self.paths),
-            "message": self.message,
         }
 
 
-def delete_message(page_id: str, what: str) -> str:
-    """삭제 커밋 메시지를 반환한다. ``what``은 ``page`` 또는 블록 id."""
-    return f"[{page_id}] delete {what}"
+# 지우기
 
 
-def list_trash(home: Path) -> list[TrashEntry]:
-    """아직 복원하지 않은 삭제를 최신순으로 반환한다.
+def delete_page(project: Project, page_dir: Path) -> TrashEntry:
+    """페이지 폴더를 휴지통으로 옮긴다.
 
     Args:
-        home: 앱 홈.
+        project: 페이지가 속한 프로젝트.
+        page_dir: 페이지 폴더.
 
     Returns:
-        삭제 목록. 커밋이 없으면 빈 목록.
+        새 휴지통 항목.
     """
-    if not git.is_repo(home):
-        return []
-    proc = git.run(
-        home,
-        "-c",
-        "core.quotepath=off",
-        "log",
-        "--diff-filter=D",
-        "--name-only",
-        f"--format={_RECORD}%h{_FIELD}%aI{_FIELD}%s",
-        "--",
-        pages.SPACES_DIR,
-        check=False,
+    entry = _new_entry(project, page_dir.name, None, [page_dir])
+    _stash(project, entry, [page_dir])
+    return entry
+
+
+def delete_block(
+    project: Project, page_dir: Path, block_id: str, files: list[Path]
+) -> TrashEntry:
+    """블록 파일을 휴지통으로 옮기고 page.md 순서에서 뺀다.
+
+    Args:
+        project: 페이지가 속한 프로젝트.
+        page_dir: 페이지 폴더.
+        block_id: 블록 id.
+        files: 블록의 파일(부속 파일 포함). 메시지 블록이면 빈 목록.
+
+    Returns:
+        새 휴지통 항목.
+    """
+    entry = _new_entry(project, page_dir.name, block_id, files)
+    header = pages.read_header(page_dir / PAGE_FILE)
+    entry.order = [str(b) for b in header.get("blocks") or []]
+    _stash(project, entry, files)
+    blocks.remove_from_order(page_dir, block_id)
+    return entry
+
+
+def _new_entry(
+    project: Project, page: str, block: str | None, paths: list[Path]
+) -> TrashEntry:
+    now = datetime.now().astimezone()
+    return TrashEntry(
+        id=f"{now:%Y%m%dT%H%M%S%f}-{block or DELETE_PAGE}",
+        deleted=now.replace(microsecond=0).isoformat(),
+        project=project.id,
+        page=page,
+        block=block,
+        paths=[_rel(project, p) for p in paths],
     )
-    if proc.returncode != 0:
+
+
+def _stash(project: Project, entry: TrashEntry, paths: list[Path]) -> None:
+    folder = project.trash_dir / entry.id
+    for path in paths:
+        target = folder / FILES_DIR / path.relative_to(project.records)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(path), str(target))
+    folder.mkdir(parents=True, exist_ok=True)
+    data = {k: v for k, v in entry.__dict__.items() if k != "project"}
+    (folder / ENTRY_FILE).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", "utf-8"
+    )
+
+
+def _rel(project: Project, path: Path) -> str:
+    return path.relative_to(project.root).as_posix()
+
+
+# 목록과 찾기
+
+
+def list_trash(projects: list[Project]) -> list[TrashEntry]:
+    """프로젝트들의 휴지통 항목을 최신순으로 반환한다.
+
+    Args:
+        projects: 훑을 프로젝트.
+
+    Returns:
+        휴지통 항목. 읽을 수 없는 항목은 뺀다.
+    """
+    found = [
+        entry for project in projects for entry in _project_entries(project)
+    ]
+    return sorted(found, key=lambda e: e.id.split("-", 1)[0], reverse=True)
+
+
+def _project_entries(project: Project) -> list[TrashEntry]:
+    if not project.trash_dir.is_dir():
         return []
     entries = []
-    for chunk in proc.stdout.split(_RECORD):
-        entry = _parse(chunk)
-        if entry is not None and not all(
-            (home / p).exists() for p in entry.paths
-        ):
+    for folder in project.trash_dir.iterdir():
+        entry = _read(project, folder)
+        if entry is not None:
             entries.append(entry)
     return entries
 
 
-def _parse(chunk: str) -> TrashEntry | None:
-    lines = [line for line in chunk.splitlines() if line.strip()]
-    if not lines:
+def _read(project: Project, folder: Path) -> TrashEntry | None:
+    if not _ID.match(folder.name):
         return None
-    sha, stamp, subject = (lines[0].split(_FIELD) + ["", ""])[:3]
-    match = _SUBJECT.match(subject)
-    if match is None:
+    try:
+        data = json.loads((folder / ENTRY_FILE).read_text(encoding="utf-8"))
+        return TrashEntry(
+            id=folder.name,
+            deleted=str(data["deleted"]),
+            project=project.id,
+            page=str(data["page"]),
+            block=data.get("block"),
+            paths=[str(p) for p in data.get("paths") or []],
+            order=[str(b) for b in data.get("order") or []],
+        )
+    except (OSError, ValueError, KeyError, TypeError):
         return None
-    page, what = match["page"], match["what"]
-    block = None if what == DELETE_PAGE else what
-    if block is not None and pages.parse_block_id(block) is None:
-        return None
-    files = [p for p in lines[1:] if f"/{pages.PAGES_DIR}/{page}/" in p]
-    if not files:
-        return None
-    parts = files[0].split("/")
-    space = parts[1]
-    folder = "/".join(parts[:4])
-    return TrashEntry(
-        commit=sha,
-        deleted=stamp,
-        space=space,
-        page=page,
-        block=block,
-        paths=[folder] if block is None else files,
-        message=subject,
-    )
 
 
-def find(home: Path, commit: str) -> TrashEntry:
-    """휴지통에서 삭제 커밋을 찾는다.
+def find(projects: list[Project], entry_id: str) -> tuple[Project, TrashEntry]:
+    """휴지통 항목을 id로 찾는다.
 
     Args:
-        home: 앱 홈.
-        commit: 삭제 커밋 해시(짧거나 긴).
+        projects: 훑을 프로젝트.
+        entry_id: 항목 id.
 
     Returns:
-        삭제 항목.
+        ``(프로젝트, 항목)``.
 
     Raises:
-        LookupError: 휴지통에 그 커밋이 없다.
+        LookupError: 휴지통에 그 항목이 없다.
     """
-    if _SHA.match(commit):
-        for entry in list_trash(home):
-            if entry.commit.startswith(commit) or commit.startswith(
-                entry.commit
-            ):
-                return entry
-    raise LookupError(f"commit '{commit}' is not in the trash")
+    if _ID.match(entry_id):
+        for project in projects:
+            entry = _read(project, project.trash_dir / entry_id)
+            if entry is not None:
+                return project, entry
+    raise LookupError(f"'{entry_id}' is not in the trash")
 
 
-def restore(home: Path, entry: TrashEntry) -> str:
-    """삭제 커밋 직전의 파일을 되살리고 커밋한다.
+# 복원
+
+
+def restore(project: Project, entry: TrashEntry) -> Path:
+    """휴지통 항목의 파일을 원래 자리로 옮기고 항목을 지운다.
 
     블록이면 page.md ``blocks``의 원래 자리 근처에 id를 다시 넣는다.
 
     Args:
-        home: 앱 홈.
-        entry: 되살릴 삭제.
+        project: 항목이 있는 프로젝트.
+        entry: 되살릴 항목.
 
     Returns:
-        복원 커밋의 짧은 해시.
+        페이지 폴더.
 
     Raises:
         TrashError: 경로가 이미 있거나, 블록의 페이지가 없다.
-        GitError: git이 실패했다.
     """
-    taken = [p for p in entry.paths if (home / p).exists()]
+    page_dir = project.pages_dir / entry.page
+    taken = [p for p in entry.paths if (project.root / p).exists()]
     if taken:
         raise TrashError(f"already exists: {', '.join(taken)}")
-    page_dir = home / pages.SPACES_DIR / entry.space / pages.PAGES_DIR
-    page_dir = page_dir / entry.page
     if entry.block is not None and not (page_dir / PAGE_FILE).is_file():
         raise TrashError(f"page '{entry.page}' no longer exists")
-    git.run(home, "checkout", f"{entry.commit}^", "--", *entry.paths)
-    touched = list(entry.paths)
+    folder = project.trash_dir / entry.id
+    for rel in entry.paths:
+        inside = Path(rel).relative_to(MADANG_DIR)
+        target = project.root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(folder / FILES_DIR / inside), str(target))
     if entry.block is not None:
-        before = _order_before(home, entry, page_dir)
-        _reinsert(page_dir, entry.block, before)
-        touched.append((page_dir / PAGE_FILE).relative_to(home).as_posix())
-    what = entry.block or DELETE_PAGE
-    sha = git.commit_changes(home, touched, f"[{entry.page}] restore {what}")
-    return sha or git.head(home)
-
-
-def _order_before(home: Path, entry: TrashEntry, page_dir: Path) -> list[str]:
-    rel = (page_dir / PAGE_FILE).relative_to(home).as_posix()
-    proc = git.run(home, "show", f"{entry.commit}^:{rel}", check=False)
-    if proc.returncode != 0:
-        return []
-    try:
-        header, _ = frontmatter.parse(proc.stdout)
-    except frontmatter.FrontmatterError:
-        return []
-    return [str(b) for b in header.get("blocks") or []]
+        _reinsert(page_dir, entry.block, entry.order)
+    shutil.rmtree(folder, ignore_errors=True)
+    return page_dir
 
 
 def _reinsert(page_dir: Path, block_id: str, before: list[str]) -> None:

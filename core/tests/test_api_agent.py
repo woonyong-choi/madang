@@ -1,9 +1,9 @@
-"""에이전트 경로: state.md 작업·결정·산출물, 코드 저장소 커밋·push, 승격."""
+"""에이전트 경로: state.md 작업·결정·산출물, 프로젝트 저장소 커밋·push."""
 
 from pathlib import Path
 
 import pytest
-from api_support import git, page_dir, subjects
+from api_support import PROJECT, git, page_dir
 
 from madang.store import pages
 
@@ -71,8 +71,6 @@ def test_tasks_decisions_and_artifacts(
     assert body["issues"][0]["code"] == "artifact-missing"
     state = pages.read_header(folder / "state.md")
     assert state["artifacts"] == ["blocks/b01-notes.md"]
-    assert subjects(home)[0] == f"[{page}] edit state.md"
-    assert git(home, "status", "--porcelain") == ""
 
 
 @pytest.fixture
@@ -88,55 +86,43 @@ def repo(tmp_path: Path) -> Path:
     return path
 
 
-def test_repo_commit_push_and_promote(
+def test_repo_commit_and_push(
     client,
     home,
     repo: Path,
     tmp_path: Path,
     contract,
 ) -> None:
-    no_repo = client.post("/spaces/root/repo/commit", json={"message": "x"})
+    no_repo = client.post(
+        f"/projects/{PROJECT}/repo/commit", json={"message": "x"}
+    )
     assert contract.check(no_repo, 409)["error"] == "no_repo"
-    contract.check(client.post("/spaces/nope/repo/push"), 404)
+    contract.check(client.post("/projects/nope/repo/push"), 404)
 
     contract.check(
-        client.post(
-            "/spaces", json={"slug": "code", "title": "코드", "repo": str(repo)}
-        ),
+        client.post("/projects", json={"path": str(repo), "id": "code"}),
         201,
     )
+    page_id = client.post("/projects/code/pages", json={"title": "기록"})
+    assert page_id.status_code == 201
     (repo / "lock.ts").write_text("export {}\n")
     result = contract.check(
-        client.post("/spaces/code/repo/commit", json={"message": "feat: lock"}),
+        client.post(
+            "/projects/code/repo/commit", json={"message": "feat: lock"}
+        ),
         200,
     )
     assert result["commit"] == git(repo, "rev-parse", "--short", "HEAD").strip()
+    committed = git(repo, "show", "--name-only", "--format=", "HEAD").split()
+    assert committed == ["lock.ts"]  # .madang/은 .gitignore로 빠진다
     contract.check(
-        client.post("/spaces/code/repo/commit", json={"message": "again"}), 409
+        client.post("/projects/code/repo/commit", json={"message": "again"}),
+        409,
     )
-    contract.check(client.post("/spaces/code/repo/push"), 409)
+    contract.check(client.post("/projects/code/repo/push"), 409)
 
     remote = tmp_path / "remote.git"
     git(tmp_path, "init", "-q", "--bare", str(remote))
     git(repo, "remote", "add", "origin", str(remote))
-    pushed = contract.check(client.post("/spaces/code/repo/push"), 200)
+    pushed = contract.check(client.post("/projects/code/repo/push"), 200)
     assert pushed == {"branch": "main", "remote": "origin"}
-
-    page_id = client.post("/spaces/code/pages", json={"title": "문서"}).json()[
-        "id"
-    ]
-    client.post(
-        f"/pages/{page_id}/blocks",
-        json={"type": "doc", "name": "design", "content": "설계\n"},
-    )
-    promoted = contract.check(
-        client.post(f"/pages/{page_id}/blocks/b01/promote"), 200
-    )
-    assert promoted["path"] == "repo:docs/design.md" and promoted["commit"]
-    again = contract.check(
-        client.post(f"/pages/{page_id}/blocks/b01/promote"), 200
-    )
-    assert again["path"] == "repo:docs/design.md" and "commit" not in again
-    contract.check(client.post(f"/pages/{page_id}/blocks/b09/promote"), 404)
-    assert (repo / "docs/design.md").read_text().endswith("설계\n")
-    assert git(home, "status", "--porcelain") == ""

@@ -6,7 +6,7 @@ import pytest
 from madang import assemble as asm
 from madang import contract
 from madang.config import load_config
-from madang.store import frontmatter, pages
+from madang.store import frontmatter, pages, projects
 from madang.store.home import init_home
 from madang.validate import tokens
 
@@ -23,14 +23,16 @@ def home(tmp_path: Path) -> Path:
     root = tmp_path / "home"
     init_home(root)
     (root / "root.md").write_text("ROOT-NOTES\n")
-    space = root / "spaces/root/space.md"
-    space.write_text(frontmatter.dumps({"slug": "root"}, "SPACE-NOTES\n"))
+    (tmp_path / "work").mkdir()
+    project = projects.add(root, tmp_path / "work")
+    project.memory.write_text("PROJECT-NOTES\n")
     return root
 
 
 @pytest.fixture
 def page(home: Path) -> Path:
-    page_dir = pages.create_page(home, "root", "Resume", slug="resume")
+    pages_dir = projects.get(home, "work").pages_dir
+    page_dir = pages.create_page(pages_dir, "Resume", slug="resume")
     state = page_dir / "state.md"
     text = state.read_text()
     text = text.replace("## 막힌 점\n", "## 막힌 점\nBLOCKED-NOTE\n")
@@ -66,10 +68,17 @@ def test_parts_follow_the_fixed_order(home: Path, page: Path) -> None:
     (page / "blocks/b01-plan.md").write_text("TARGET-BODY\n")
     out = build(page, home, target="b01")
     names = [p.name for p in out.parts]
-    assert names == ["root", "space", "state", "contract", "target", "request"]
+    assert names == [
+        "root",
+        "project",
+        "state",
+        "contract",
+        "target",
+        "request",
+    ]
     markers = [
         "ROOT-NOTES",
-        "SPACE-NOTES",
+        "PROJECT-NOTES",
         "BLOCKED-NOTE",
         "너는 Madang 페이지",
         "TARGET-BODY",
@@ -77,8 +86,6 @@ def test_parts_follow_the_fixed_order(home: Path, page: Path) -> None:
     ]
     positions = [out.prompt.index(m) for m in markers]
     assert positions == sorted(positions)
-    # space 헤더는 프롬프트에 들어가지 않는다
-    assert "slug: root" not in out.prompt
 
 
 def test_estimate_adds_parts_and_system(home: Path, page: Path) -> None:
@@ -89,7 +96,7 @@ def test_estimate_adds_parts_and_system(home: Path, page: Path) -> None:
     assert set(parts) == {
         "system_est",
         "root",
-        "space",
+        "project",
         "state",
         "contract",
         "request",
@@ -130,19 +137,23 @@ def test_contract_is_rendered(home: Path, page: Path) -> None:
     assert 'version="v1"' in text
     for placeholder in ("{repo}", "{page}", "{templates}", "{n}"):
         assert placeholder not in text
-    assert f"작업 폴더는 {page}이다" in text
+    assert f"작업 폴더는 {page.parents[2]}이다" in text
     assert f"{page}/blocks/" in text
     assert "resume" in text and "table" in text
     assert "2회 연속 실패" in text
 
 
-def test_contract_uses_space_repository(home: Path, tmp_path: Path) -> None:
+def test_project_without_memory_is_empty(home: Path, tmp_path: Path) -> None:
     repo = tmp_path / "code"
     repo.mkdir()
-    pages.create_space(home, "work", repo=str(repo))
-    page_dir = pages.create_page(home, "work", "Task", slug="task")
+    project = projects.add(home, repo)
+    project.memory.unlink()
+    page_dir = pages.create_page(project.pages_dir, "Task", slug="task")
     out = build(page_dir, home)
-    assert f"작업 폴더는 {repo}이다" in out.prompt
+    assert f"작업 폴더는 {repo.resolve()}이다" in out.prompt
+    assert next(p for p in out.parts if p.name == "project").text == (
+        "<project>\n\n</project>"
+    )
 
 
 def test_target_block_is_cut_at_the_limit(home: Path, page: Path) -> None:

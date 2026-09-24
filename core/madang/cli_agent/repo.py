@@ -9,7 +9,7 @@ from __future__ import annotations
 import fnmatch
 from pathlib import Path, PurePosixPath
 
-from madang.cli_agent.context import AgentError, PageContext
+from madang.cli_agent.context import AgentError
 from madang.store import git
 
 # 에이전트가 커밋하면 안 되는 파일 이름.
@@ -32,28 +32,24 @@ SENSITIVE_NAMES = (
 )
 
 
-def require_repo(ctx: PageContext) -> Path:
-    """스페이스의 코드 저장소를 반환한다.
+def require_repo(folder: Path) -> Path:
+    """프로젝트 폴더가 git 워크 트리인지 확인하고 반환한다.
 
     Args:
-        ctx: 저장소를 소유한 스페이스의 페이지.
+        folder: 프로젝트 폴더.
 
     Returns:
         저장소 워크 트리.
 
     Raises:
-        AgentError: 스페이스에 저장소가 없거나 git 워크 트리가 아니다.
+        AgentError: 폴더가 없거나 git 워크 트리가 아니다.
     """
-    repo = ctx.repo()
-    if repo is None:
-        raise AgentError(
-            "스페이스에 코드 저장소가 없다(space.md에 repo를 지정한다)"
-        )
+    repo = folder
     if not repo.is_dir():
-        raise AgentError(f"코드 저장소 {repo}가 없다")
+        raise AgentError(f"프로젝트 폴더 {repo}가 없다")
     proc = git.run(repo, "rev-parse", "--is-inside-work-tree", check=False)
     if proc.returncode != 0 or proc.stdout.strip() != "true":
-        raise AgentError(f"{repo}는 git 저장소가 아니다")
+        raise AgentError(f"프로젝트 폴더 {repo}는 git 저장소가 아니다")
     return repo
 
 
@@ -100,36 +96,6 @@ def commit_all(repo: Path, message: str) -> str:
             raise AgentError("코드 저장소에 커밋할 변경이 없다")
         git.commit(repo, message)
     except git.GitError as exc:
-        raise AgentError(str(exc)) from exc
-    return git.head(repo)
-
-
-def commit_paths(repo: Path, paths: list[str], message: str) -> str | None:
-    """``paths``만 커밋한다.
-
-    Args:
-        repo: 저장소 워크 트리.
-        paths: 저장소 기준 경로.
-        message: 커밋 메시지.
-
-    Returns:
-        새 커밋의 짧은 해시. 경로에 변경이 없으면 None.
-
-    Raises:
-        AgentError: git이 실패했다. 경로는 다시 언스테이징한다.
-    """
-    try:
-        git.add(repo, paths)
-        if (
-            git.run(
-                repo, "diff", "--cached", "--quiet", "--", *paths, check=False
-            ).returncode
-            == 0
-        ):
-            return None
-        git.commit(repo, message, paths)
-    except git.GitError as exc:
-        git.run(repo, "reset", "-q", "--", *paths, check=False)
         raise AgentError(str(exc)) from exc
     return git.head(repo)
 

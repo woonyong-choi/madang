@@ -14,13 +14,14 @@ from referencing.jsonschema import DRAFT202012
 from madang.api.app import create_app
 from madang.api.contract import contract_document
 from madang.runners.base import RunEvent, RunResult, Usage
-from madang.store import frontmatter, pages
+from madang.store import frontmatter, pages, projects
 from madang.store.home import init_home
 
 STREAMS = Path(__file__).parent / "fixtures" / "streams"
 URN = "urn:madang:contract"
 LOCAL = "http://127.0.0.1:7470"
 WS = "ws://127.0.0.1:7470"
+PROJECT = "work"
 
 
 def _pointer(*parts: str) -> str:
@@ -168,9 +169,17 @@ def contract() -> Contract:
 
 @pytest.fixture
 def home(tmp_path: Path) -> Path:
+    """``work`` 프로젝트 하나를 등록한 앱 홈."""
     root = tmp_path / "home"
     init_home(root)
+    (tmp_path / PROJECT).mkdir()
+    projects.add(root, tmp_path / PROJECT, project_id=PROJECT)
     return root
+
+
+@pytest.fixture
+def project_root(home: Path) -> Path:
+    return projects.get(home, PROJECT).root
 
 
 @pytest.fixture
@@ -187,7 +196,9 @@ def client(home: Path, script: Script):
 
 @pytest.fixture
 def page(client: TestClient) -> str:
-    response = client.post("/spaces/root/pages", json={"title": "이력서"})
+    response = client.post(
+        f"/projects/{PROJECT}/pages", json={"title": "이력서"}
+    )
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
@@ -203,7 +214,3 @@ def git(repo: Path, *args: str) -> str:
         text=True,
         check=True,
     ).stdout
-
-
-def subjects(home: Path) -> list[str]:
-    return git(home, "log", "--format=%s").splitlines()

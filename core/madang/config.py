@@ -1,4 +1,4 @@
-"""앱 홈 위치와 설정 파일 로딩."""
+"""앱 홈(전역 설정 폴더) 위치와 설정 파일 로딩."""
 
 from __future__ import annotations
 
@@ -61,10 +61,23 @@ class UiSettings(_Model):
     language: str = "ko"
 
 
+class ProjectEntry(_Model):
+    """등록한 프로젝트 하나. 표시 설정도 여기에 둔다."""
+
+    id: str
+    path: str
+    title: str | None = None
+    parent: str | None = None
+    icon: str | None = None
+    color: str | None = None
+    sort: str | None = None
+
+
 class MadangConfig(_Model):
     """``config/madang.yaml``의 전역 설정."""
 
-    home_remote: str | None = None
+    commit_records: bool = False
+    projects: list[ProjectEntry] = Field(default_factory=list)
     core: CoreSettings = Field(default_factory=CoreSettings)
     agents: AgentSettings = Field(default_factory=AgentSettings)
     limits: Limits = Field(default_factory=Limits)

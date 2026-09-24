@@ -13,13 +13,13 @@ BlockType = Literal[
 ]
 MessageRole = Literal["user", "router", "agent"]
 TargetMode = Literal["view", "edit"]
-MemoryLayer = Literal["root", "space", "state"]
+MemoryLayer = Literal["root", "project", "state"]
 RunResultStatus = Literal[
     "planning", "doing", "blocked", "review", "done", "error", "cancelled"
 ]
 TaskStatus = Literal["todo", "doing", "blocked", "review", "done"]
 DecisionState = Literal["proposed", "confirmed", "superseded", "deferred"]
-SpaceSort = Literal["updated", "created", "title"]
+ProjectSort = Literal["updated", "created", "title"]
 COLOR = r"^#[0-9a-fA-F]{6}$"
 
 
@@ -73,18 +73,16 @@ class Health(_Out):
 
 
 class HomeStatus(_Out):
-    """core가 쓰는 앱 홈."""
+    """core가 쓰는 앱 홈(전역 설정 폴더)."""
 
     path: str
     initialized: bool
-    remote: str | None = None
 
 
 class HomeInit(_Body):
     """앱 홈 초기화 요청."""
 
     path: str
-    remote: str | None = None
 
 
 class RoutesDocument(_Body):
@@ -109,44 +107,43 @@ class RunnerAvailability(_Out):
     runners: list[RunnerStatus]
 
 
-# 공간
+# 프로젝트
 
 
-class Space(_Out):
-    """공간."""
+class Project(_Out):
+    """프로젝트: 페이지 기록을 ``.madang/``에 담는 로컬 폴더."""
 
-    slug: str
+    id: str
     title: str
-    repo: str | None = None
+    path: str
     parent: str | None = None
     icon: str | None = None
     color: str | None = None
-    sort: SpaceSort | None = None
+    sort: ProjectSort | None = None
     pages: int | None = None
     active_pages: int | None = None
 
 
-class SpaceCreate(_Body):
-    """공간 생성 요청."""
+class ProjectCreate(_Body):
+    """프로젝트 등록 요청."""
 
-    slug: str
-    title: str
-    repo: str | None = None
+    path: str
+    id: str | None = None
+    title: str | None = None
     parent: str | None = None
     icon: str | None = None
     color: str | None = Field(default=None, pattern=COLOR)
-    sort: SpaceSort | None = None
+    sort: ProjectSort | None = None
 
 
-class SpaceUpdate(_Body):
-    """공간 수정 요청. 준 키만 바꾸며 null은 설정을 지운다."""
+class ProjectUpdate(_Body):
+    """프로젝트 수정 요청. 준 키만 바꾸며 null은 설정을 지운다."""
 
     title: str | None = None
-    repo: str | None = None
     parent: str | None = None
     icon: str | None = None
     color: str | None = Field(default=None, pattern=COLOR)
-    sort: SpaceSort | None = None
+    sort: ProjectSort | None = None
 
 
 # 페이지
@@ -165,7 +162,7 @@ class PageCard(_Out):
     """페이지 목록의 카드."""
 
     id: str
-    space: str
+    project: str
     title: str
     kind: str | None = None
     status: PageStatus
@@ -193,7 +190,7 @@ class PageUpdate(_Body):
     pinned: bool | None = None
     tags: list[str] | None = None
     blocks_order: list[str] | None = None
-    space: str | None = None
+    project: str | None = None
 
 
 # 블록
@@ -272,13 +269,7 @@ class BlockCreate(_Body):
     bindings: dict[str, str] | None = None
     data: list[str] | None = None
     title: str | None = None
-
-
-class PromoteResult(_Out):
-    """블록 승격 결과."""
-
-    path: str
-    commit: str | None = None
+    in_run: bool = False
 
 
 # 메모리
@@ -298,7 +289,7 @@ class Memory(_Out):
     """세 층 메모리."""
 
     root: MemoryFile
-    space: MemoryFile
+    project: MemoryFile
     state: MemoryFile
 
 
@@ -329,7 +320,7 @@ class InputParts(_Out):
 
     system_est: int
     root: int
-    space: int
+    project: int
     state: int
     contract: int
     target: int
@@ -400,7 +391,6 @@ class RunRecord(_Out):
     unknown_files: list[str]
     verify: RunVerify
     result_status: RunResultStatus | None = None
-    commit: str | None = None
     events_log: str | None = None
 
 
@@ -474,6 +464,7 @@ class DecisionCreate(_Body):
     supersedes: str | None = None
     state: DecisionState | None = None
     by: str | None = None
+    in_run: bool = False
 
 
 class ArtifactAdd(_Body):
@@ -483,19 +474,19 @@ class ArtifactAdd(_Body):
 
 
 class RepoCommit(_Body):
-    """코드 저장소 커밋 요청."""
+    """프로젝트 저장소 커밋 요청."""
 
     message: str
 
 
 class RepoCommitResult(_Out):
-    """코드 저장소 커밋 결과."""
+    """프로젝트 저장소 커밋 결과."""
 
     commit: str
 
 
 class RepoPushResult(_Out):
-    """코드 저장소 push 결과."""
+    """프로젝트 저장소 push 결과."""
 
     branch: str
     remote: str | None = None
@@ -518,21 +509,20 @@ class UnknownFileAction(_Body):
 
 
 class TrashEntry(_Out):
-    """삭제 커밋."""
+    """휴지통 항목 하나."""
 
-    commit: str
+    id: str
     deleted: str
-    space: str | None = None
+    project: str
     page: str
     block: str | None = None
     paths: list[str]
-    message: str
 
 
 class TrashRestore(_Out):
     """복원 결과."""
 
-    commit: str
+    id: str
     paths: list[str]
 
 
@@ -604,7 +594,7 @@ class PageDetail(_Out):
     """page.md, 블록 머리부, 실행 기록."""
 
     id: str
-    space: str
+    project: str
     title: str
     kind: str | None = None
     status: PageStatus

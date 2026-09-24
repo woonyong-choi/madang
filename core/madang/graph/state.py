@@ -8,7 +8,7 @@ from typing import Any, TypedDict
 class FlowState(TypedDict):
     """메시지 하나를 처리하는 흐름의 상태.
 
-    ``space``, ``page``, ``message``는 id다. 본문은 페이지 파일에서 읽는다.
+    ``project``, ``page``, ``message``는 id다. 본문은 페이지 파일에서 읽는다.
     ``target``은 ``{block, elements, mode}``이다. ``result_status``는
     마지막 판정(done | blocked | review | doing | cancelled)이며 판정 전에는
     빈 문자열이다. ``last_run_kind``는 마지막으로 실행한 종류로, 리뷰
@@ -16,7 +16,7 @@ class FlowState(TypedDict):
     ``pending_decision``은 사람에게 묻는 동안만 채워진다.
     """
 
-    space: str
+    project: str
     page: str
     message: str
     target: dict[str, Any]
@@ -34,12 +34,12 @@ class FlowState(TypedDict):
 
 
 def initial_state(
-    space: str, page: str, message: str, target: dict[str, Any]
+    project: str, page: str, message: str, target: dict[str, Any]
 ) -> FlowState:
     """새 메시지의 첫 상태를 반환한다.
 
     Args:
-        space: 공간 슬러그.
+        project: 프로젝트 id.
         page: 페이지 id.
         message: 요청 메시지 블록 id.
         target: ``{block, elements, mode}``.
@@ -48,7 +48,7 @@ def initial_state(
         1단계에서 시작하는 상태.
     """
     return FlowState(
-        space=space,
+        project=project,
         page=page,
         message=message,
         target=target,

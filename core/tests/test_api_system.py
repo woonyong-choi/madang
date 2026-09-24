@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from api_support import LOCAL, WS, subjects
+from api_support import LOCAL, WS
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -47,36 +47,41 @@ def test_uninitialized_home_then_init(tmp_path: Path, contract) -> None:
     with TestClient(app, base_url=LOCAL) as test_client:
         status = contract.check(test_client.get("/home"), 200)
         assert status == {"path": str(first.resolve()), "initialized": False}
-        assert contract.check(test_client.get("/spaces"), 200) == []
+        assert contract.check(test_client.get("/projects"), 200) == []
         contract.check(test_client.get("/pages/2026-09-24-x"), 404)
-        failed = test_client.post("/spaces", json={"slug": "a", "title": "a"})
+        failed = test_client.post("/projects", json={"path": str(tmp_path)})
         assert contract.check(failed, 409)["error"] == "conflict"
         contract.check(test_client.get("/config/routes"), 409)
         contract.check(test_client.get("/runners"), 200)
 
         target = tmp_path / "chosen"
-        remote = "git@github.com:me/madang-home.git"
         body = contract.check(
-            test_client.post(
-                "/home", json={"path": str(target), "remote": remote}
-            ),
-            200,
+            test_client.post("/home", json={"path": str(target)}), 200
         )
-        assert body == {
-            "path": str(target.resolve()),
-            "initialized": True,
-            "remote": remote,
-        }
-        spaces = contract.check(test_client.get("/spaces"), 200)
-        assert [s["slug"] for s in spaces] == ["root"]
+        assert body == {"path": str(target.resolve()), "initialized": True}
+        assert contract.check(test_client.get("/projects"), 200) == []
         # 다시 해도 덮어쓰지 않는다
         contract.check(
             test_client.post("/home", json={"path": str(target)}), 200
         )
     assert (target / "core.port").read_text().strip() == "7471"
     assert not (first / "core.port").exists()
-    assert subjects(target)[0] == "[home] set remote"
-    assert "home_remote: " in (target / "config/madang.yaml").read_text()
+    assert not (target / ".git").exists()
+
+
+def test_old_layout_is_refused(tmp_path: Path, contract) -> None:
+    old = tmp_path / "old"
+    (old / "spaces/root/pages").mkdir(parents=True)
+    (old / "config").mkdir()
+    (old / "config/madang.yaml").write_text("home_remote: null\n")
+    app = create_app(old, probe=lambda n, s: None)
+    with TestClient(app, base_url=LOCAL) as test_client:
+        status = contract.check(test_client.get("/home"), 200)
+        assert status["initialized"] is False
+        routes = contract.check(test_client.get("/config/routes"), 409)
+        assert "old app home layout" in routes["message"]
+        again = test_client.post("/home", json={"path": str(old)})
+        assert "old app home layout" in contract.check(again, 409)["message"]
 
 
 def test_init_refuses_foreign_folder(client, tmp_path, contract) -> None:
@@ -85,7 +90,7 @@ def test_init_refuses_foreign_folder(client, tmp_path, contract) -> None:
     (foreign / "notes.txt").write_text("mine\n")
     response = client.post("/home", json={"path": str(foreign)})
     assert contract.check(response, 409)["error"] == "conflict"
-    bad = client.post("/home", json={"path": str(foreign), "remote": "a b"})
+    bad = client.post("/home", json={"path": " "})
     assert contract.check(bad, 400)["error"] == "invalid"
 
 
@@ -99,7 +104,6 @@ def test_routes_document_round_trip(client, home, contract) -> None:
     )
     assert saved["text"] == text
     assert (home / "config/routes.yaml").read_text() == text
-    assert subjects(home)[0] == "[home] edit config/routes.yaml"
 
 
 def test_routes_document_is_validated(client, home, contract) -> None:
@@ -131,10 +135,10 @@ def test_routes_document_is_validated(client, home, contract) -> None:
 def test_errors_use_contract_shapes(client, contract) -> None:
     missing = client.get("/pages/2026-09-30-missing")
     assert contract.check(missing, 404)["error"] == "not_found"
-    bad = client.post("/spaces", json={"slug": "x"})
+    bad = client.post("/projects", json={"id": "x"})
     body = contract.check(bad, 400)
     assert body["issues"][0]["code"] == "invalid-value"
-    unknown = client.post("/spaces", json={"slug": "x", "title": "x", "z": 1})
+    unknown = client.post("/projects", json={"path": "/tmp", "z": 1})
     contract.check(unknown, 400)
     nowhere = client.get("/nowhere")
     assert nowhere.status_code == 404

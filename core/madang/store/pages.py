@@ -1,4 +1,4 @@
-"""페이지·공간 연산: 찾기, 머리부 갱신, 블록 id, 생성.
+"""페이지 연산: 찾기, 머리부 갱신, 블록 id, 생성, 이동.
 
 머리부 갱신은 YAML 머리부만 다시 쓰며 마크다운 본문은 바이트 단위로
 그대로 둔다.
@@ -14,13 +14,10 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from madang import config
-from madang.store import frontmatter, git
+from madang.store import frontmatter, projects
 from madang.store.files import atomic_write
-from madang.store.page import PAGE_FILE, SPACE_FILE, STATE_FILE
+from madang.store.page import PAGE_FILE, STATE_FILE
 
-SPACES_DIR = "spaces"
-PAGES_DIR = "pages"
 BLOCKS_DIR = "blocks"
 LOG_FILE = "log.md"
 LAST_BLOCK_FILE = ".last"
@@ -38,7 +35,7 @@ class PageNotFoundError(LookupError):
 
 
 def find_page(home: Path, page_id: str) -> Path:
-    """앱 홈 아래의 ``spaces/<slug>/pages/<page_id>``를 반환한다.
+    """등록한 프로젝트에서 ``.madang/pages/<page_id>``를 찾는다.
 
     Args:
         home: 앱 홈 디렉터리.
@@ -48,7 +45,7 @@ def find_page(home: Path, page_id: str) -> Path:
         페이지 폴더.
 
     Raises:
-        PageNotFoundError: id가 올바르지 않거나, 그 페이지를 가진 공간이
+        PageNotFoundError: id가 올바르지 않거나, 그 페이지를 가진 프로젝트가
             없거나 둘 이상이다.
     """
     if (
@@ -58,21 +55,21 @@ def find_page(home: Path, page_id: str) -> Path:
         or page_id in (".", "..")
     ):
         raise PageNotFoundError(f"invalid page id '{page_id}'")
-    matches = sorted(
-        p
-        for p in (Path(home) / SPACES_DIR).glob(f"*/{PAGES_DIR}/{page_id}")
-        if (p / PAGE_FILE).is_file()
-    )
+    matches = [
+        (project.id, project.pages_dir / page_id)
+        for project in projects.load(Path(home))
+        if (project.pages_dir / page_id / PAGE_FILE).is_file()
+    ]
     if not matches:
         raise PageNotFoundError(
-            f"page '{page_id}' not found under {Path(home) / SPACES_DIR}"
+            f"page '{page_id}' not found in any registered project"
         )
     if len(matches) > 1:
-        spaces = ", ".join(p.parent.parent.name for p in matches)
+        owners = ", ".join(project for project, _ in matches)
         raise PageNotFoundError(
-            f"page '{page_id}' exists in more than one space: {spaces}"
+            f"page '{page_id}' exists in more than one project: {owners}"
         )
-    return matches[0]
+    return matches[0][1]
 
 
 # 머리부
@@ -245,42 +242,6 @@ def slugify(text: str) -> str:
     return slug or "page"
 
 
-def create_space(
-    home: Path, slug: str, *, title: str | None = None, repo: str | None = None
-) -> Path:
-    """space.md와 빈 pages 폴더를 가진 ``spaces/<slug>/``를 만든다.
-
-    Args:
-        home: 앱 홈 디렉터리.
-        slug: 공간 슬러그. 이미 올바른 슬러그여야 한다.
-        title: 공간 제목. 기본값은 슬러그.
-        repo: space.md에 적을 코드 저장소 경로.
-
-    Returns:
-        공간 폴더.
-
-    Raises:
-        ValueError: 슬러그가 올바르지 않다.
-        FileExistsError: 공간이 이미 있다.
-    """
-    if slugify(slug) != slug:
-        raise ValueError(f"invalid space slug '{slug}'")
-    space = Path(home) / SPACES_DIR / slug
-    if (space / SPACE_FILE).exists():
-        raise FileExistsError(f"space '{slug}' already exists")
-    (space / PAGES_DIR).mkdir(parents=True, exist_ok=True)
-    header = {"slug": slug, "title": title or slug, "repo": repo}
-    (space / SPACE_FILE).write_text(
-        frontmatter.dumps(header, _default_space_body()), "utf-8"
-    )
-    return space
-
-
-def _default_space_body() -> str:
-    """앱 홈 기본 space.md와 같은 본문을 반환한다."""
-    return frontmatter.split(config.default_text(SPACE_FILE)).body
-
-
 STATE_BODY = """## 목표
 {goal}
 
@@ -298,8 +259,7 @@ STATE_BODY = """## 목표
 
 
 def create_page(
-    home: Path,
-    space: str,
+    pages_dir: Path,
     title: str,
     *,
     slug: str | None = None,
@@ -309,11 +269,10 @@ def create_page(
 ) -> Path:
     """page.md, state.md, log.md를 가진 페이지 폴더를 만든다.
 
-    폴더는 ``spaces/<space>/pages/<YYYY-MM-DD-slug>/``이다.
+    폴더는 ``<pages_dir>/<YYYY-MM-DD-slug>/``이다.
 
     Args:
-        home: 앱 홈 디렉터리.
-        space: 공간 슬러그.
+        pages_dir: 프로젝트의 ``.madang/pages`` 폴더.
         title: 페이지 제목.
         slug: 페이지 슬러그. 기본값은 제목의 슬러그.
         kind: 페이지 종류.
@@ -324,14 +283,13 @@ def create_page(
         페이지 폴더.
 
     Raises:
-        FileNotFoundError: 공간이 없다.
+        FileNotFoundError: 페이지 폴더를 담을 ``pages_dir``가 없다.
         FileExistsError: 페이지가 이미 있다.
     """
-    space_dir = Path(home) / SPACES_DIR / space
-    if not (space_dir / SPACE_FILE).is_file():
-        raise FileNotFoundError(f"space '{space}' does not exist")
+    if not pages_dir.is_dir():
+        raise FileNotFoundError(f"{pages_dir} does not exist")
     page_id = f"{(day or date.today()).isoformat()}-{slug or slugify(title)}"
-    page_dir = space_dir / PAGES_DIR / page_id
+    page_dir = pages_dir / page_id
     if page_dir.exists():
         raise FileExistsError(f"page '{page_id}' already exists")
     (page_dir / BLOCKS_DIR).mkdir(parents=True)
@@ -363,34 +321,27 @@ def create_page(
     return page_dir
 
 
-def move_page(home: Path, page_dir: Path, space: str) -> Path:
-    """페이지 폴더를 다른 공간으로 옮긴다. 커밋은 호출자가 한다.
-
-    옛 경로는 git 인덱스에서 뺀다. 새 경로는 호출자가 커밋할 때 더한다.
+def move_page(page_dir: Path, pages_dir: Path) -> Path:
+    """페이지 폴더를 다른 프로젝트의 ``.madang/pages``로 옮긴다.
 
     Args:
-        home: 앱 홈.
         page_dir: 옮길 페이지 폴더.
-        space: 대상 공간 슬러그.
+        pages_dir: 대상 프로젝트의 ``.madang/pages`` 폴더.
 
     Returns:
         새 페이지 폴더.
 
     Raises:
-        FileNotFoundError: 대상 공간이 없다.
-        FileExistsError: 대상 공간에 같은 id의 페이지가 있다.
+        FileNotFoundError: 대상 폴더가 없다.
+        FileExistsError: 대상 프로젝트에 같은 id의 페이지가 있다.
     """
-    target_space = Path(home) / SPACES_DIR / space
-    if not (target_space / SPACE_FILE).is_file():
-        raise FileNotFoundError(f"space '{space}' does not exist")
-    target = target_space / PAGES_DIR / page_dir.name
+    if not pages_dir.is_dir():
+        raise FileNotFoundError(f"{pages_dir} does not exist")
+    target = pages_dir / page_dir.name
     if target.exists():
         raise FileExistsError(
-            f"page '{page_dir.name}' already exists in space '{space}'"
+            f"page '{page_dir.name}' already exists in {pages_dir}"
         )
-    old = page_dir.relative_to(home).as_posix()
-    git.run(home, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", old)
-    target.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(page_dir), str(target))
     return target
 

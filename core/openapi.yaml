@@ -4,15 +4,17 @@ info:
   version: 1.0.0
   summary: madang-core의 로컬 HTTP·WebSocket API.
   description: |
-    데스크톱 앱은 이 API로 madang-core와 통신한다. 앱 홈(`~/.madang`)은
-    core가 소유하며 앱은 자체 문서를 두지 않는다.
+    데스크톱 앱은 이 API로 madang-core와 통신한다. 페이지 기록은 프로젝트
+    폴더의 `.madang/`에, 전역 설정과 root.md는 앱 홈(`~/.madang`)에 있다.
+    둘 다 core가 쓰며 앱은 자체 문서를 두지 않는다. core는 기록을 git에
+    커밋하지 않는다(커밋 여부는 사용자가 정한다).
 
     규약:
     - 시각은 오프셋이 붙은 ISO 8601이다(`2026-09-24T09:40:00+09:00`).
     - 페이지 id는 `YYYY-MM-DD-<slug>`, 블록 id는 `bNN`이다. run 번호는
       페이지별로 늘어나며 재사용하지 않는다.
-    - 페이지 안의 경로는 페이지 기준이다(`blocks/b05-base.json`). 공간의
-      코드 저장소 경로에는 `repo:` 접두어가 붙는다
+    - 페이지 안의 경로는 페이지 기준이다(`blocks/b05-base.json`). 프로젝트
+      폴더 기준 경로에는 `repo:` 접두어가 붙는다
       (`repo:src/session/lock.ts`).
     - 오류는 `ApiError`로 돌려준다. 파일 검사에 실패하면 400과 함께
       `ValidationFailure`와 그 `issues`를 돌려준다.
@@ -27,8 +29,9 @@ servers:
 tags:
   - name: system
   - name: setup
-    description: 앱 홈 초기화와 설정 파일 편집.
-  - name: spaces
+    description: 앱 홈(전역 설정) 초기화와 설정 파일 편집.
+  - name: projects
+    description: 페이지 기록을 `.madang/`에 담는 로컬 폴더.
   - name: pages
   - name: blocks
   - name: memory
@@ -78,11 +81,13 @@ paths:
     get:
       tags: [setup]
       operationId: getHome
-      summary: core가 쓰는 앱 홈과 초기화 여부.
+      summary: core가 쓰는 앱 홈(전역 설정 폴더)과 초기화 여부.
       description: |
         `initialized`가 거짓이면 앱은 온보딩을 보여 주고 `POST /home`으로
         앱 홈을 만든다. 초기화 전의 core는 빈 앱 홈처럼 답한다: 목록은
-        비어 있고, 공간·페이지 경로는 404, 만들기와 설정은 409.
+        비어 있고, 프로젝트·페이지 경로는 404, 만들기와 설정은 409.
+        예전 구조(`spaces/`가 있는 앱 홈)는 초기화되지 않은 것으로 보며,
+        만들기와 설정은 옮기는 방법을 담은 409로 거절한다.
       responses:
         "200":
           description: 앱 홈 상태.
@@ -95,9 +100,10 @@ paths:
       operationId: initHome
       summary: 앱 홈을 만들고(이미 있으면 그대로) core가 그 홈을 쓰게 한다.
       description: |
-        `path`에 앱 홈을 초기화한다. 기존 파일은 덮어쓰지 않는다. `remote`는
-        `config/madang.yaml`의 `home_remote`에 주소만 기록하며 원격 저장소를
-        만들지는 않는다. core는 이후 이 홈을 쓰고 `core.port`도 이 홈에 둔다.
+        `path`에 전역 설정(`config/`)과 root.md를 만든다. git 저장소는 만들지
+        않으며 기존 파일은 덮어쓰지 않는다. 예전 구조의 폴더이거나 앱 홈이
+        아닌 폴더면 409. core는 이후 이 홈을 쓰고 `core.port`도 이 홈에
+        둔다. 프로젝트는 `POST /projects`로 따로 등록한다.
       requestBody:
         required: true
         content:
@@ -155,37 +161,44 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /spaces:
+  /projects:
     get:
-      tags: [spaces]
-      operationId: listSpaces
-      summary: 공간 목록. 루트 공간은 항상 있다.
+      tags: [projects]
+      operationId: listProjects
+      summary: 등록한 프로젝트 목록(등록 순서).
       responses:
         "200":
-          description: 모든 공간.
+          description: 모든 프로젝트.
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Space"
+                  $ref: "#/components/schemas/Project"
     post:
-      tags: [spaces]
-      operationId: createSpace
-      summary: 공간을 만든다.
+      tags: [projects]
+      operationId: createProject
+      summary: 로컬 폴더를 프로젝트로 등록하고 `.madang/`을 만든다.
+      description: |
+        폴더에 `.madang/`(project.md, pages/, trash/, .gitignore)을 만들고
+        앱 홈 `config/madang.yaml`의 `projects`에 등록한다. 이미 있는
+        `.madang/` 파일은 덮어쓰지 않는다. `.gitignore`는 기본으로 `*`라
+        기록을 커밋하지 않는다(`commit_records: true`면 scratch/, trash/만
+        뺀다). id를 생략하면 폴더 이름의 슬러그를 쓰고, 겹치면 `-2`처럼
+        번호를 붙인다.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SpaceCreate"
+              $ref: "#/components/schemas/ProjectCreate"
       responses:
         "201":
-          description: 새 공간.
+          description: 등록한 프로젝트.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Space"
+                $ref: "#/components/schemas/Project"
         "400":
           $ref: "#/components/responses/Invalid"
         "404":
@@ -193,26 +206,27 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /spaces/{space}:
+  /projects/{project}:
     parameters:
-      - $ref: "#/components/parameters/Space"
+      - $ref: "#/components/parameters/Project"
     patch:
-      tags: [spaces]
-      operationId: updateSpace
-      summary: 공간의 제목, 상위 공간, 아이콘, 색, 정렬을 바꾸거나 코드 저장소를 연결한다.
+      tags: [projects]
+      operationId: updateProject
+      summary: 프로젝트의 제목, 상위 프로젝트, 아이콘, 색, 정렬을 바꾼다.
+      description: 표시 설정은 앱 홈 `config/madang.yaml`에 둔다. 폴더 경로는 바꾸지 않는다.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SpaceUpdate"
+              $ref: "#/components/schemas/ProjectUpdate"
       responses:
         "200":
-          description: 수정된 공간.
+          description: 수정된 프로젝트.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Space"
+                $ref: "#/components/schemas/Project"
         "400":
           $ref: "#/components/responses/Invalid"
         "404":
@@ -220,25 +234,26 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
     delete:
-      tags: [spaces]
-      operationId: deleteSpace
-      summary: 빈 공간을 지운다.
+      tags: [projects]
+      operationId: deleteProject
+      summary: 프로젝트 등록을 지운다. 폴더와 `.madang/`은 그대로 둔다.
+      description: 하위 프로젝트가 있으면 409.
       responses:
         "204":
-          description: 삭제하고 커밋했다.
+          description: 등록을 지웠다.
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /spaces/{space}/pages:
+  /projects/{project}/pages:
     parameters:
-      - $ref: "#/components/parameters/Space"
+      - $ref: "#/components/parameters/Project"
     get:
       tags: [pages]
       operationId: listPages
-      summary: 공간의 페이지를 카드로 나열한다.
-      description: 고정된 페이지가 먼저, 그다음은 공간의 `sort` 기준(기본 `updated`, 최신순).
+      summary: 프로젝트의 페이지를 카드로 나열한다.
+      description: 고정된 페이지가 먼저, 그다음은 프로젝트의 `sort` 기준(기본 `updated`, 최신순).
       responses:
         "200":
           description: 페이지 카드.
@@ -253,7 +268,7 @@ paths:
     post:
       tags: [pages]
       operationId: createPage
-      summary: page.md, state.md, log.md를 갖춘 페이지를 만든다.
+      summary: "`.madang/pages/`에 page.md, state.md, log.md를 갖춘 페이지를 만든다."
       requestBody:
         required: true
         content:
@@ -274,13 +289,14 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /spaces/{space}/repo/commit:
+  /projects/{project}/repo/commit:
     parameters:
-      - $ref: "#/components/parameters/Space"
+      - $ref: "#/components/parameters/Project"
     post:
       tags: [agent]
       operationId: commitRepo
-      summary: 공간의 코드 저장소에 커밋한다.
+      summary: 프로젝트 저장소의 모든 변경을 커밋한다.
+      description: 프로젝트 폴더가 git 저장소가 아니면 409 `no_repo`.
       requestBody:
         required: true
         content:
@@ -299,13 +315,13 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /spaces/{space}/repo/push:
+  /projects/{project}/repo/push:
     parameters:
-      - $ref: "#/components/parameters/Space"
+      - $ref: "#/components/parameters/Project"
     post:
       tags: [agent]
       operationId: pushRepo
-      summary: 코드 저장소의 현재 브랜치를 push한다.
+      summary: 프로젝트 저장소의 현재 브랜치를 push한다.
       description: force push는 하지 않으며 다른 브랜치도 push하지 않는다.
       responses:
         "200":
@@ -338,7 +354,7 @@ paths:
     patch:
       tags: [pages]
       operationId: updatePage
-      summary: 제목, 고정, 태그, 블록 순서를 바꾸거나 페이지를 다른 공간으로 옮긴다.
+      summary: 제목, 고정, 태그, 블록 순서를 바꾸거나 페이지를 다른 프로젝트로 옮긴다.
       requestBody:
         required: true
         content:
@@ -361,10 +377,10 @@ paths:
     delete:
       tags: [pages]
       operationId: deletePage
-      summary: 페이지 폴더를 지우고 커밋한다. 휴지통에서 복원할 수 있다.
+      summary: 페이지 폴더를 프로젝트의 `.madang/trash/`로 옮긴다. 휴지통에서 복원할 수 있다.
       responses:
         "204":
-          description: 삭제하고 커밋했다.
+          description: 휴지통으로 옮겼다.
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -457,32 +473,12 @@ paths:
     delete:
       tags: [blocks]
       operationId: deleteBlock
-      summary: "`git rm`으로 블록을 지우고 커밋한다."
+      summary: 블록 파일을 `.madang/trash/`로 옮기고 page.md 순서에서 뺀다.
       responses:
         "204":
-          description: 삭제하고 커밋했다.
+          description: 휴지통으로 옮겼다.
         "404":
           $ref: "#/components/responses/NotFound"
-
-  /pages/{page}/blocks/{block}/promote:
-    parameters:
-      - $ref: "#/components/parameters/Page"
-      - $ref: "#/components/parameters/Block"
-    post:
-      tags: [blocks]
-      operationId: promoteBlock
-      summary: 블록 파일을 코드 저장소의 docs/에 복사하고 커밋한다.
-      responses:
-        "200":
-          description: 승격했거나 이미 최신이다.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PromoteResult"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
 
   /pages/{page}/memory:
     parameters:
@@ -493,7 +489,7 @@ paths:
       summary: 에이전트가 매 호출마다 읽는 3층 memory.
       responses:
         "200":
-          description: root.md, space.md, state.md.
+          description: root.md(앱 홈), project.md(`.madang/`), state.md(페이지).
           content:
             application/json:
               schema:
@@ -849,7 +845,7 @@ paths:
       summary: 최근 삭제된 페이지와 블록, 최신순.
       responses:
         "200":
-          description: 앱 홈 이력에서 찾은 삭제 내역.
+          description: 등록한 모든 프로젝트의 `.madang/trash/` 항목.
           content:
             application/json:
               schema:
@@ -857,18 +853,20 @@ paths:
                 items:
                   $ref: "#/components/schemas/TrashEntry"
 
-  /trash/{commit}/restore:
+  /trash/{id}/restore:
     parameters:
-      - name: commit
+      - name: id
         in: path
         required: true
-        description: 삭제한 커밋.
+        description: 휴지통 항목 id.
         schema:
           type: string
+        example: 20260923T181200123456-page
     post:
       tags: [trash]
       operationId: restoreTrash
-      summary: 삭제 커밋이 지운 것을 되살리고 커밋한다.
+      summary: 휴지통 항목을 원래 자리로 되돌려 옮긴다.
+      description: 원래 경로에 이미 파일이 있거나 블록의 페이지가 없으면 409.
       responses:
         "200":
           description: 복원했다.
@@ -930,7 +928,7 @@ paths:
       description: |
         WebSocket으로 업그레이드한다. 텍스트 프레임 하나가 JSON `Event`
         하나다(`components.schemas.Event` 참고, `type`으로 구분). 클라이언트는
-        아무것도 보내지 않는다. 재연결 후 클라이언트는 공간, 페이지, 열려 있는
+        아무것도 보내지 않는다. 재연결 후 클라이언트는 프로젝트, 페이지, 열려 있는
         페이지를 다시 가져온다.
       x-websocket: true
       responses:
@@ -939,11 +937,11 @@ paths:
 
 components:
   parameters:
-    Space:
-      name: space
+    Project:
+      name: project
       in: path
       required: true
-      description: 공간 slug.
+      description: 프로젝트 id.
       schema:
         type: string
       example: jobs
@@ -981,7 +979,7 @@ components:
           schema:
             $ref: "#/components/schemas/ValidationFailure"
     NotFound:
-      description: 공간, 페이지, 블록, run, 파일이 없다.
+      description: 프로젝트, 페이지, 블록, run, 파일이 없다.
       content:
         application/json:
           schema:
@@ -997,7 +995,7 @@ components:
             $ref: "#/components/schemas/ApiError"
           example:
             error: conflict
-            message: space 'jobs' still has 2 pages
+            message: "project 'jobs' still has child projects: jobs-2025"
 
   schemas:
     # 오류
@@ -1090,7 +1088,7 @@ components:
 
     HomeStatus:
       type: object
-      description: core가 쓰는 앱 홈.
+      description: core가 쓰는 앱 홈(전역 설정 폴더, git 저장소 아님).
       required: [path, initialized]
       properties:
         path:
@@ -1098,17 +1096,14 @@ components:
           description: 앱 홈의 절대 경로.
         initialized:
           type: boolean
-          description: 설정 파일이 있는 앱 홈인지. 거짓이면 온보딩이 필요하다.
-        remote:
-          type: [string, "null"]
-          description: config/madang.yaml의 `home_remote`.
+          description: |
+            지금 구조의 설정 파일이 있는 앱 홈인지. 거짓이면 온보딩이 필요하다.
+            예전 구조(`spaces/`가 있는 앱 홈)도 거짓이다.
       examples:
         - path: /Users/me/.madang
           initialized: true
-          remote: git@github.com:me/madang-home.git
         - path: /Users/me/.madang
           initialized: false
-          remote: null
 
     HomeInit:
       type: object
@@ -1117,12 +1112,8 @@ components:
         path:
           type: string
           description: 앱 홈 경로. `~`는 사용자 홈으로 푼다.
-        remote:
-          type: [string, "null"]
-          description: 기록할 git 원격 주소. 생략하면 기록하지 않는다.
       examples:
         - path: ~/.madang
-          remote: git@github.com:me/madang-home.git
         - path: ~/Documents/madang
 
     RoutesDocument:
@@ -1189,36 +1180,41 @@ components:
               auth: subscription
               reason: null
 
-    # 공간
+    # 프로젝트
 
-    SpaceSort:
+    ProjectSort:
       type: string
-      description: 고정된 페이지 다음에 공간의 페이지를 어떤 기준으로 정렬할지.
+      description: 고정된 페이지 다음에 프로젝트의 페이지를 어떤 기준으로 정렬할지.
       enum: [updated, created, title]
 
-    Space:
+    Project:
       type: object
-      required: [slug, title]
+      description: |
+        페이지 기록을 `<path>/.madang/`에 담는 로컬 폴더(보통 git 저장소).
+        제목과 표시 설정은 앱 홈 `config/madang.yaml`의 `projects`에 있다.
+      required: [id, title, path]
       properties:
-        slug:
+        id:
           type: string
+          description: 프로젝트 id(슬러그).
         title:
           type: string
-        repo:
-          type: [string, "null"]
-          description: space.md의 코드 저장소 경로.
+          description: 제목. 따로 정하지 않으면 폴더 이름.
+        path:
+          type: string
+          description: 프로젝트 폴더의 절대 경로.
         parent:
           type: [string, "null"]
-          description: 상위 공간 slug. 최상위 공간이면 null.
+          description: 상위 프로젝트 id. 최상위 프로젝트면 null.
         icon:
           type: [string, "null"]
-          description: 공간 옆에 보여 줄 아이콘 이름.
+          description: 프로젝트 옆에 보여 줄 아이콘 이름.
         color:
           type: [string, "null"]
           description: 강조 색(`#rrggbb`).
           pattern: "^#[0-9a-fA-F]{6}$"
         sort:
-          $ref: "#/components/schemas/SpaceSort"
+          $ref: "#/components/schemas/ProjectSort"
         pages:
           type: integer
           description: 페이지 수.
@@ -1226,73 +1222,72 @@ components:
           type: integer
           description: 상태가 doing 또는 blocked인 페이지 수.
       examples:
-        - slug: jobs
+        - id: jobs
           title: 지원
-          repo: null
+          path: /Users/me/Documents/jobs
           parent: null
           icon: briefcase
           color: "#3a5bd9"
           sort: updated
           pages: 2
           active_pages: 0
-        - slug: jobs-2026
-          title: 2026 하반기
-          repo: null
-          parent: jobs
+        - id: madang
+          title: madang
+          path: /Users/me/src/madang
+          parent: null
           icon: null
           color: null
           sort: created
           pages: 0
           active_pages: 0
 
-    SpaceCreate:
+    ProjectCreate:
       type: object
-      required: [slug, title]
+      required: [path]
       properties:
-        slug:
+        path:
           type: string
+          description: 등록할 폴더. 있어야 한다. `~`는 사용자 홈으로 푼다.
+        id:
+          type: string
+          description: 프로젝트 id. 생략하면 폴더 이름의 슬러그.
         title:
           type: string
-        repo:
-          type: string
+          description: 제목. 생략하면 폴더 이름.
         parent:
           type: string
-          description: 상위 공간 slug.
+          description: 상위 프로젝트 id.
         icon:
           type: string
         color:
           type: string
           pattern: "^#[0-9a-fA-F]{6}$"
         sort:
-          $ref: "#/components/schemas/SpaceSort"
+          $ref: "#/components/schemas/ProjectSort"
       examples:
-        - slug: jobs
+        - path: ~/src/madang
+        - path: ~/Documents/jobs
+          id: jobs
           title: 지원
-        - slug: jobs-2026
-          title: 2026 하반기
-          parent: jobs
-          icon: calendar
-          color: "#b8322a"
+          icon: briefcase
+          color: "#3a5bd9"
           sort: created
 
-    SpaceUpdate:
+    ProjectUpdate:
       type: object
       properties:
         title:
           type: string
-        repo:
-          type: [string, "null"]
-          description: 경로를 주면 저장소를 연결하고 null이면 연결을 끊는다.
         parent:
           type: [string, "null"]
-          description: slug를 주면 그 공간 아래로 옮기고 null이면 최상위로 옮긴다.
+          description: id를 주면 그 프로젝트 아래로 옮기고 null이면 최상위로 옮긴다.
         icon:
           type: [string, "null"]
         color:
           type: [string, "null"]
           pattern: "^#[0-9a-fA-F]{6}$"
         sort:
-          $ref: "#/components/schemas/SpaceSort"
+          $ref: "#/components/schemas/ProjectSort"
       examples:
         - title: 지원 2026
         - parent: jobs
@@ -1328,13 +1323,13 @@ components:
     PageCard:
       type: object
       description: 페이지 목록의 카드 하나.
-      required: [id, space, title, status, pinned, tags, block_counts]
+      required: [id, project, title, status, pinned, tags, block_counts]
       properties:
         id:
           type: string
-        space:
+        project:
           type: string
-          description: 공간 slug.
+          description: 페이지가 속한 프로젝트 id.
         title:
           type: string
         kind:
@@ -1370,7 +1365,7 @@ components:
           description: 카드 썸네일용 첫 view 블록의 id.
       examples:
         - id: 2026-09-24-resume
-          space: jobs
+          project: jobs
           title: 이력서
           kind: build
           status: review
@@ -1412,23 +1407,24 @@ components:
           description: page.md `blocks`의 새 순서 전체.
           items:
             type: string
-        space:
+        project:
           type: string
-          description: 페이지를 옮길 공간의 slug.
+          description: 페이지 폴더를 옮길 프로젝트 id(그 프로젝트의 `.madang/pages/`로 옮긴다).
       examples:
         - pinned: true
           tags: [이력서]
-        - space: archive
+        - project: archive
 
     PageDetail:
       type: object
       description: page.md, 본문 순서대로의 블록 머리부, run 목록.
-      required: [id, space, title, status, pinned, tags, blocks, runs, unknown_files]
+      required: [id, project, title, status, pinned, tags, blocks, runs, unknown_files]
       properties:
         id:
           type: string
-        space:
+        project:
           type: string
+          description: 페이지가 속한 프로젝트 id.
         title:
           type: string
         kind:
@@ -1473,7 +1469,7 @@ components:
             flow가 사람 결정이나 runner를 기다리는 동안에만 있다.
       examples:
         - id: 2026-09-24-resume
-          space: jobs
+          project: jobs
           title: 이력서
           kind: build
           status: review
@@ -1514,14 +1510,13 @@ components:
               model: claude-opus-5-5
               effort: high
               input:
-                parts: {system_est: 24600, root: 110, space: 1840, state: 380, contract: 420, target: 0, request: 12}
+                parts: {system_est: 24600, root: 110, project: 1840, state: 380, contract: 420, target: 0, request: 12}
                 total_est: 27362
               usage: {input: 27410, cached: 0, output: 3120}
               changed_files: [blocks/b04-resume.view.md, blocks/b05-base.json, blocks/b06-pearlabyss.json, state.md]
               unknown_files: []
               verify: {cmd: null, ok: null}
               result_status: review
-              commit: 5e6f7a8
               events_log: runs/1.events.jsonl
             - n: 2
               started: "2026-09-24T09:31:00+09:00"
@@ -1533,14 +1528,13 @@ components:
               model: gpt-6-luna
               effort: high
               input:
-                parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+                parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
                 total_est: 29230
               usage: {input: 29104, cached: 24310, output: 612}
               changed_files: [blocks/b05-base.json]
               unknown_files: []
               verify: {cmd: null, ok: null}
               result_status: review
-              commit: a1b2c3d
               events_log: runs/2.events.jsonl
           unknown_files: []
 
@@ -1770,31 +1764,25 @@ components:
         title:
           type: string
           description: "`view`의 제목."
+        in_run:
+          type: boolean
+          default: false
+          description: >-
+            에이전트 실행 안에서 보낸 요청이면 참(`madang view create`가
+            `MADANG_PAGE`로 불렸을 때). 참이고 그 페이지에서 실행이 돌고
+            있을 때만 `created_by`에 실행 번호를 붙인다.
       examples:
         - type: view
           name: resume
           template: resume@1
           bindings: {base: b05}
 
-    PromoteResult:
-      type: object
-      required: [path]
-      properties:
-        path:
-          type: string
-          description: 블록을 복사한 `repo:` 경로.
-        commit:
-          type: [string, "null"]
-          description: 파일이 이미 최신이면 null.
-      examples:
-        - path: repo:docs/b04-resume.view.md
-          commit: 3c4d5e6
-
     # 메모리
 
     MemoryLayer:
       type: string
-      enum: [root, space, state]
+      description: 메모리 층. root는 앱 홈 root.md, project는 `.madang/project.md`, state는 페이지 state.md.
+      enum: [root, project, state]
 
     MemoryFile:
       type: object
@@ -1804,7 +1792,7 @@ components:
           $ref: "#/components/schemas/MemoryLayer"
         path:
           type: string
-          description: 앱 홈 기준 경로.
+          description: 파일의 절대 경로.
         content:
           type: string
           description: front matter를 포함한 파일 전체.
@@ -1816,7 +1804,7 @@ components:
           description: 저장 시 강제하는 한도(state.md만).
       examples:
         - layer: state
-          path: spaces/jobs/pages/2026-09-24-resume/state.md
+          path: /Users/me/Documents/jobs/.madang/pages/2026-09-24-resume/state.md
           content: |
             ---
             status: review
@@ -1846,38 +1834,33 @@ components:
 
     Memory:
       type: object
-      required: [root, space, state]
+      required: [root, project, state]
       properties:
         root:
           $ref: "#/components/schemas/MemoryFile"
-        space:
+        project:
           $ref: "#/components/schemas/MemoryFile"
         state:
           $ref: "#/components/schemas/MemoryFile"
       examples:
         - root:
             layer: root
-            path: root.md
+            path: /Users/me/.madang/root.md
             content: |
               # 나에 대해
               한국어로 답한다. 확인 질문 없이 진행한다.
             tokens: 18
             token_limit: null
-          space:
-            layer: space
-            path: spaces/jobs/space.md
+          project:
+            layer: project
+            path: /Users/me/Documents/jobs/.madang/project.md
             content: |
-              ---
-              slug: jobs
-              title: 지원
-              repo: null
-              ---
               지원서와 이력서를 다룬다. 사실은 base 데이터만 믿는다.
             tokens: 41
             token_limit: null
           state:
             layer: state
-            path: spaces/jobs/pages/2026-09-24-resume/state.md
+            path: /Users/me/Documents/jobs/.madang/pages/2026-09-24-resume/state.md
             content: |
               ---
               status: review
@@ -1932,15 +1915,16 @@ components:
     InputParts:
       type: object
       description: 입력 부분별 추정 토큰.
-      required: [system_est, root, space, state, contract, target, request]
+      required: [system_est, root, project, state, contract, target, request]
       properties:
         system_est:
           type: integer
           description: runner 자체의 시스템 프롬프트와 도구(상수).
         root:
           type: integer
-        space:
+        project:
           type: integer
+          description: project.md 본문.
         state:
           type: integer
         contract:
@@ -1951,7 +1935,7 @@ components:
         request:
           type: integer
       examples:
-        - {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+        - {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
 
     RunInput:
       type: object
@@ -1962,7 +1946,7 @@ components:
         total_est:
           type: integer
       examples:
-        - parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+        - parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
           total_est: 29230
 
     InputPreview:
@@ -1990,7 +1974,7 @@ components:
           runner: codex
           model: gpt-6-luna
           effort: high
-          parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+          parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
           total_est: 29230
 
     # 실행
@@ -2083,8 +2067,6 @@ components:
           $ref: "#/components/schemas/RunVerify"
         result_status:
           $ref: "#/components/schemas/RunResultStatus"
-        commit:
-          type: [string, "null"]
         events_log:
           type: [string, "null"]
           description: 원본 이벤트 스트림의 페이지 기준 경로.
@@ -2099,14 +2081,13 @@ components:
           model: gpt-6-luna
           effort: high
           input:
-            parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+            parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
             total_est: 29230
           usage: {input: 29104, cached: 24310, output: 612}
           changed_files: [blocks/b05-base.json]
           unknown_files: []
           verify: {cmd: null, ok: null}
           result_status: review
-          commit: a1b2c3d
           events_log: runs/2.events.jsonl
 
     RunStreamEvent:
@@ -2291,11 +2272,20 @@ components:
         by:
           type: string
           description: 결정한 사람. 기본값 human.
+        in_run:
+          type: boolean
+          default: false
+          description: >-
+            에이전트 실행 안에서 보낸 요청이면 참(`madang decide`가
+            `MADANG_PAGE`로 불렸을 때). 참이고 그 페이지에서 실행이 돌고
+            있을 때만 결정에 `run`을 붙인다.
       examples:
         - id: D1
           topic: 지원처별 차이를 담는 방법
           choice: overlay-preset
           options: [overlay-preset, copy-per-company]
+          by: claude/claude-opus-5-5
+          in_run: true
 
     ArtifactAdd:
       type: object
@@ -2303,7 +2293,7 @@ components:
       properties:
         path:
           type: string
-          description: 페이지 기준 또는 `repo:` 경로.
+          description: 페이지 기준 또는 `repo:`(프로젝트 폴더 기준) 경로.
       examples:
         - path: blocks/b06-pearlabyss.json
 
@@ -2366,16 +2356,20 @@ components:
 
     TrashEntry:
       type: object
-      required: [commit, deleted, page, paths, message]
+      description: |
+        프로젝트의 `.madang/trash/<id>/`에 옮겨 둔 삭제 하나. 복원하면
+        원래 자리로 되돌려 옮기고 항목은 사라진다.
+      required: [id, deleted, project, page, paths]
       properties:
-        commit:
+        id:
           type: string
-          description: 삭제한 커밋.
+          description: 항목 id(`<YYYYMMDDTHHMMSSffffff>-<page|bNN>`).
         deleted:
           type: string
           format: date-time
-        space:
+        project:
           type: string
+          description: 프로젝트 id.
         page:
           type: string
         block:
@@ -2383,35 +2377,38 @@ components:
           description: 페이지 전체가 삭제됐으면 null.
         paths:
           type: array
-          description: 지워진 경로(앱 홈 기준).
+          description: 지워진 경로(프로젝트 폴더 기준). 메시지 블록이면 비어 있다.
           items:
             type: string
-        message:
-          type: string
-          description: 커밋 메시지.
       examples:
-        - commit: 9f8e7d6
+        - id: 20260923T180211045122-page
           deleted: "2026-09-23T18:02:11+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-20-cover-letter
           block: null
-          paths: [spaces/jobs/pages/2026-09-20-cover-letter]
-          message: "[2026-09-20-cover-letter] delete page"
+          paths: [.madang/pages/2026-09-20-cover-letter]
+        - id: 20260923T181530998001-b04
+          deleted: "2026-09-23T18:15:30+09:00"
+          project: jobs
+          page: 2026-09-24-resume
+          block: b04
+          paths: [.madang/pages/2026-09-24-resume/blocks/b04-resume.view.md]
 
     TrashRestore:
       type: object
-      required: [commit, paths]
+      required: [id, paths]
       properties:
-        commit:
+        id:
           type: string
-          description: 복원 커밋.
+          description: 복원한 휴지통 항목 id.
         paths:
           type: array
+          description: 되돌린 경로(프로젝트 폴더 기준).
           items:
             type: string
       examples:
-        - commit: 0a1b2c3
-          paths: [spaces/jobs/pages/2026-09-20-cover-letter]
+        - id: 20260923T180211045122-page
+          paths: [.madang/pages/2026-09-20-cover-letter]
 
     # 템플릿
 
@@ -2494,12 +2491,12 @@ components:
     Event:
       description: |
         WebSocket 메시지 하나. 모든 이벤트는 봉투
-        `{type, ts, space?, page?, block?, run?, data}`를 가지며 `data`는
+        `{type, ts, project?, page?, block?, run?, data}`를 가지며 `data`는
         `type`에 따라 달라진다.
       oneOf:
-        - $ref: "#/components/schemas/SpaceCreatedEvent"
-        - $ref: "#/components/schemas/SpaceUpdatedEvent"
-        - $ref: "#/components/schemas/SpaceDeletedEvent"
+        - $ref: "#/components/schemas/ProjectCreatedEvent"
+        - $ref: "#/components/schemas/ProjectUpdatedEvent"
+        - $ref: "#/components/schemas/ProjectDeletedEvent"
         - $ref: "#/components/schemas/PageCreatedEvent"
         - $ref: "#/components/schemas/PageUpdatedEvent"
         - $ref: "#/components/schemas/PageDeletedEvent"
@@ -2519,9 +2516,9 @@ components:
       discriminator:
         propertyName: type
         mapping:
-          space.created: "#/components/schemas/SpaceCreatedEvent"
-          space.updated: "#/components/schemas/SpaceUpdatedEvent"
-          space.deleted: "#/components/schemas/SpaceDeletedEvent"
+          project.created: "#/components/schemas/ProjectCreatedEvent"
+          project.updated: "#/components/schemas/ProjectUpdatedEvent"
+          project.deleted: "#/components/schemas/ProjectDeletedEvent"
           page.created: "#/components/schemas/PageCreatedEvent"
           page.updated: "#/components/schemas/PageUpdatedEvent"
           page.deleted: "#/components/schemas/PageDeletedEvent"
@@ -2542,9 +2539,9 @@ components:
     EventType:
       type: string
       enum:
-        - space.created
-        - space.updated
-        - space.deleted
+        - project.created
+        - project.updated
+        - project.deleted
         - page.created
         - page.updated
         - page.deleted
@@ -2574,8 +2571,9 @@ components:
         ts:
           type: string
           format: date-time
-        space:
+        project:
           type: string
+          description: 프로젝트 id.
         page:
           type: string
         block:
@@ -2585,7 +2583,7 @@ components:
       examples:
         - type: run.progress
           ts: "2026-09-24T09:31:12+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           run: 2
 
@@ -2595,16 +2593,16 @@ components:
       properties:
         id:
           type: string
-          description: 삭제된 대상의 slug, 페이지 id, 블록 id.
+          description: 삭제(프로젝트는 등록 해제)된 대상의 프로젝트 id, 페이지 id, 블록 id.
       examples:
         - id: b06
 
-    SpaceEventData:
+    ProjectEventData:
       type: object
-      required: [space]
+      required: [project]
       properties:
-        space:
-          $ref: "#/components/schemas/Space"
+        project:
+          $ref: "#/components/schemas/Project"
 
     PageEventData:
       type: object
@@ -2701,83 +2699,83 @@ components:
         tokens:
           type: integer
 
-    SpaceCreatedEvent:
+    ProjectCreatedEvent:
       type: object
-      required: [type, ts, space, data]
+      required: [type, ts, project, data]
       properties:
-        type: {type: string, enum: [space.created]}
+        type: {type: string, enum: [project.created]}
         ts: {type: string, format: date-time}
-        space: {type: string}
-        data: {$ref: "#/components/schemas/SpaceEventData"}
+        project: {type: string}
+        data: {$ref: "#/components/schemas/ProjectEventData"}
       examples:
-        - type: space.created
+        - type: project.created
           ts: "2026-09-24T08:05:00+09:00"
-          space: jobs
-          data: {space: {slug: jobs, title: 지원, repo: null, pages: 0, active_pages: 0}}
+          project: jobs
+          data: {project: {id: jobs, title: 지원, path: /Users/me/Documents/jobs, pages: 0, active_pages: 0}}
 
-    SpaceUpdatedEvent:
+    ProjectUpdatedEvent:
       type: object
-      required: [type, ts, space, data]
+      required: [type, ts, project, data]
       properties:
-        type: {type: string, enum: [space.updated]}
+        type: {type: string, enum: [project.updated]}
         ts: {type: string, format: date-time}
-        space: {type: string}
-        data: {$ref: "#/components/schemas/SpaceEventData"}
+        project: {type: string}
+        data: {$ref: "#/components/schemas/ProjectEventData"}
       examples:
-        - type: space.updated
+        - type: project.updated
           ts: "2026-09-24T08:06:00+09:00"
-          space: jobs
-          data: {space: {slug: jobs, title: 지원 2026, repo: null, pages: 1, active_pages: 0}}
+          project: jobs
+          data: {project: {id: jobs, title: 지원 2026, path: /Users/me/Documents/jobs, pages: 1, active_pages: 0}}
 
-    SpaceDeletedEvent:
+    ProjectDeletedEvent:
       type: object
-      required: [type, ts, space, data]
+      required: [type, ts, project, data]
       properties:
-        type: {type: string, enum: [space.deleted]}
+        type: {type: string, enum: [project.deleted]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         data: {$ref: "#/components/schemas/DeletedRef"}
       examples:
-        - type: space.deleted
+        - type: project.deleted
           ts: "2026-09-24T10:00:00+09:00"
-          space: old
+          project: old
           data: {id: old}
 
     PageCreatedEvent:
       type: object
-      required: [type, ts, space, page, data]
+      required: [type, ts, project, page, data]
       properties:
         type: {type: string, enum: [page.created]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         data: {$ref: "#/components/schemas/PageEventData"}
       examples:
         - type: page.created
           ts: "2026-09-24T08:10:00+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           data:
-            page: {id: 2026-09-24-resume, space: jobs, title: 이력서, kind: build, status: planning, created: "2026-09-24T08:10:00+09:00", updated: "2026-09-24T08:10:00+09:00", pinned: false, tags: [], preview: null, block_counts: {}, first_view: null}
+            page: {id: 2026-09-24-resume, project: jobs, title: 이력서, kind: build, status: planning, created: "2026-09-24T08:10:00+09:00", updated: "2026-09-24T08:10:00+09:00", pinned: false, tags: [], preview: null, block_counts: {}, first_view: null}
 
     PageUpdatedEvent:
       type: object
-      required: [type, ts, space, page, data]
+      required: [type, ts, project, page, data]
       properties:
         type: {type: string, enum: [page.updated]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         data: {$ref: "#/components/schemas/PageEventData"}
       examples:
         - type: page.updated
           ts: "2026-09-24T09:31:41+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           data:
             page:
               id: 2026-09-24-resume
-              space: jobs
+              project: jobs
               title: 이력서
               kind: build
               status: review
@@ -2791,27 +2789,27 @@ components:
 
     PageDeletedEvent:
       type: object
-      required: [type, ts, space, page, data]
+      required: [type, ts, project, page, data]
       properties:
         type: {type: string, enum: [page.deleted]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         data: {$ref: "#/components/schemas/DeletedRef"}
       examples:
         - type: page.deleted
           ts: "2026-09-23T18:02:11+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-20-cover-letter
           data: {id: 2026-09-20-cover-letter}
 
     BlockAddedEvent:
       type: object
-      required: [type, ts, space, page, block, data]
+      required: [type, ts, project, page, block, data]
       properties:
         type: {type: string, enum: [block.added]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         block: {type: string}
         run: {type: integer}
@@ -2819,7 +2817,7 @@ components:
       examples:
         - type: block.added
           ts: "2026-09-24T09:31:41+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           block: b09
           run: 2
@@ -2828,11 +2826,11 @@ components:
 
     BlockUpdatedEvent:
       type: object
-      required: [type, ts, space, page, block, data]
+      required: [type, ts, project, page, block, data]
       properties:
         type: {type: string, enum: [block.updated]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         block: {type: string}
         run: {type: integer}
@@ -2840,7 +2838,7 @@ components:
       examples:
         - type: block.updated
           ts: "2026-09-24T09:35:00+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           block: b04
           data:
@@ -2848,36 +2846,36 @@ components:
 
     BlockDeletedEvent:
       type: object
-      required: [type, ts, space, page, block, data]
+      required: [type, ts, project, page, block, data]
       properties:
         type: {type: string, enum: [block.deleted]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         block: {type: string}
         data: {$ref: "#/components/schemas/DeletedRef"}
       examples:
         - type: block.deleted
           ts: "2026-09-24T09:40:00+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           block: b06
           data: {id: b06}
 
     RunStartedEvent:
       type: object
-      required: [type, ts, space, page, run, data]
+      required: [type, ts, project, page, run, data]
       properties:
         type: {type: string, enum: [run.started]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         run: {type: integer}
         data: {$ref: "#/components/schemas/RunStartedData"}
       examples:
         - type: run.started
           ts: "2026-09-24T09:31:00+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           run: 2
           data:
@@ -2890,56 +2888,56 @@ components:
 
     RunAssembledEvent:
       type: object
-      required: [type, ts, space, page, run, data]
+      required: [type, ts, project, page, run, data]
       properties:
         type: {type: string, enum: [run.assembled]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         run: {type: integer}
         data: {$ref: "#/components/schemas/RunInput"}
       examples:
         - type: run.assembled
           ts: "2026-09-24T09:31:01+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           run: 2
           data:
-            parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
+            parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
             total_est: 29230
 
     RunProgressEvent:
       type: object
-      required: [type, ts, space, page, run, data]
+      required: [type, ts, project, page, run, data]
       properties:
         type: {type: string, enum: [run.progress]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         run: {type: integer}
         data: {$ref: "#/components/schemas/RunStreamEvent"}
       examples:
         - type: run.progress
           ts: "2026-09-24T09:31:12+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           run: 2
           data: {type: file_changed, path: blocks/b05-base.json}
 
     RunFinishedEvent:
       type: object
-      required: [type, ts, space, page, run, data]
+      required: [type, ts, project, page, run, data]
       properties:
         type: {type: string, enum: [run.finished]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         run: {type: integer}
         data: {$ref: "#/components/schemas/RunRecord"}
       examples:
         - type: run.finished
           ts: "2026-09-24T09:31:41+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           run: 2
           data:
@@ -2956,59 +2954,58 @@ components:
             unknown_files: []
             verify: {cmd: null, ok: null}
             result_status: review
-            commit: a1b2c3d
             events_log: runs/2.events.jsonl
 
     RunFailedEvent:
       type: object
-      required: [type, ts, space, page, run, data]
+      required: [type, ts, project, page, run, data]
       properties:
         type: {type: string, enum: [run.failed]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         run: {type: integer}
         data: {$ref: "#/components/schemas/RunFailedData"}
       examples:
         - type: run.failed
           ts: "2026-09-24T09:36:00+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           run: 3
           data: {result_status: cancelled, error: cancelled}
 
     RunFallbackEvent:
       type: object
-      required: [type, ts, space, page, data]
+      required: [type, ts, project, page, data]
       properties:
         type: {type: string, enum: [run.fallback]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         run: {type: integer}
         data: {$ref: "#/components/schemas/RunFallbackData"}
       examples:
         - type: run.fallback
           ts: "2026-09-24T09:31:00+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           run: 2
           data: {from: codex/gpt-6-luna, to: claude/claude-sonnet-5, reason: unavailable}
 
     PageUnknownFilesEvent:
       type: object
-      required: [type, ts, space, page, data]
+      required: [type, ts, project, page, data]
       properties:
         type: {type: string, enum: [page.unknown_files]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         run: {type: integer}
         data: {$ref: "#/components/schemas/UnknownFilesData"}
       examples:
         - type: page.unknown_files
           ts: "2026-09-24T09:31:41+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           run: 2
           data:
@@ -3016,18 +3013,18 @@ components:
 
     FlowWaitingEvent:
       type: object
-      required: [type, ts, space, page, data]
+      required: [type, ts, project, page, data]
       properties:
         type: {type: string, enum: [flow.waiting]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         run: {type: integer}
         data: {$ref: "#/components/schemas/FlowWaitingData"}
       examples:
         - type: flow.waiting
           ts: "2026-09-24T09:32:05+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           run: 2
           data:
@@ -3045,13 +3042,13 @@ components:
       properties:
         type: {type: string, enum: [memory.updated]}
         ts: {type: string, format: date-time}
-        space: {type: string}
+        project: {type: string}
         page: {type: string}
         data: {$ref: "#/components/schemas/MemoryUpdatedData"}
       examples:
         - type: memory.updated
           ts: "2026-09-24T09:31:41+09:00"
-          space: jobs
+          project: jobs
           page: 2026-09-24-resume
           data: {layer: state, tokens: 212}
 

@@ -1,4 +1,4 @@
-"""이벤트: 봉투 ``{type, ts, space?, page?, block?, run?, data}``와 전달.
+"""이벤트: 봉투 ``{type, ts, project?, page?, block?, run?, data}``와 전달.
 
 앱은 ``/events`` WebSocket 하나로 모든 변경을 받는다. 이벤트는 어느
 스레드에서든 낼 수 있고, 연결마다 그 연결의 이벤트 루프로 넘긴다.
@@ -13,9 +13,9 @@ from typing import Any
 
 from fastapi.encoders import jsonable_encoder
 
-SPACE_CREATED = "space.created"
-SPACE_UPDATED = "space.updated"
-SPACE_DELETED = "space.deleted"
+PROJECT_CREATED = "project.created"
+PROJECT_UPDATED = "project.updated"
+PROJECT_DELETED = "project.deleted"
 PAGE_CREATED = "page.created"
 PAGE_UPDATED = "page.updated"
 PAGE_DELETED = "page.deleted"
@@ -30,7 +30,7 @@ def make_event(
     kind: str,
     data: dict[str, Any],
     *,
-    space: str | None = None,
+    project: str | None = None,
     page: str | None = None,
     block: str | None = None,
     run: int | None = None,
@@ -40,7 +40,7 @@ def make_event(
     Args:
         kind: 이벤트 종류. 예: ``page.updated``.
         data: 종류별 내용.
-        space: 공간 슬러그.
+        project: 프로젝트 id.
         page: 페이지 id.
         block: 블록 id.
         run: 실행 번호.
@@ -53,7 +53,7 @@ def make_event(
         "ts": datetime.now().astimezone().replace(microsecond=0).isoformat(),
     }
     for key, value in (
-        ("space", space),
+        ("project", project),
         ("page", page),
         ("block", block),
         ("run", run),

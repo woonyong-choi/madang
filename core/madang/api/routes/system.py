@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -11,19 +10,11 @@ from madang import __version__, config
 from madang.api import errors, models
 from madang.api.core import Core
 from madang.api.routes import CoreDep, Router
-from madang.store import git
 from madang.store.files import atomic_write
-from madang.store.home import (
-    MARKER,
-    NotAHomeError,
-    init_home,
-    remote,
-    set_remote,
-)
+from madang.store.home import NotAHomeError, init_home
 from madang.validate.routes import ROUTES_PATH, validate_routes
 
 router = Router()
-_REMOTE = re.compile(r"^\S+$")
 
 
 @router.get("/health", tags=["system"], operation_id="getHealth")
@@ -45,36 +36,27 @@ def list_runners(core: CoreDep) -> models.RunnerAvailability:
 
 
 def _home_status(core: Core) -> models.HomeStatus:
-    return models.HomeStatus(
-        path=str(core.home),
-        initialized=core.initialized,
-        remote=remote(core.home),
-    )
+    return models.HomeStatus(path=str(core.home), initialized=core.initialized)
 
 
 @router.get("/home", tags=["setup"], operation_id="getHome")
 def get_home(core: CoreDep) -> models.HomeStatus:
-    """core가 쓰는 앱 홈과 초기화 여부."""
+    """core가 쓰는 앱 홈(전역 설정 폴더)과 초기화 여부."""
     return _home_status(core)
 
 
 @router.post("/home", tags=["setup"], operation_id="initHome")
 def init_app_home(body: models.HomeInit, core: CoreDep) -> models.HomeStatus:
-    """앱 홈을 만들고 core가 그 홈을 쓰게 한다."""
+    """앱 홈에 전역 설정과 root.md를 만들고 core가 그 홈을 쓰게 한다."""
     if not body.path.strip():
         raise errors.invalid("path is empty")
-    if body.remote is not None and not _REMOTE.match(body.remote):
-        raise errors.invalid(f"remote '{body.remote}' is not an address")
     path = config.resolve_home(body.path)
     with core.lock:
         try:
             init_home(path)
-            if body.remote:
-                set_remote(path, body.remote)
-                git.commit_changes(path, [MARKER], "[home] set remote")
         except NotAHomeError as exc:
             raise errors.conflict(str(exc)) from exc
-        except (git.GitError, OSError) as exc:
+        except OSError as exc:
             raise errors.conflict(f"cannot initialize {path}: {exc}") from exc
         core.switch_home(path)
     return _home_status(core)
@@ -97,14 +79,13 @@ def get_routes(core: CoreDep) -> models.RoutesDocument:
 def save_routes(
     body: models.RoutesDocument, core: CoreDep
 ) -> models.RoutesDocument:
-    """config/routes.yaml을 검사해 저장하고 커밋한다."""
+    """config/routes.yaml을 검사해 저장한다."""
     cfg = core.config()
     issues = validate_routes(body.text, cfg.runners)
     if issues:
         raise errors.invalid("routes.yaml failed validation", issues)
     with core.lock:
         atomic_write(core.home / ROUTES_PATH, body.text)
-        core.commit([ROUTES_PATH.as_posix()], f"[home] edit {ROUTES_PATH}")
     return models.RoutesDocument(text=body.text)
 
 

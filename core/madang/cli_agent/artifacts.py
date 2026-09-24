@@ -32,13 +32,14 @@ def artifact_entry(ctx: PageContext, raw: str) -> str:
 
     Args:
         ctx: 산출물이 속한 페이지.
-        raw: 페이지 기준 상대 경로, 절대 경로, 또는 ``repo:<path>``.
+        raw: 페이지 기준 상대 경로, 절대 경로, 또는 ``repo:<path>``
+            (프로젝트 폴더 기준).
 
     Returns:
         ``blocks/...``(페이지 기준) 또는 ``repo:<path>``.
 
     Raises:
-        AgentError: 경로에 ``..``가 있거나 페이지와 코드 저장소 밖에 있다.
+        AgentError: 경로에 ``..``가 있거나 페이지와 프로젝트 폴더 밖에 있다.
     """
     if raw.startswith(REPO_PREFIX):
         return REPO_PREFIX + _relative(raw[len(REPO_PREFIX) :])
@@ -51,7 +52,7 @@ def artifact_entry(ctx: PageContext, raw: str) -> str:
     repo = ctx.repo()
     if repo is not None and (rel := _within(path, repo)) is not None:
         return REPO_PREFIX + rel
-    raise AgentError(f"{raw}는 페이지 폴더와 스페이스 코드 저장소 밖에 있다")
+    raise AgentError(f"{raw}는 페이지 폴더와 프로젝트 폴더 밖에 있다")
 
 
 def register(header: dict[str, Any], entry: str) -> bool:

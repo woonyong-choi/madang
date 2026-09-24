@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from madang import config
-from madang.store.page import space_repo
+from madang.store.page import project_root
 from madang.validate import Issue, validate_target
 
 BY_ENV = "MADANG_BY"
@@ -50,8 +50,8 @@ class PageContext:
         return self.page_dir.name
 
     def repo(self) -> Path | None:
-        """스페이스의 코드 저장소를 반환한다. 없으면 None."""
-        return space_repo(self.page_dir)
+        """페이지가 속한 프로젝트 폴더를 반환한다. 없으면 None."""
+        return project_root(self.page_dir)
 
     def validate(self) -> list[Issue]:
         """페이지의 검증 이슈를 반환한다."""

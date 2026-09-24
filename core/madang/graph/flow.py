@@ -1,7 +1,7 @@
 """메시지 하나를 처리하는 흐름 그래프와 그 시작·재개·취소.
 
 흐름: classify → pick → assemble → run → validate → (repair) → judge →
-(review_run | 승격 | ask_human) → commit. 체크포인트는 앱 홈의
+(review_run | 승격 | ask_human) → finish. 체크포인트는 앱 홈의
 ``core.db``(SQLite)에 남아, 사람의 답을 기다리는 흐름은 core가 다시
 시작해도 이어 갈 수 있다.
 """
@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from collections.abc import Iterator
-from contextlib import AbstractContextManager, closing, contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,7 +26,7 @@ from madang.graph import events
 from madang.graph.nodes import FlowNodes, RunnerFactory
 from madang.graph.state import FlowState, initial_state
 from madang.runners import make_runner
-from madang.store import pages
+from madang.store import pages, projects
 from madang.store.log import append_message
 
 DB_FILE = "core.db"
@@ -70,10 +70,10 @@ def build_graph(nodes: FlowNodes) -> StateGraph:
     graph.add_node(
         "judge",
         nodes.judge,
-        destinations=("commit", "review_run", "pick", "ask_human", END),
+        destinations=("finish", "review_run", "pick", "ask_human", END),
     )
     graph.add_node("review_run", nodes.review_run, destinations=("validate",))
-    graph.add_node("commit", nodes.commit)
+    graph.add_node("finish", nodes.finish)
     graph.add_node(
         "ask_human",
         nodes.ask_human,
@@ -82,7 +82,7 @@ def build_graph(nodes: FlowNodes) -> StateGraph:
     graph.add_edge(START, "classify")
     graph.add_edge("pick", "assemble")
     graph.add_edge("assemble", "run")
-    graph.add_edge("commit", END)
+    graph.add_edge("finish", END)
     return graph
 
 
@@ -104,9 +104,6 @@ def checkpointer(home: Path) -> Iterator[SqliteSaver]:
 class Flow:
     """앱 홈 하나에서 흐름을 시작하고, 재개하고, 취소한다.
 
-    실행 커밋을 하는 동안 ``lock``을 잡는다. core가 자기 잠금을 넘겨
-    앱 편집과 실행 커밋이 git index.lock에서 겹치지 않게 한다.
-
     Attributes:
         cfg: 앱 홈 설정.
     """
@@ -117,10 +114,9 @@ class Flow:
         *,
         runners: RunnerFactory = make_runner,
         on_event: events.EventHook = events.ignore,
-        lock: AbstractContextManager[Any] | None = None,
     ) -> None:
         self.cfg = cfg
-        self._nodes = FlowNodes(cfg, runners, on_event, threading.Event(), lock)
+        self._nodes = FlowNodes(cfg, runners, on_event, threading.Event())
 
     def start(
         self,
@@ -175,8 +171,8 @@ class Flow:
         message = append_message(
             page_dir, "user", request, {"target": block or "page"}
         )
-        space = page_dir.parent.parent.name
-        state = initial_state(space, page_dir.name, message, target)
+        project = projects.owner(self.cfg.home, page_dir).id
+        state = initial_state(project, page_dir.name, message, target)
         return f"{page_dir.name}/{message}", state
 
     def advance(self, thread_id: str, state: FlowState) -> FlowResult:

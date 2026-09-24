@@ -8,6 +8,6 @@ claude:
   system_est: 23000
 codex:
   bin: codex
-  args: ["exec", "--json", "--add-dir", "{home}", "-m", "{model}", "-c", "model_reasoning_effort={effort}"]
+  args: ["exec", "--json", "-m", "{model}", "-c", "model_reasoning_effort={effort}"]
   auth: subscription
   system_est: 24000

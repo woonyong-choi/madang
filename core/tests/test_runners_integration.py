@@ -81,13 +81,13 @@ def page_dir(tmp_path: Path) -> Path:
     (home / "config" / "runners.yaml").write_text(
         yaml.safe_dump(RUNNERS), encoding="utf-8"
     )
-    page = home / "spaces" / "root" / "pages" / "2026-09-24-ok"
+    page = tmp_path / "work" / ".madang" / "pages" / "2026-09-24-ok"
     page.mkdir(parents=True)
     return page
 
 
 def check(tool: str, model: str, page_dir: Path) -> runs.RunRecord:
-    home = page_dir.parents[3]
+    home = page_dir.parents[4] / "home"
     config = load_config(home)
     run = run_page(
         make_runner(tool, config),

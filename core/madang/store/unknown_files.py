@@ -2,7 +2,7 @@
 
 실행 기록(``runs/N.json``)의 ``unknown_files``를 모으고, 그 뒤 산출물로
 등록했거나, 그대로 두기로 했거나(page.md ``kept_files``), 지운 파일은 뺀다.
-경로는 페이지 기준이며 코드 저장소 파일은 ``repo:`` 접두가 붙는다.
+경로는 페이지 기준이며 프로젝트 폴더의 파일은 ``repo:`` 접두가 붙는다.
 """
 
 from __future__ import annotations
@@ -10,13 +10,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from madang.store import git, pages, runs
-from madang.store.page import PAGE_FILE, STATE_FILE, space_repo
+from madang.store import pages, runs
+from madang.store.page import PAGE_FILE, STATE_FILE, project_root
 
 REPO_PREFIX = "repo:"
 KEPT_KEY = "kept_files"
 ACTIONS = ("artifact", "keep", "delete")
-# 앱 홈이 빈 폴더를 유지하려고 두는 자리표시 파일.
+# 빈 폴더를 유지하려고 두는 자리표시 파일.
 IGNORED_NAMES = (".gitkeep",)
 
 
@@ -28,10 +28,10 @@ def locate(page_dir: Path, entry: str) -> Path | None:
         entry: 페이지 기준 경로 또는 ``repo:<path>``.
 
     Returns:
-        파일 경로. 페이지 폴더나 코드 저장소를 벗어나면 None.
+        파일 경로. 페이지 폴더나 프로젝트 폴더를 벗어나면 None.
     """
     if entry.startswith(REPO_PREFIX):
-        base = space_repo(page_dir)
+        base = project_root(page_dir)
         rel = entry[len(REPO_PREFIX) :]
     else:
         base, rel = page_dir, entry
@@ -80,21 +80,16 @@ def _kept(page_dir: Path) -> set[str]:
     return {str(a) for a in items} if isinstance(items, list) else set()
 
 
-def resolve(page_dir: Path, home: Path, entry: str, action: str) -> list[str]:
+def resolve(page_dir: Path, entry: str, action: str) -> None:
     """미등록 파일 하나를 등록하거나, 그대로 두거나, 지운다.
 
     ``artifact``는 state.md ``artifacts``에, ``keep``은 page.md
-    ``kept_files``에 더한다. ``delete``는 파일을 지운다. 페이지 파일이면
-    ``git rm``한다. 커밋은 호출자가 한다.
+    ``kept_files``에 더한다. ``delete``는 파일을 지운다.
 
     Args:
         page_dir: 페이지 폴더.
-        home: 앱 홈.
         entry: 목록에 나온 경로.
         action: ``ACTIONS`` 중 하나.
-
-    Returns:
-        바꾼 앱 홈 기준 경로.
 
     Raises:
         LookupError: ``entry``가 미처리 목록에 없다.
@@ -108,17 +103,10 @@ def resolve(page_dir: Path, home: Path, entry: str, action: str) -> list[str]:
     assert path is not None  # list_unknown이 이미 확인했다
     if action == "artifact":
         pages.update_state(page_dir, lambda h: _append(h, "artifacts", entry))
-        return [_rel(page_dir / STATE_FILE, home)]
-    if action == "keep":
+    elif action == "keep":
         pages.update_page(page_dir, lambda h: _append(h, KEPT_KEY, entry))
-        return [_rel(page_dir / PAGE_FILE, home)]
-    if entry.startswith(REPO_PREFIX):
-        path.unlink()
-        return []
-    rel = _rel(path, home)
-    git.run(home, "rm", "-q", "-f", "--ignore-unmatch", "--", rel)
-    path.unlink(missing_ok=True)
-    return [rel]
+    else:
+        path.unlink(missing_ok=True)
 
 
 def _append(header: dict[str, Any], key: str, entry: str) -> None:
@@ -127,7 +115,3 @@ def _append(header: dict[str, Any], key: str, entry: str) -> None:
     if entry not in items:
         items.append(entry)
     header[key] = items
-
-
-def _rel(path: Path, home: Path) -> str:
-    return path.resolve().relative_to(home.resolve()).as_posix()

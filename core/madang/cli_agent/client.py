@@ -1,6 +1,6 @@
 """core API 클라이언트: 에이전트 명령이 core에 변경을 요청한다.
 
-앱 홈 파일은 core만 쓴다. 이 모듈은 HTTP 요청만 보낸다.
+페이지 파일은 core만 쓴다. 이 모듈은 HTTP 요청만 보낸다.
 """
 
 from __future__ import annotations
@@ -122,8 +122,9 @@ class CoreClient:
     def _page_path(self, tail: str = "") -> str:
         return f"/pages/{quote(self.page, safe='')}{tail}"
 
-    def _space(self) -> str:
-        return self._call("GET", self._page_path())["space"]
+    def _project_path(self, tail: str) -> str:
+        project = self._call("GET", self._page_path())["project"]
+        return f"/projects/{quote(project, safe='')}{tail}"
 
     def set_task(
         self,
@@ -151,37 +152,35 @@ class CoreClient:
         )
 
     def commit(self, message: str) -> str:
-        """코드 저장소를 커밋하고 커밋 해시를 반환한다."""
+        """프로젝트 저장소를 커밋하고 커밋 해시를 반환한다."""
         result = self._call(
-            "POST",
-            f"/spaces/{quote(self._space(), safe='')}/repo/commit",
-            {"message": message},
+            "POST", self._project_path("/repo/commit"), {"message": message}
         )
         return result["commit"]
 
     def push(self) -> dict[str, Any]:
         """현재 브랜치를 푸시하고 ``branch``, ``remote``를 반환한다."""
-        return self._call(
-            "POST", f"/spaces/{quote(self._space(), safe='')}/repo/push"
-        )
-
-    def promote(self, block: str) -> dict[str, Any]:
-        """블록을 승격하고 ``path``, ``commit``을 반환한다."""
-        return self._call(
-            "POST",
-            self._page_path(f"/blocks/{quote(block, safe='')}/promote"),
-        )
+        return self._call("POST", self._project_path("/repo/push"))
 
     def create_view(
-        self, template: str, data: list[str], title: str | None
+        self,
+        template: str,
+        data: list[str],
+        title: str | None,
+        *,
+        in_run: bool = False,
     ) -> dict[str, Any]:
-        """뷰 블록을 만들고 블록 머리부를 반환한다."""
+        """뷰 블록을 만들고 블록 머리부를 반환한다.
+
+        ``in_run``이 참이면 진행 중인 실행이 만든 블록으로 기록한다.
+        """
         name = template.partition("@")[0]
         payload: dict[str, Any] = {
             "type": "view",
             "name": name,
             "template": template,
             "data": data,
+            "in_run": in_run,
         }
         if title:
             payload["title"] = title

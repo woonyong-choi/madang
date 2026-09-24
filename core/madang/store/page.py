@@ -1,4 +1,4 @@
-"""페이지 폴더 모델: page.md 머리부, 공간 찾기, 실행 기록."""
+"""페이지 폴더 모델: page.md 머리부, 프로젝트 찾기, 실행 기록."""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ from madang.store import frontmatter, runs
 
 PAGE_FILE = "page.md"
 STATE_FILE = "state.md"
-SPACE_FILE = "space.md"
+PROJECT_FILE = "project.md"
+MADANG_DIR = ".madang"
+PAGES_DIR = "pages"
 
 PageStatus = Literal["planning", "doing", "blocked", "review", "done"]
 PAGE_STATUSES: tuple[str, ...] = (
@@ -59,48 +61,25 @@ def load_page(page_dir: Path) -> tuple[Page, str]:
     return Page.model_validate(header), body
 
 
-def space_dir(page_dir: Path) -> Path | None:
-    """``spaces/<slug>/pages/<id>/``에 있는 페이지의 공간 폴더를 반환한다.
+def project_root(page_dir: Path) -> Path | None:
+    """``<project>/.madang/pages/<id>/``에 있는 페이지의 프로젝트 폴더.
 
     Args:
         page_dir: 페이지 폴더.
 
     Returns:
-        공간 폴더. 페이지가 ``pages/`` 안에 없으면 None.
+        프로젝트 폴더. 페이지가 ``.madang/pages/`` 안에 없으면 None.
     """
     pages = page_dir.resolve().parent
-    if pages.name != "pages":
+    if pages.name != PAGES_DIR or pages.parent.name != MADANG_DIR:
         return None
-    return pages.parent
+    return pages.parent.parent
 
 
-def space_header(page_dir: Path) -> dict[str, Any] | None:
-    """페이지가 속한 공간의 space.md 머리부를 반환한다. 없으면 None."""
-    space = space_dir(page_dir)
-    if space is None or not (space / SPACE_FILE).is_file():
-        return None
-    header, _ = frontmatter.read(space / SPACE_FILE)
-    return header
-
-
-def space_repo(page_dir: Path) -> Path | None:
-    """페이지가 속한 공간의 코드 저장소를 반환한다.
-
-    경로는 space.md의 ``repo``에서 가져온다. 상대 경로는 공간 폴더를
-    기준으로 한다.
-
-    Args:
-        page_dir: 페이지 폴더.
-
-    Returns:
-        저장소 경로. 공간에 저장소가 없거나 공간을 찾을 수 없으면 None.
-    """
-    space = space_dir(page_dir)
-    header = space_header(page_dir)
-    if space is None or not header or not header.get("repo"):
-        return None
-    repo = Path(str(header["repo"])).expanduser()
-    return repo if repo.is_absolute() else space / repo
+def project_memory(page_dir: Path) -> Path | None:
+    """페이지가 속한 프로젝트의 project.md 경로. 프로젝트 밖이면 None."""
+    root = project_root(page_dir)
+    return None if root is None else root / MADANG_DIR / PROJECT_FILE
 
 
 def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:
@@ -129,12 +108,12 @@ def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:
 
 
 def work_dir(page_dir: Path) -> Path:
-    """에이전트가 일하는 곳을 반환한다. 있으면 공간의 코드 저장소.
+    """에이전트가 일하는 곳을 반환한다. 페이지가 속한 프로젝트 폴더.
 
     Args:
         page_dir: 페이지 폴더.
 
     Returns:
-        페이지가 속한 공간의 코드 저장소, 없으면 페이지 폴더.
+        프로젝트 폴더. 프로젝트 밖의 페이지면 페이지 폴더.
     """
-    return space_repo(page_dir) or page_dir
+    return project_root(page_dir) or page_dir

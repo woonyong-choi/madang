@@ -6,15 +6,10 @@ from fastapi import Path as PathParam
 
 from madang.api import errors, events, models
 from madang.api.routes import CoreDep, Router
-from madang.store import blocks, git, pages, templates, trash
+from madang.store import blocks, projects, templates, trash
 from madang.store import unknown_files as unknown
 
 router = Router()
-
-_COMMIT_MESSAGES = {
-    "artifact": "edit state.md",
-    "keep": "edit page.md",
-}
 
 
 @router.get(
@@ -46,15 +41,9 @@ def resolve_unknown_file(
     page_dir = core.page_dir(page)
     with core.lock:
         try:
-            touched = unknown.resolve(page_dir, core.home, path, body.action)
+            unknown.resolve(page_dir, path, body.action)
         except LookupError as exc:
             raise errors.not_found(str(exc)) from exc
-        if touched:
-            message = _COMMIT_MESSAGES.get(body.action, f"delete {path}")
-            if body.action == "delete":
-                core.commit(touched, f"[{page}] {message}")
-            else:
-                core.page_commit(page_dir, message)
     core.announce_page(page_dir, events.PAGE_UPDATED)
     return [
         models.UnknownFile.model_validate(item)
@@ -67,41 +56,32 @@ def resolve_unknown_file(
 
 @router.get("/trash", tags=["trash"], operation_id="listTrash")
 def list_trash(core: CoreDep) -> list[models.TrashEntry]:
-    """최근 삭제된 페이지와 블록, 최신순."""
+    """모든 프로젝트의 최근 삭제된 페이지와 블록, 최신순."""
     return [
         models.TrashEntry.model_validate(entry.to_dict())
-        for entry in trash.list_trash(core.home)
+        for entry in trash.list_trash(projects.load(core.home))
     ]
 
 
-@router.post(
-    "/trash/{commit}/restore", tags=["trash"], operation_id="restoreTrash"
-)
-def restore_trash(commit: str, core: CoreDep) -> models.TrashRestore:
-    """삭제 커밋이 지운 것을 되살리고 커밋한다."""
+@router.post("/trash/{id}/restore", tags=["trash"], operation_id="restoreTrash")
+def restore_trash(id: str, core: CoreDep) -> models.TrashRestore:
+    """휴지통 항목을 원래 자리로 되돌려 옮긴다."""
     core.config()
     with core.lock:
         try:
-            entry = trash.find(core.home, commit)
-            sha = trash.restore(core.home, entry)
+            project, entry = trash.find(projects.load(core.home), id)
+            page_dir = trash.restore(project, entry)
         except LookupError as exc:
             raise errors.not_found(str(exc)) from exc
-        except (trash.TrashError, git.GitError) as exc:
+        except trash.TrashError as exc:
             raise errors.conflict(str(exc)) from exc
-    page_dir = (
-        core.home
-        / pages.SPACES_DIR
-        / entry.space
-        / pages.PAGES_DIR
-        / entry.page
-    )
     if entry.block is None:
         core.announce_page(page_dir, events.PAGE_CREATED)
     else:
         header = blocks.block_header(page_dir, entry.block)
         core.announce_block(page_dir, events.BLOCK_ADDED, header)
         core.announce_page(page_dir, events.PAGE_UPDATED)
-    return models.TrashRestore(commit=sha, paths=entry.paths)
+    return models.TrashRestore(id=entry.id, paths=entry.paths)
 
 
 # 템플릿

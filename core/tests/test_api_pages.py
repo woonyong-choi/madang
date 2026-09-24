@@ -1,103 +1,118 @@
-"""공간·페이지·블록·메모리·휴지통·템플릿 경로."""
+"""프로젝트·페이지·블록·메모리·휴지통·템플릿 경로."""
 
 import json
 
-from api_support import git, page_dir, subjects
+from api_support import PROJECT, page_dir
 
 from madang.store import frontmatter, pages, runs
 
-
-def clean(home) -> bool:
-    return git(home, "status", "--porcelain") == ""
+PAGES = f"/projects/{PROJECT}/pages"
 
 
-# 공간
+# 프로젝트
 
 
-def test_space_lifecycle(client, home, contract) -> None:
+def test_project_lifecycle(client, home, tmp_path, contract) -> None:
+    (tmp_path / "jobs").mkdir()
+    (tmp_path / "cv").mkdir()
     created = contract.check(
         client.post(
-            "/spaces",
-            json={"slug": "jobs", "title": "지원", "color": "#3a5bd9"},
+            "/projects",
+            json={
+                "path": str(tmp_path / "jobs"),
+                "title": "지원",
+                "color": "#3a5bd9",
+            },
         ),
         201,
     )
+    assert created["id"] == "jobs" and created["title"] == "지원"
+    assert created["path"] == str((tmp_path / "jobs").resolve())
     assert created["color"] == "#3a5bd9" and created["pages"] == 0
+    assert (tmp_path / "jobs/.madang/.gitignore").is_file()
     contract.check(
-        client.post("/spaces", json={"slug": "jobs", "title": "x"}), 409
+        client.post("/projects", json={"path": str(tmp_path / "jobs")}), 409
     )
     contract.check(
-        client.post("/spaces", json={"slug": "Bad Slug", "title": "x"}), 400
+        client.post("/projects", json={"path": str(tmp_path / "nope")}), 400
     )
     contract.check(
         client.post(
-            "/spaces", json={"slug": "sub", "title": "x", "parent": "nope"}
+            "/projects", json={"path": str(tmp_path / "cv"), "id": "Bad Id"}
+        ),
+        400,
+    )
+    contract.check(
+        client.post(
+            "/projects",
+            json={"path": str(tmp_path / "cv"), "parent": "nope"},
         ),
         404,
     )
     contract.check(
         client.post(
-            "/spaces", json={"slug": "sub", "title": "하위", "parent": "jobs"}
+            "/projects",
+            json={"path": str(tmp_path / "cv"), "id": "sub", "parent": "jobs"},
         ),
         201,
     )
 
     updated = contract.check(
         client.patch(
-            "/spaces/jobs", json={"title": "지원 2026", "sort": "title"}
+            "/projects/jobs", json={"title": "지원 2026", "sort": "title"}
         ),
         200,
     )
     assert updated["title"] == "지원 2026" and updated["sort"] == "title"
-    contract.check(client.patch("/spaces/jobs", json={"parent": "sub"}), 400)
+    contract.check(client.patch("/projects/jobs", json={"parent": "sub"}), 400)
     cleared = contract.check(
-        client.patch("/spaces/jobs", json={"color": None}), 200
+        client.patch("/projects/jobs", json={"color": None}), 200
     )
     assert "color" not in cleared
-    contract.check(client.patch("/spaces/nope", json={"title": "x"}), 404)
+    contract.check(client.patch("/projects/nope", json={"title": "x"}), 404)
+    contract.check(client.patch("/projects/jobs", json={"path": "/x"}), 400)
 
-    listed = contract.check(client.get("/spaces"), 200)
-    assert [s["slug"] for s in listed] == ["jobs", "root", "sub"]
+    listed = contract.check(client.get("/projects"), 200)
+    assert [p["id"] for p in listed] == [PROJECT, "jobs", "sub"]
 
-    contract.check(client.delete("/spaces/jobs"), 409)  # 하위 공간
-    contract.check(client.delete("/spaces/sub"), 204)
-    contract.check(client.delete("/spaces/root"), 409)
-    client.post("/spaces/jobs/pages", json={"title": "이력서"})
-    assert contract.check(client.delete("/spaces/jobs"), 409)["message"]
-    assert clean(home)
-    assert "[sub] delete space" in subjects(home)
+    contract.check(client.delete("/projects/jobs"), 409)  # 하위 프로젝트
+    contract.check(client.delete("/projects/sub"), 204)
+    contract.check(client.delete("/projects/sub"), 404)
+    assert (tmp_path / "cv/.madang/project.md").is_file()
+    contract.check(client.delete("/projects/jobs"), 204)
 
 
 # 페이지
 
 
-def test_create_and_list_pages(client, home, contract) -> None:
+def test_create_and_list_pages(client, home, project_root, contract) -> None:
     detail = contract.check(
-        client.post(
-            "/spaces/root/pages", json={"title": "이력서", "kind": "design"}
-        ),
+        client.post(PAGES, json={"title": "이력서", "kind": "design"}),
         201,
     )
     assert detail["kind"] == "design" and detail["blocks"] == []
+    assert detail["project"] == PROJECT
+    folder = project_root / ".madang/pages" / detail["id"]
+    assert (folder / "page.md").is_file()
+    contract.check(client.post(PAGES, json={"title": "이력서"}), 409)
     contract.check(
-        client.post("/spaces/root/pages", json={"title": "이력서"}), 409
-    )
-    contract.check(
-        client.post("/spaces/root/pages", json={"title": "x", "kind": "z"}),
+        client.post(PAGES, json={"title": "x", "kind": "z"}),
         400,
     )
-    contract.check(client.post("/spaces/nope/pages", json={"title": "x"}), 404)
-    second = client.post("/spaces/root/pages", json={"title": "공고 분석"})
+    contract.check(
+        client.post("/projects/nope/pages", json={"title": "x"}), 404
+    )
+    second = client.post(PAGES, json={"title": "공고 분석"})
     pinned = second.json()["id"]
     contract.check(client.patch(f"/pages/{pinned}", json={"pinned": True}), 200)
 
-    cards = contract.check(client.get("/spaces/root/pages"), 200)
+    cards = contract.check(client.get(PAGES), 200)
     assert [c["id"] for c in cards] == [pinned, detail["id"]]
     assert cards[1]["status"] == "planning"
+    assert cards[1]["project"] == PROJECT
     assert "last_run" not in cards[1]
-    contract.check(client.get("/spaces/nope/pages"), 404)
-    assert clean(home)
-    assert subjects(home)[-2] == f"[{detail['id']}] create page"
+    contract.check(client.get("/projects/nope/pages"), 404)
+    assert not (home / "spaces").exists()
 
 
 def test_page_card_preview_counts_and_last_run(
@@ -128,7 +143,7 @@ def test_page_card_preview_counts_and_last_run(
     runs.allocate(folder)
     runs.write_run(folder, record)
 
-    card = contract.check(client.get("/spaces/root/pages"), 200)[0]
+    card = contract.check(client.get(PAGES), 200)[0]
     assert card["preview"] == "첫 줄"
     assert card["block_counts"] == {
         "data": 1,
@@ -152,7 +167,9 @@ def test_page_card_preview_counts_and_last_run(
 def test_update_page_order_tags_and_move(
     client,
     home,
+    project_root,
     page,
+    tmp_path,
     contract,
 ) -> None:
     for name in ("a", "b"):
@@ -173,45 +190,59 @@ def test_update_page_order_tags_and_move(
     contract.check(
         client.patch(f"/pages/{page}", json={"blocks_order": ["b01"]}), 400
     )
-    contract.check(client.patch(f"/pages/{page}", json={"space": "nope"}), 404)
-
-    client.post("/spaces", json={"slug": "jobs", "title": "지원"})
-    moved = contract.check(
-        client.patch(f"/pages/{page}", json={"space": "jobs"}), 200
+    contract.check(
+        client.patch(f"/pages/{page}", json={"project": "nope"}), 404
     )
-    assert moved["space"] == "jobs"
-    assert (home / "spaces/jobs/pages" / page / "page.md").is_file()
-    assert not (home / "spaces/root/pages" / page).exists()
-    assert clean(home)
-    assert subjects(home)[0] == f"[{page}] move to jobs"
+
+    (tmp_path / "jobs").mkdir()
+    client.post("/projects", json={"path": str(tmp_path / "jobs")})
+    moved = contract.check(
+        client.patch(f"/pages/{page}", json={"project": "jobs"}), 200
+    )
+    assert moved["project"] == "jobs"
+    assert (tmp_path / "jobs/.madang/pages" / page / "page.md").is_file()
+    assert not (project_root / ".madang/pages" / page).exists()
+    assert (
+        contract.check(client.get(f"/pages/{page}"), 200)["project"] == "jobs"
+    )
 
 
 def test_delete_page_and_restore_from_trash(
     client,
     home,
+    project_root,
     page,
     contract,
 ) -> None:
     contract.check(client.delete(f"/pages/{page}"), 204)
     contract.check(client.get(f"/pages/{page}"), 404)
     contract.check(client.delete(f"/pages/{page}"), 404)
-    assert subjects(home)[0] == f"[{page}] delete page"
+    assert not (project_root / ".madang/pages" / page).exists()
 
     trash = contract.check(client.get("/trash"), 200)
     assert len(trash) == 1
     entry = trash[0]
     assert entry["page"] == page and entry.get("block") is None
-    assert entry["paths"] == [f"spaces/root/pages/{page}"]
+    assert entry["project"] == PROJECT
+    assert entry["paths"] == [f".madang/pages/{page}"]
+    kept = project_root / ".madang/trash" / entry["id"]
+    assert (kept / "files/pages" / page / "page.md").is_file()
 
     contract.check(client.post("/trash/zzzz/restore"), 404)
-    restored = contract.check(
-        client.post(f"/trash/{entry['commit']}/restore"), 200
-    )
-    assert restored["paths"] == entry["paths"]
+    restored = contract.check(client.post(f"/trash/{entry['id']}/restore"), 200)
+    assert restored == {"id": entry["id"], "paths": entry["paths"]}
     contract.check(client.get(f"/pages/{page}"), 200)
     assert contract.check(client.get("/trash"), 200) == []
-    assert subjects(home)[0] == f"[{page}] restore page"
-    assert clean(home)
+    assert not kept.exists()
+
+
+def test_restore_refuses_taken_path(client, home, page, contract) -> None:
+    client.delete(f"/pages/{page}")
+    entry = client.get("/trash").json()[0]
+    again = client.post(PAGES, json={"title": "이력서"}).json()["id"]
+    assert again == page
+    refused = contract.check(client.post(f"/trash/{entry['id']}/restore"), 409)
+    assert "already exists" in refused["message"]
 
 
 # 블록
@@ -275,7 +306,6 @@ def test_block_lifecycle(client, home, page, contract) -> None:
     contract.check(
         client.put(f"/pages/{page}/blocks/b01", json={"content": "{"}), 400
     )
-    assert subjects(home)[0] == f"[{page}] edit b01"
 
     patched = contract.check(
         client.patch(
@@ -312,18 +342,18 @@ def test_block_lifecycle(client, home, page, contract) -> None:
     contract.check(client.delete(f"/pages/{page}/blocks/b01"), 404)
     assert not (folder / "blocks/b01-base.json").exists()
     assert pages.read_header(folder / "page.md")["blocks"] == [view["id"]]
-    assert subjects(home)[0] == f"[{page}] delete b01"
-    assert clean(home)
 
     entry = contract.check(client.get("/trash"), 200)[0]
     assert entry["block"] == "b01" and len(entry["paths"]) == 2
-    contract.check(client.post(f"/trash/{entry['commit']}/restore"), 200)
+    assert all(
+        p.startswith(f".madang/pages/{page}/blocks/") for p in entry["paths"]
+    )
+    contract.check(client.post(f"/trash/{entry['id']}/restore"), 200)
     assert pages.read_header(folder / "page.md")["blocks"] == [
         "b01",
         view["id"],
     ]
     assert json.loads((folder / "blocks/b01-base.json").read_text()) == {"a": 2}
-    assert clean(home)
 
 
 def test_view_title_comes_from_title_field(
@@ -384,10 +414,13 @@ def test_message_blocks_are_read_only(
 # 메모리
 
 
-def test_memory_read_and_save(client, home, page, contract) -> None:
+def test_memory_read_and_save(
+    client, home, project_root, page, contract
+) -> None:
     memory = contract.check(client.get(f"/pages/{page}/memory"), 200)
-    assert memory["root"]["path"] == "root.md"
-    assert memory["space"]["path"] == "spaces/root/space.md"
+    assert memory["root"]["path"] == str(home.resolve() / "root.md")
+    assert memory["project"]["path"] == str(project_root / ".madang/project.md")
+    assert memory["project"]["layer"] == "project"
     assert memory["state"]["token_limit"] == 2000
     assert "token_limit" not in memory["root"]
 
@@ -398,8 +431,7 @@ def test_memory_read_and_save(client, home, page, contract) -> None:
         client.put(f"/pages/{page}/memory/state", json={"content": state}), 200
     )
     assert saved["content"] == state
-    assert subjects(home)[0] == f"[{page}] edit state.md"
-    card = contract.check(client.get("/spaces/root/pages"), 200)[0]
+    card = contract.check(client.get(PAGES), 200)[0]
     assert card["status"] == "doing"
 
     broken = contract.check(
@@ -420,17 +452,28 @@ def test_memory_read_and_save(client, home, page, contract) -> None:
         200,
     )
     assert root["tokens"] > 0
-    assert subjects(home)[0] == "[home] edit root.md"
+    assert (home / "root.md").read_text() == "# 나\n한국어로.\n"
+    notes = contract.check(
+        client.put(
+            f"/pages/{page}/memory/project", json={"content": "프로젝트 메모\n"}
+        ),
+        200,
+    )
+    assert notes["layer"] == "project"
+    assert (
+        project_root / ".madang/project.md"
+    ).read_text() == "프로젝트 메모\n"
     contract.check(
         client.put(
-            f"/pages/{page}/memory/space", json={"content": "---\n: [\n---\n"}
+            f"/pages/{page}/memory/project", json={"content": "---\n: [\n---\n"}
         ),
         400,
     )
-    contract.check(
-        client.put(f"/pages/{page}/memory/other", json={"content": "x"}), 400
-    )
-    assert clean(home)
+    for layer in ("space", "other"):
+        contract.check(
+            client.put(f"/pages/{page}/memory/{layer}", json={"content": "x"}),
+            400,
+        )
 
 
 # 템플릿
@@ -456,7 +499,7 @@ def test_templates(client, home, contract, tmp_path, monkeypatch) -> None:
     (bundled / "schema.json").write_text('{"base": {"type": "object"}}')
     monkeypatch.setenv("MADANG_TEMPLATES", str(tmp_path / "bundled"))
     installed = home / "templates" / "memo"
-    installed.mkdir()
+    installed.mkdir(parents=True)
     (installed / "template.yaml").write_text("name: memo\nversion: 2\n")
 
     listed = contract.check(client.get("/templates"), 200)

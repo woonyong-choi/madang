@@ -23,7 +23,7 @@ from madang.graph.nodes import (
     WAIT_REVIEW,
     WAIT_RUN_LIMIT,
 )
-from madang.store import pages, runs, summary
+from madang.store import pages, projects, runs, summary
 from madang.store.page import STATE_FILE
 from madang.validate import count_tokens
 
@@ -235,7 +235,6 @@ class Flows:
             self._core.config(),
             runners=self._core.make_runner,
             on_event=lambda name, payload: self._relay(page_id, name, payload),
-            lock=self._core.lock,
         )
 
     def _launch(
@@ -278,7 +277,8 @@ class Flows:
     def _translate(
         self, page_dir: Path, name: str, payload: dict[str, Any]
     ) -> None:
-        where = {"space": page_dir.parent.parent.name, "page": page_dir.name}
+        project = projects.owner(self._core.home, page_dir).id
+        where = {"project": project, "page": page_dir.name}
         hub = self._core.hub
         if name == flow_events.RUN_STARTED:
             with self._lock:

@@ -1,14 +1,13 @@
 """API 요청이 함께 쓰는 core 상태: 앱 홈, 이벤트, 흐름, 러너 확인.
 
-core는 앱 홈의 유일한 작성자다. 요청의 쓰기와 커밋은 ``lock`` 안에서
-한다.
+core는 페이지 기록(``<project>/.madang/``)과 앱 홈 설정의 유일한
+작성자다. 요청의 쓰기는 ``lock`` 안에서 한다.
 """
 
 from __future__ import annotations
 
 import functools
 import threading
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +16,8 @@ from madang.api import errors, events
 from madang.api.availability import Availability, Probe, probe_cli
 from madang.graph.nodes import RunnerFactory
 from madang.runners import make_runner
-from madang.store import blocks, git, pages, runs, summary
-from madang.store.home import is_initialized
+from madang.store import blocks, pages, projects, runs, summary
+from madang.store.home import LegacyHomeError, check_layout, is_initialized
 
 
 class Core:
@@ -27,7 +26,7 @@ class Core:
     Attributes:
         home: 앱 홈.
         hub: 이벤트 전달.
-        lock: 앱 홈 쓰기와 커밋을 차례로 하게 한다.
+        lock: 페이지와 설정 쓰기를 차례로 하게 한다.
         make_runner: 러너 이름으로 러너를 만든다.
         availability: 러너 사용 가능 여부 캐시.
         port: 대기 중인 포트. ``serve``가 정한다.
@@ -66,11 +65,16 @@ class Core:
         return is_initialized(self.home)
 
     def config(self) -> config.Config:
-        """앱 홈 설정을 새로 읽는다. 초기화 전에는 409.
+        """앱 홈 설정을 새로 읽는다. 초기화 전이나 예전 구조면 409.
 
         Raises:
-            HttpError: 앱 홈이 초기화되지 않았거나 설정이 깨졌다.
+            HttpError: 앱 홈이 초기화되지 않았거나, 예전 구조이거나, 설정이
+                깨졌다.
         """
+        try:
+            check_layout(self.home)
+        except LegacyHomeError as exc:
+            raise errors.conflict(str(exc)) from exc
         if not self.initialized:
             raise errors.conflict(
                 f"app home {self.home} is not initialized; POST /home first"
@@ -96,44 +100,40 @@ class Core:
         except pages.PageNotFoundError as exc:
             raise errors.not_found(str(exc)) from exc
 
-    def rel(self, path: Path) -> str:
-        """앱 홈 기준 상대 경로를 반환한다."""
-        return path.resolve().relative_to(self.home.resolve()).as_posix()
-
-    # 쓰기
-
-    def commit(self, paths: Iterable[str | Path], message: str) -> str | None:
-        """앱 홈의 ``paths`` 아래 변경을 커밋한다.
-
-        Args:
-            paths: 앱 홈 기준 경로 또는 절대 경로.
-            message: 커밋 메시지.
-
-        Returns:
-            커밋 해시. 바뀐 것이 없으면 None.
+    def project(self, project_id: str) -> projects.Project:
+        """등록한 프로젝트를 반환한다.
 
         Raises:
-            HttpError: git이 실패했다(409).
+            HttpError: 프로젝트가 없다(404).
         """
-        rels = [p if isinstance(p, str) else self.rel(p) for p in paths]
         try:
-            return git.commit_changes(self.home, rels, message)
-        except git.GitError as exc:
-            raise errors.conflict(f"cannot commit the app home: {exc}") from exc
+            return projects.get(self.home, project_id)
+        except FileNotFoundError as exc:
+            raise errors.not_found(str(exc)) from exc
 
-    def page_commit(self, page_dir: Path, message: str) -> str | None:
-        """페이지 폴더의 변경을 ``[<page-id>] <message>``로 커밋한다.
+    def project_of(self, page_dir: Path) -> projects.Project:
+        """페이지 폴더를 가진 프로젝트를 반환한다.
 
-        흐름이 이 페이지를 실행 중이면 커밋하지 않는다. 그 변경은 실행
-        커밋에 들어간다.
+        Raises:
+            HttpError: 페이지가 등록한 프로젝트 밖에 있다(404).
         """
-        if self.flows.busy(page_dir.name):
-            return None
-        return self.commit([page_dir], f"[{page_dir.name}] {message}")
+        try:
+            return projects.owner(self.home, page_dir)
+        except FileNotFoundError as exc:
+            raise errors.not_found(str(exc)) from exc
 
-    def active_run(self, page_dir: Path) -> int | None:
-        """이 페이지에서 돌고 있는 실행 번호. 흐름이 없으면 None."""
-        if not self.flows.busy(page_dir.name):
+    def active_run(self, page_dir: Path, *, in_run: bool) -> int | None:
+        """실행 안에서 온 요청이 붙일 실행 번호.
+
+        Args:
+            page_dir: 페이지 폴더.
+            in_run: 에이전트 실행 안에서 보낸 요청인지 여부. 사람이 보낸
+                요청에는 흐름이 돌고 있어도 실행 번호를 붙이지 않는다.
+
+        Returns:
+            돌고 있는 실행 번호. 사람의 요청이거나 흐름이 없으면 None.
+        """
+        if not in_run or not self.flows.busy(page_dir.name):
             return None
         return runs.current(page_dir)
 
@@ -141,10 +141,14 @@ class Core:
 
     def announce_page(self, page_dir: Path, kind: str) -> None:
         """페이지 카드를 ``page.created`` 또는 ``page.updated``로 알린다."""
-        card = summary.page_card(page_dir)
+        card = self.page_card(page_dir)
         self.hub.emit(
-            kind, {"page": card}, space=card["space"], page=card["id"]
+            kind, {"page": card}, project=card["project"], page=card["id"]
         )
+
+    def page_card(self, page_dir: Path) -> dict[str, Any]:
+        """페이지 카드(프로젝트 id 포함)를 반환한다."""
+        return summary.page_card(page_dir, self.project_of(page_dir).id)
 
     def announce_blocks(
         self, page_dir: Path, known: set[str], run: int | None = None
@@ -184,7 +188,7 @@ class Core:
         self.hub.emit(
             kind,
             {"block": header},
-            space=page_dir.parent.parent.name,
+            project=self.project_of(page_dir).id,
             page=page_dir.name,
             block=header["id"],
             run=run if run is not None else header.get("run"),
@@ -197,7 +201,7 @@ class Core:
         where: dict[str, Any] = {}
         if page_dir is not None:
             where = {
-                "space": page_dir.parent.parent.name,
+                "project": self.project_of(page_dir).id,
                 "page": page_dir.name,
             }
         self.hub.emit(

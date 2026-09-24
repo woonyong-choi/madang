@@ -1,13 +1,12 @@
 """페이지 경로: 페이지, 블록, 메모리.
 
-편집은 커밋 하나가 된다: ``[<page-id>] edit <block>``,
-``[<page-id>] delete <block|page>``.
+core는 페이지 파일을 커밋하지 않는다. 지운 페이지와 블록은 프로젝트의
+``.madang/trash/``로 옮겨 두고 휴지통에서 되살린다.
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -18,20 +17,20 @@ from madang.api.core import Core
 from madang.api.routes import CoreDep, Router
 from madang.cli_agent import views
 from madang.cli_agent.context import AgentError, PageContext
-from madang.store import blocks, frontmatter, git, pages, summary, trash
+from madang.store import blocks, frontmatter, pages, summary, trash
 from madang.store import unknown_files as unknown
 from madang.store.files import atomic_write
-from madang.store.page import SPACE_FILE, STATE_FILE, space_dir, space_repo
+from madang.store.page import STATE_FILE, project_root
 from madang.validate import count_tokens, validate_state
 
 router = Router()
 ROOT_FILE = "root.md"
-LAYERS = ("root", "space", "state")
+LAYERS = ("root", "project", "state")
 
 
 def page_detail(core: Core, page_dir: Path) -> models.PageDetail:
     """페이지 상세(미등록 파일과 기다리는 결정 포함)를 반환한다."""
-    detail = summary.page_detail(page_dir)
+    detail = summary.page_detail(page_dir, core.project_of(page_dir).id)
     detail["unknown_files"] = unknown.list_unknown(page_dir)
     waiting = core.flows.waiting(page_dir)
     if waiting is not None:
@@ -59,7 +58,7 @@ def get_page(page: str, core: CoreDep) -> models.PageDetail:
 def update_page(
     page: str, body: models.PageUpdate, core: CoreDep
 ) -> models.PageCard:
-    """제목, 고정, 태그, 블록 순서를 바꾸거나 다른 공간으로 옮긴다."""
+    """제목, 고정, 태그, 블록 순서를 바꾸거나 다른 프로젝트로 옮긴다."""
     page_dir = core.page_dir(page)
     changes = body.model_dump(exclude_unset=True, exclude_none=True)
     if "title" in changes and not changes["title"].strip():
@@ -74,48 +73,41 @@ def update_page(
                     "blocks_order must list exactly the page's blocks"
                 )
             changes["blocks"] = order
-        target = changes.pop("space", None)
+        target = changes.pop("project", None)
         if changes:
             pages.update_page(page_dir, lambda h: h.update(changes))
-            core.page_commit(page_dir, "edit page")
-        if target is not None and target != page_dir.parent.parent.name:
+        if target is not None and target != core.project_of(page_dir).id:
             page_dir = _move(core, page_dir, target)
     core.announce_page(page_dir, events.PAGE_UPDATED)
-    return models.PageCard.model_validate(summary.page_card(page_dir))
+    return models.PageCard.model_validate(core.page_card(page_dir))
 
 
-def _move(core: Core, page_dir: Path, space: str) -> Path:
+def _move(core: Core, page_dir: Path, project: str) -> Path:
     _idle(core, page_dir)
-    old = core.rel(page_dir)
+    target = core.project(project)
+    target.pages_dir.mkdir(parents=True, exist_ok=True)
     try:
-        moved = pages.move_page(core.home, page_dir, space)
+        return pages.move_page(page_dir, target.pages_dir)
     except FileNotFoundError as exc:
         raise errors.not_found(str(exc)) from exc
     except FileExistsError as exc:
         raise errors.conflict(str(exc)) from exc
-    core.commit([old, moved], f"[{moved.name}] move to {space}")
-    return moved
 
 
 @router.delete(
     "/pages/{page}", status_code=204, tags=["pages"], operation_id="deletePage"
 )
 def delete_page(page: str, core: CoreDep) -> Response:
-    """페이지 폴더를 지우고 커밋한다. 휴지통에서 되살릴 수 있다."""
+    """페이지 폴더를 휴지통으로 옮긴다. 휴지통에서 되살릴 수 있다."""
     page_dir = core.page_dir(page)
     _idle(core, page_dir)
-    space = page_dir.parent.parent.name
+    project = core.project_of(page_dir)
     with core.lock:
-        rel = core.rel(page_dir)
-        git.run(core.home, "rm", "-r", "-q", "--ignore-unmatch", "--", rel)
-        _remove_tree(page_dir)
-        core.commit([rel], trash.delete_message(page, trash.DELETE_PAGE))
-    core.hub.emit(events.PAGE_DELETED, {"id": page}, space=space, page=page)
+        trash.delete_page(project, page_dir)
+    core.hub.emit(
+        events.PAGE_DELETED, {"id": page}, project=project.id, page=page
+    )
     return Response(status_code=204)
-
-
-def _remove_tree(path: Path) -> None:
-    shutil.rmtree(path, ignore_errors=True)
 
 
 # 블록
@@ -167,7 +159,6 @@ def create_block(
                 )
             except blocks.BlockContentError as exc:
                 raise errors.invalid(str(exc), exc.issues) from exc
-        core.page_commit(page_dir, f"add {block_id}")
     header = blocks.block_header(page_dir, block_id)
     core.announce_block(page_dir, events.BLOCK_ADDED, header)
     core.announce_page(page_dir, events.PAGE_UPDATED)
@@ -186,7 +177,7 @@ def _create_view(core: Core, page_dir: Path, body: models.BlockCreate) -> str:
             body.template,
             data,
             title=body.title,
-            run=core.active_run(page_dir),
+            run=core.active_run(page_dir, in_run=body.in_run),
         )
     except (AgentError, frontmatter.FrontmatterError) as exc:
         issues = getattr(exc, "issues", ())
@@ -215,7 +206,7 @@ def get_block(page: str, block: str, core: CoreDep) -> models.Block:
 def replace_block(
     page: str, block: str, body: models.BlockContent, core: CoreDep
 ) -> models.Block:
-    """블록 파일 전체를 바꾸고 커밋한다."""
+    """블록 파일 전체를 바꾼다."""
     page_dir = core.page_dir(page)
     found = _file_block(page_dir, block)
     with core.lock:
@@ -223,7 +214,6 @@ def replace_block(
             blocks.write_content(found, body.content)
         except blocks.BlockContentError as exc:
             raise errors.invalid(str(exc), exc.issues) from exc
-        core.page_commit(page_dir, f"edit {block}")
     header = blocks.block_header(page_dir, block)
     core.announce_block(page_dir, events.BLOCK_UPDATED, header)
     return models.Block.model_validate(
@@ -239,7 +229,7 @@ def replace_block(
 def update_block_header(
     page: str, block: str, body: models.BlockHeaderPatch, core: CoreDep
 ) -> models.BlockHeader:
-    """머리부 키만 바꾸고 커밋한다."""
+    """머리부 키만 바꾼다."""
     page_dir = core.page_dir(page)
     found = _file_block(page_dir, block)
     changes = body.model_dump(exclude_unset=True)
@@ -256,7 +246,6 @@ def update_block_header(
                     header[key] = value
 
         blocks.update_header(found, mutate)
-        core.page_commit(page_dir, f"edit {block}")
     header = blocks.block_header(page_dir, block)
     core.announce_block(page_dir, events.BLOCK_UPDATED, header)
     return models.BlockHeader.model_validate(header)
@@ -284,7 +273,7 @@ def _check_header(page_dir: Path, header: dict[str, Any]) -> None:
     operation_id="deleteBlock",
 )
 def delete_block(page: str, block: str, core: CoreDep) -> Response:
-    """``git rm``으로 블록을 지우고 커밋한다.
+    """블록 파일을 휴지통으로 옮기고 page.md 순서에서 뺀다.
 
     메시지는 log.md에 기록으로 남기고 page.md 순서에서만 뺀다.
     """
@@ -292,23 +281,14 @@ def delete_block(page: str, block: str, core: CoreDep) -> Response:
     _block_or_404(page_dir, block)
     found = blocks.find_file_block(page_dir, block)
     _idle(core, page_dir)
+    project = core.project_of(page_dir)
     with core.lock:
-        rels = [core.rel(p) for p in found.files()] if found else []
-        if rels:
-            git.run(
-                core.home, "rm", "-q", "-f", "--ignore-unmatch", "--", *rels
-            )
-        for path in found.files() if found else []:
-            path.unlink(missing_ok=True)
-        blocks.remove_from_order(page_dir, block)
-        core.commit(
-            [*rels, core.rel(page_dir / "page.md")],
-            trash.delete_message(page, block),
-        )
+        files = found.files() if found else []
+        trash.delete_block(project, page_dir, block, files)
     core.hub.emit(
         events.BLOCK_DELETED,
         {"id": block},
-        space=page_dir.parent.parent.name,
+        project=project.id,
         page=page,
         block=block,
     )
@@ -322,10 +302,8 @@ def delete_block(page: str, block: str, core: CoreDep) -> Response:
 def _memory_path(core: Core, page_dir: Path, layer: str) -> Path:
     if layer == "root":
         return core.home / ROOT_FILE
-    if layer == "space":
-        space = space_dir(page_dir)
-        assert space is not None  # find_page가 공간 안의 페이지만 찾는다
-        return space / SPACE_FILE
+    if layer == "project":
+        return core.project_of(page_dir).memory
     return page_dir / STATE_FILE
 
 
@@ -336,7 +314,7 @@ def _memory_file(
     content = path.read_text(encoding="utf-8") if path.is_file() else ""
     return {
         "layer": layer,
-        "path": core.rel(path),
+        "path": str(path),
         "content": content,
         "tokens": count_tokens(content),
         "token_limit": limit if layer == "state" else None,
@@ -345,7 +323,7 @@ def _memory_file(
 
 @router.get("/pages/{page}/memory", tags=["memory"], operation_id="getMemory")
 def get_memory(page: str, core: CoreDep) -> models.Memory:
-    """root.md, space.md, state.md."""
+    """root.md, project.md, state.md."""
     page_dir = core.page_dir(page)
     limit = core.config().madang.limits.state_tokens
     return models.Memory.model_validate(
@@ -362,7 +340,7 @@ def save_memory(
     body: models.MemoryContent,
     core: CoreDep,
 ) -> models.MemoryFile:
-    """메모리 파일 하나를 검사해 저장하고 커밋한다."""
+    """메모리 파일 하나를 검사해 저장한다."""
     page_dir = core.page_dir(page)
     cfg = core.config()
     path = _memory_path(core, page_dir, layer)
@@ -371,23 +349,19 @@ def save_memory(
             _check_state(page_dir, body.content, cfg)
         else:
             _check_front_matter(path, body.content)
+        path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write(path, body.content)
-        if layer == "state":
-            core.page_commit(page_dir, f"edit {STATE_FILE}")
-        else:
-            scope = "home" if layer == "root" else path.parent.name
-            core.commit([path], f"[{scope}] edit {path.name}")
     limit = cfg.madang.limits.state_tokens
     saved = _memory_file(core, page_dir, layer, limit)
     core.announce_memory(layer, saved["tokens"], page_dir)
     if layer == "state":
         core.announce_page(page_dir, events.PAGE_UPDATED)
-    elif layer == "space":
-        space = path.parent
+    elif layer == "project":
+        project = core.project_of(page_dir)
         core.hub.emit(
-            events.SPACE_UPDATED,
-            {"space": summary.space_summary(space)},
-            space=space.name,
+            events.PROJECT_UPDATED,
+            {"project": summary.project_summary(project)},
+            project=project.id,
         )
     return models.MemoryFile.model_validate(saved)
 
@@ -398,7 +372,7 @@ def _check_state(page_dir: Path, content: str, cfg: Any) -> None:
     try:
         issues = validate_state(
             probe,
-            repo=space_repo(page_dir),
+            repo=project_root(page_dir),
             token_limit=cfg.madang.limits.state_tokens,
             kinds=cfg.routes.kinds,
         )

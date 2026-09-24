@@ -51,7 +51,7 @@ def validate_state(
 
     Args:
         path: state.md 파일.
-        repo: ``repo:`` 산출물에 쓰는 공간의 코드 저장소.
+        repo: ``repo:`` 산출물의 기준인 프로젝트 폴더.
         token_limit: 파일의 최대 토큰 수.
         kinds: 허용하는 페이지 종류. 기본값은 내장 routes.yaml.
 
@@ -232,12 +232,12 @@ def _check_artifacts(
             if repo is None:
                 add(
                     "repo-unset",
-                    f"artifact '{item}' needs a code repository "
-                    "but the space has none",
+                    f"artifact '{item}' needs a project folder "
+                    "but the page is not in a project",
                     line,
                 )
                 continue
-            base, where = repo, "space repository"
+            base, where = repo, "project folder"
         else:
             rel, base, where = item, page_dir, "page folder"
         target = _inside(base, rel)

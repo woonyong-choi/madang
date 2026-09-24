@@ -14,9 +14,13 @@ from madang.graph import Flow, FlowResult, events, steps
 from madang.runners import make_runner
 from madang.runners.base import CliRunner
 from madang.runners.record import RecordedRun
-from madang.store import frontmatter, pages
-from madang.store.git import GitError
-from madang.store.home import NotAHomeError, init_home
+from madang.store import frontmatter, pages, projects
+from madang.store.home import (
+    NotAHomeError,
+    check_layout,
+    init_home,
+    is_initialized,
+)
 from madang.store.log import append_message
 from madang.store.page import STATE_FILE, work_dir
 from madang.validate import Issue, validate_target
@@ -60,17 +64,15 @@ def root(
 
 @app.command()
 def init(home: HomeOption = None) -> None:
-    """앱 홈(설정, 루트 메모리, 루트 공간, git 저장소)을 만든다."""
+    """앱 홈(전역 설정과 루트 메모리)을 만든다. 페이지는 프로젝트에 둔다."""
     path = config.resolve_home(home)
     try:
         result = init_home(path)
-    except (GitError, NotAHomeError, OSError) as exc:
+    except (NotAHomeError, OSError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc
     if result.created:
         typer.echo(f"initialized {path} ({len(result.created)} files)")
-    elif result.committed:
-        typer.echo(f"initialized {path} (committed existing files)")
     else:
         typer.echo(f"already initialized: {path}")
 
@@ -84,7 +86,7 @@ def validate(
         Path | None,
         typer.Option(
             "--repo",
-            help=("repo: 산출물의 코드 저장소. 기본값은 space.md의 repo."),
+            help=("repo: 산출물의 기준 폴더. 기본값은 페이지가 속한 프로젝트."),
         ),
     ] = None,
     home: HomeOption = None,
@@ -130,12 +132,10 @@ class RunOutcome:
     Attributes:
         recorded: 실행과 그 기록.
         issues: 실행 뒤 상태 검사에서 찾은 문제.
-        commit: 앱 홈 커밋의 짧은 해시.
     """
 
     recorded: RecordedRun
     issues: list[Issue]
-    commit: str
 
     @property
     def ok(self) -> bool:
@@ -153,11 +153,11 @@ def execute_run(
     request: str,
     target: str | None = None,
 ) -> RunOutcome:
-    """새 세션에서 페이지의 한 단계를 실행하고 결과를 커밋한다.
+    """새 세션에서 페이지의 한 단계를 실행한다.
 
     요청을 기록하고, 프롬프트를 조립해 ``scratch/``에 저장한다. 러너는
-    공간의 코드 저장소(없으면 페이지 폴더)에서 작업한다. 이후 페이지를
-    검사하고, 실행을 기록하고, 답을 기록한 뒤 앱 홈을 커밋한다.
+    페이지가 속한 프로젝트 폴더에서 작업한다. 이후 페이지를 검사하고,
+    실행을 기록하고, 답을 기록한다.
 
     Args:
         page_dir: 페이지 폴더.
@@ -172,7 +172,6 @@ def execute_run(
         끝난 실행.
 
     Raises:
-        GitError: 앱 홈 커밋이 실패한 경우.
         OSError: 페이지 파일을 읽거나 쓸 수 없는 경우.
         ValueError: 대상 블록에 파일이 없는 경우.
     """
@@ -204,8 +203,7 @@ def execute_run(
     )
     issues = steps.check(page_dir, cfg, recorded.n)
     steps.reply(page_dir, recorded)
-    commit = steps.commit_run(page_dir, cfg.home, recorded.record)
-    return RunOutcome(recorded=recorded, issues=issues, commit=commit)
+    return RunOutcome(recorded=recorded, issues=issues)
 
 
 def format_outcome(outcome: RunOutcome) -> str:
@@ -223,7 +221,6 @@ def format_outcome(outcome: RunOutcome) -> str:
         f"changed {len(record.changed_files)}",
         f"unknown {len(record.unknown_files)}",
         f"issues {len(outcome.issues)}",
-        f"commit {outcome.commit}",
         f"{outcome.recorded.result.duration:.1f}s",
     ]
     return " · ".join(parts)
@@ -238,6 +235,10 @@ def _load(home: Path | None) -> config.Config:
     root = config.resolve_home(home)
     if not root.is_dir():
         raise _fail(f"app home {root} does not exist; run 'madang init' first")
+    try:
+        check_layout(root)
+    except NotAHomeError as exc:
+        raise _fail(str(exc)) from exc
     try:
         return config.load_config(root)
     except Exception as exc:
@@ -273,7 +274,7 @@ def run_command(
     ] = False,
     home: HomeOption = None,
 ) -> None:
-    """새 세션에서 페이지의 한 단계를 실행한 뒤 검사하고 커밋한다.
+    """새 세션에서 페이지의 한 단계를 실행한 뒤 검사한다.
 
     --flow를 주면 메시지 하나를 흐름 그래프로 끝까지 처리한다.
     """
@@ -303,7 +304,7 @@ def run_command(
             request=request,
             target=target,
         )
-    except (GitError, OSError, ValueError, frontmatter.FrontmatterError) as e:
+    except (OSError, ValueError, frontmatter.FrontmatterError) as e:
         raise _fail(str(e)) from e
     for issue in outcome.issues:
         typer.echo(f"  {issue.format()}", err=True)
@@ -326,7 +327,7 @@ def resume_command(
     cfg = _load(home)
     try:
         result = Flow(cfg, on_event=_echo_event).resume(thread_id, choice)
-    except (GitError, OSError, ValueError, frontmatter.FrontmatterError) as e:
+    except (OSError, ValueError, frontmatter.FrontmatterError) as e:
         raise _fail(str(e)) from e
     _finish_flow(result)
 
@@ -356,7 +357,6 @@ def _run_flow(
         result = flow.start(page_id, request, {"block": target})
     except (
         pages.PageNotFoundError,
-        GitError,
         OSError,
         ValueError,
         frontmatter.FrontmatterError,
@@ -432,24 +432,58 @@ def openapi() -> None:
     sys.stdout.write(contract_text())
 
 
-# 페이지와 공간 생성
+# 프로젝트와 페이지
 
+project_app = typer.Typer(
+    help="프로젝트(페이지 기록을 .madang/에 담는 폴더)를 관리한다.",
+    no_args_is_help=True,
+    add_completion=False,
+)
 page_app = typer.Typer(
     help="페이지를 만든다.", no_args_is_help=True, add_completion=False
 )
-space_app = typer.Typer(
-    help="공간를 만든다.", no_args_is_help=True, add_completion=False
-)
+app.add_typer(project_app, name="project")
 app.add_typer(page_app, name="page")
-app.add_typer(space_app, name="space")
+
+
+@project_app.command("add")
+def project_add(
+    path: Annotated[Path, typer.Argument(help="프로젝트 폴더.")],
+    project_id: Annotated[
+        str | None,
+        typer.Option("--id", help="프로젝트 id. 기본값은 폴더 이름."),
+    ] = None,
+    title: Annotated[
+        str | None,
+        typer.Option("--title", help="프로젝트 제목. 기본값은 폴더 이름."),
+    ] = None,
+    home: HomeOption = None,
+) -> None:
+    """폴더에 .madang/을 만들고 프로젝트로 등록한 뒤 id를 출력한다."""
+    cfg = _load(home)
+    if not is_initialized(cfg.home):
+        raise _fail(f"app home {cfg.home} has no settings; run 'madang init'")
+    try:
+        project = projects.add(
+            cfg.home, path, project_id=project_id, title=title
+        )
+    except (FileNotFoundError, FileExistsError, ValueError) as exc:
+        raise _fail(str(exc)) from exc
+    typer.echo(project.id)
+
+
+@project_app.command("list")
+def project_list(home: HomeOption = None) -> None:
+    """등록한 프로젝트를 한 줄에 하나씩(id, 폴더) 출력한다."""
+    cfg = _load(home)
+    for project in projects.load(cfg.home):
+        typer.echo(f"{project.id}\t{project.root}")
 
 
 @page_app.command("new")
 def page_new(
     title: Annotated[str, typer.Option("--title", help="페이지 제목.")],
-    space: Annotated[
-        str, typer.Option("--space", help="공간 슬러그.")
-    ] = "root",
+    project: Annotated[str, typer.Option("--project", help="프로젝트 id.")],
     kind: Annotated[
         str | None,
         typer.Option("--kind", help="페이지 종류. 기본값은 routes.yaml."),
@@ -460,39 +494,19 @@ def page_new(
     ] = None,
     home: HomeOption = None,
 ) -> None:
-    """페이지를 만들고 id를 출력한다."""
+    """프로젝트의 .madang/pages/에 페이지를 만들고 id를 출력한다."""
     cfg = _load(home)
     kind = kind or cfg.routes.default_kind
     if kind not in cfg.routes.kinds:
         raise _fail(f"unknown kind '{kind}'; expected {cfg.routes.kinds}")
     try:
+        found = projects.get(cfg.home, project)
         page_dir = pages.create_page(
-            cfg.home, space, title, slug=slug, kind=kind
+            found.pages_dir, title, slug=slug, kind=kind
         )
     except (FileNotFoundError, FileExistsError) as exc:
         raise _fail(str(exc)) from exc
     typer.echo(page_dir.name)
-
-
-@space_app.command("new")
-def space_new(
-    slug: Annotated[str, typer.Argument(help="공간 슬러그.")],
-    title: Annotated[
-        str | None, typer.Option("--title", help="공간 제목.")
-    ] = None,
-    repo: Annotated[
-        str | None,
-        typer.Option("--repo", help="공간의 코드 저장소."),
-    ] = None,
-    home: HomeOption = None,
-) -> None:
-    """공간를 만들고 슬러그를 출력한다."""
-    cfg = _load(home)
-    try:
-        pages.create_space(cfg.home, slug, title=title, repo=repo)
-    except (ValueError, FileExistsError) as exc:
-        raise _fail(str(exc)) from exc
-    typer.echo(slug)
 
 
 cli_agent.register(app)

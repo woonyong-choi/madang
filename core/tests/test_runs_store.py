@@ -13,7 +13,7 @@ from madang.store.page import latest_run
 
 @pytest.fixture
 def page_dir(tmp_path: Path) -> Path:
-    page = tmp_path / "home" / "spaces" / "root" / "pages" / "2026-09-24-demo"
+    page = tmp_path / "work" / ".madang" / "pages" / "2026-09-24-demo"
     page.mkdir(parents=True)
     return page
 

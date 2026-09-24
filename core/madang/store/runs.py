@@ -60,7 +60,6 @@ class RunRecord(_Model):
     unknown_files: list[str] = Field(default_factory=list)
     verify: RunVerify = Field(default_factory=RunVerify)
     result_status: str | None = None
-    commit: str | None = None
     events_log: str | None = None
     contract: str | None = None
     duration: float | None = None

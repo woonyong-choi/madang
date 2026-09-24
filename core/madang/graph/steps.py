@@ -1,4 +1,4 @@
-"""페이지 실행 한 번을 이루는 단계: 조립, 실행, 기록, 검사, 답, 커밋.
+"""페이지 실행 한 번을 이루는 단계: 조립, 실행, 기록, 검사, 답.
 
 ``madang run``과 흐름 그래프의 노드가 같은 단계를 공유한다. 단계 사이에서
 넘기는 값은 실행 번호와 페이지 파일뿐이다. 프롬프트는 ``scratch/``에,
@@ -20,15 +20,9 @@ from madang.assemble import Assembled, assemble
 from madang.cli_agent.context import BY_ENV
 from madang.runners.base import CliRunner, RunEvent
 from madang.runners.record import RecordedRun, run_page
-from madang.store import changes, frontmatter, git, pages, runs
+from madang.store import changes, frontmatter, pages, runs
 from madang.store.log import append_message
-from madang.store.page import (
-    SPACE_FILE,
-    STATE_FILE,
-    space_dir,
-    space_repo,
-    work_dir,
-)
+from madang.store.page import MADANG_DIR, STATE_FILE, project_root, work_dir
 from madang.validate import Issue, validate_target
 
 SCRATCH_DIR = "scratch"
@@ -36,7 +30,6 @@ REPO_PREFIX = "repo:"
 # 코어가 직접 쓰는 페이지 파일. 실행 산출물로 보고하지 않는다.
 _BOOKKEEPING = (pages.LOG_FILE, f"{pages.BLOCKS_DIR}/{pages.LAST_BLOCK_FILE}")
 _BOOKKEEPING_DIRS = (f"{runs.RUNS_DIR}/", f"{SCRATCH_DIR}/")
-_SUMMARY_FILES = 3
 _LOG_HEAD = re.compile(r"^<!--\s*(b\d+)\s*\|.*-->\s*$", re.MULTILINE)
 
 Snapshots = tuple[changes.Snapshot, changes.Snapshot | None]
@@ -205,7 +198,7 @@ def check(page_dir: Path, cfg: config.Config, n: int) -> list[Issue]:
     """
     issues = validate_target(
         page_dir,
-        repo=space_repo(page_dir),
+        repo=project_root(page_dir),
         token_limit=cfg.madang.limits.state_tokens,
         kinds=cfg.routes.kinds,
     )
@@ -245,9 +238,13 @@ def state_status(page_dir: Path) -> str | None:
 
 
 def snapshots(page_dir: Path, cwd: Path) -> Snapshots:
-    """페이지 폴더와(다르면) 작업 폴더의 변경 스냅샷을 찍는다."""
-    repo = changes.take(cwd) if cwd != page_dir else None
-    return changes.take(page_dir), repo
+    """페이지 폴더와(다르면) 작업 폴더의 변경 스냅샷을 찍는다.
+
+    페이지 폴더는 대개 git에서 빠져 있으므로 파일 목록으로 찍는다. 작업
+    폴더(프로젝트)는 ``.madang/``을 뺀 변경을 찍는다.
+    """
+    repo = changes.take(cwd, exclude=(MADANG_DIR,)) if cwd != page_dir else None
+    return changes.listing(page_dir), repo
 
 
 def run_output(
@@ -255,7 +252,7 @@ def run_output(
 ) -> tuple[list[str], list[str]]:
     """실행이 바꾼 파일과 등록하지 않은 새 파일을 반환한다.
 
-    페이지 파일은 페이지 기준 상대 경로이고, 코드 저장소 파일에는
+    페이지 파일은 페이지 기준 상대 경로이고, 프로젝트 폴더의 파일에는
     ``repo:`` 접두가 붙는다.
     """
     page_before, repo_before = before
@@ -290,70 +287,7 @@ def _artifacts(page_dir: Path) -> set[str]:
     return {str(a) for a in items} if isinstance(items, list) else set()
 
 
-# 커밋
-
-
-def commit_run(
-    page_dir: Path,
-    home: Path,
-    record: runs.RunRecord,
-    changed: list[str] | None = None,
-) -> str:
-    """페이지 폴더(와 space.md)를 실행 하나로 앱 홈에 커밋한다.
-
-    Args:
-        page_dir: 페이지 폴더.
-        home: 앱 홈.
-        record: 커밋할 실행의 기록.
-        changed: 메시지에 요약할 파일. 기본값은 실행이 바꾼 파일.
-
-    Returns:
-        HEAD의 짧은 해시.
-
-    Raises:
-        GitError: 커밋이 실패한 경우.
-    """
-    paths = [page_dir.relative_to(home).as_posix()]
-    space = space_dir(page_dir)
-    if space is not None and (space / SPACE_FILE).is_file():
-        paths.append((space / SPACE_FILE).relative_to(home).as_posix())
-    git.run(home, "add", "-A", "--", *paths)
-    message = run_commit_message(
-        page_dir.name,
-        record.n,
-        str(record.runner),
-        str(record.model),
-        record.changed_files if changed is None else changed,
-    )
-    git.commit(home, message, paths, unsigned=True)
-    return git.head(home)
-
-
-def run_commit_message(
-    page_id: str, n: int, runner: str, model: str, changed: list[str]
-) -> str:
-    """실행의 앱 홈 커밋 메시지를 반환한다.
-
-    Args:
-        page_id: 페이지 id.
-        n: 실행 번호.
-        runner: 러너 이름.
-        model: 모델 이름.
-        changed: 실행이 바꾼 파일.
-
-    Returns:
-        ``[<page-id>] run <n> · <runner>/<model> · <changed files>``.
-    """
-    return f"[{page_id}] run {n} · {runner}/{model} · {_summary(changed)}"
-
-
-def _summary(changed: list[str]) -> str:
-    if not changed:
-        return "no file changes"
-    if len(changed) <= _SUMMARY_FILES:
-        return ", ".join(changed)
-    shown = changed[: _SUMMARY_FILES - 1]
-    return f"{', '.join(shown)} +{len(changed) - len(shown)} more"
+# 환경
 
 
 @contextmanager
