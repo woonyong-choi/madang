@@ -70,10 +70,11 @@ fun BrowserTab(url: String, actions: TabActions, modifier: Modifier) {
     }
 }
 
-/** 엔진이 준비되지 않았을 때 가운데에 보이는 상태와 진행. */
+/** 엔진이 준비되지 않았을 때 가운데에 보이는 상태와 진행. 실패했으면 "다시 받기"를 둔다. */
 @Composable
 internal fun EngineNotice(status: BrowserStatus, modifier: Modifier) {
     val strings = LocalStrings.current.tabs
+    val engine = LocalBrowserEngine.current
     Box(modifier = modifier.padding(24.dp), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -101,7 +102,10 @@ internal fun EngineNotice(status: BrowserStatus, modifier: Modifier) {
 
                 BrowserStatus.RestartRequired -> NoticeText(strings.browserRestart)
 
-                is BrowserStatus.Failed -> NoticeText(strings.browserFailed(status.message))
+                is BrowserStatus.Failed -> {
+                    NoticeText(strings.browserFailed(status.message))
+                    TextButton(onClick = engine::reinstall) { Text(strings.reinstallEngine) }
+                }
 
                 BrowserStatus.Unavailable -> NoticeText(strings.browserUnavailable)
 

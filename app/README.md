@@ -124,7 +124,8 @@ app/
 - 브라우저 탭: KCEF(Chromium) 웹 화면. 로컬 파일과 localhost URL을 연다. core가 `runs.opened`를 보내면
   열린 페이지가 그 프로젝트일 때 그 URL을 브라우저 탭으로 연다. 엔진 번들은 브라우저 탭을 처음 열 때
   앱 설정 폴더의 `kcef-bundle/`에 내려받고(진행률 표시), 캐시는 `kcef-cache/`에 둔다. 다시 시작하라고 하면
-  앱을 다시 띄운다.
+  앱을 다시 띄운다. 엔진을 준비하지 못하면 브라우저·문서 탭에 이유와 "다시 받기"를 보이고, 문서 탭은
+  원문 md를 읽기 전용으로 보인다.
 - 탭 세트는 페이지마다 앱 설정(`pageTabs`)에 저장되어 재시작 뒤에도 되살아난다. 페이지를 바꾸면 탭
   세트가 통째로 바뀐다. 탭을 닫아도 블록·파일은 남는다.
 
@@ -311,7 +312,14 @@ bash scripts/build-core.sh       # 저장소 루트에서. 결과: core/dist/mad
   동봉 core는 자기 폴더를 PATH 앞에 두어 에이전트가 부르는 `madang`도 같은 실행 파일이 된다.
 - core 번들이 없으면 패키징 작업은 실패한다. 개발 실행(`:desktop:run`)은 번들 없이도 된다.
 - 브라우저·문서 탭 엔진(KCEF의 Chromium 번들)은 dmg에 넣지 않는다. 처음 열 때 앱 설정 폴더의
-  `kcef-bundle/`에 내려받는다.
+  `kcef-bundle/`에 내려받는다. 번들은 KCEF 2025.03.23 릴리스 노트가 짝으로 적은 JetBrains Runtime
+  `jbr-release-17.0.14b1367.22`로 고정한다(`WebEngineBundle.RELEASE`). KCEF 버전을 올리면 이 값도 그
+  릴리스 노트에 맞춰 바꾼다. 받은 릴리스는 번들의 `madang-webengine-release`에 적고, 표식이 없거나 다른
+  번들은 지우고 다시 받는다. CEF를 띄우기 전에 네이티브 라이브러리·프레임워크·헬퍼와, 네이티브
+  라이브러리가 찾는 `org/cef` 클래스가 앱에 있는지 검사하고 맞지 않으면 띄우지 않는다.
+- 설치된 앱의 엔진 번들 확인: `bash scripts/check-webengine.sh bundle <앱 경로>`(앱을 띄우지 않고 검사),
+  `bash scripts/check-webengine.sh run <앱 경로>`(앱을 터미널에서 띄우고 `~/madang-webengine.log`에
+  로그를 남긴다). 앱 자체 검사는 `<앱>/Contents/MacOS/Madang --check-webengine`(창 없음)이다.
 - 서명·공증은 하지 않는다. 아이콘은 흰색 자리표시 아이콘(`desktop/icons/`)이다.
 - Finder로 연 앱은 셸의 PATH를 받지 않는다. `claude`가 `~/.local/bin`처럼 기본 PATH 밖에 있으면
   앱 홈 `config.yaml`의 `runners.claude.bin`에 절대 경로를 적거나, 터미널에서

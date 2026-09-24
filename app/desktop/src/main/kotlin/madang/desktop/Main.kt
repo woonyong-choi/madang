@@ -12,6 +12,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import java.io.File
+import kotlin.system.exitProcess
 import kotlinx.coroutines.delay
 import madang.desktop.fake.ContractExamples
 import madang.desktop.fake.FakeCore
@@ -32,14 +33,32 @@ private val fakeCoreMode = System.getenv("MADANG_FAKE_CORE") == "1"
 
 /** 브라우저 탭·문서 탭 엔진. 번들과 렌더러는 앱 설정 폴더 아래에 둔다. */
 private val browser = KcefBrowserEngine(
-    DesktopPaths.appConfigDir().resolve("kcef-bundle"),
+    WebEngineBundle(DesktopPaths.appConfigDir().resolve("kcef-bundle")),
     DocumentRuntime(DesktopPaths.appConfigDir().resolve("document-runtime"))
 )
 
 /** run 완료·묻는 블록 시스템 알림. */
 private val notifier = TrayNotifier()
 
-fun main() = application {
+/** 이 인자로 띄우면 창 없이 엔진 번들만 검사해 결과를 찍고 끝낸다(0 맞음, 1 맞지 않음). */
+private const val CHECK_WEB_ENGINE = "--check-webengine"
+
+fun main(args: Array<String>) {
+    if (args.firstOrNull() == CHECK_WEB_ENGINE) exitProcess(checkWebEngine())
+    runApp()
+}
+
+/** 엔진 번들을 검사한다. CEF는 띄우지 않는다. 확인 스크립트가 설치된 앱으로 부른다. */
+private fun checkWebEngine(): Int {
+    val bundle = WebEngineBundle(DesktopPaths.appConfigDir().resolve("kcef-bundle"))
+    val check = bundle.check()
+    println("madang: web engine bundle ${bundle.dir.path}")
+    println("madang: expected release ${WebEngineBundle.RELEASE}")
+    println("madang: check ${WebEngineBundle.describe(check)}")
+    return if (check == BundleCheck.Ready) 0 else 1
+}
+
+private fun runApp() = application {
     val icon = remember { windowIcon() }
     val scope = rememberCoroutineScope()
     val app = remember { AppViewModel(dependencies(), scope) }

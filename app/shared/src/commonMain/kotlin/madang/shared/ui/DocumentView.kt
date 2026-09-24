@@ -1,6 +1,8 @@
 package madang.shared.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -72,7 +74,8 @@ fun RenderedDocument(
 /**
  * 문서 탭 본문. 렌더러(`templates/_runtime`)가 WebView 안에서 [document]를 그린다. 게시 사이트와
  * 같은 렌더러라 로컬과 웹의 모양이 같다. 앱 테마의 토큰 다섯 개를 context에 넣고, 문서 안 링크는
- * [onRequest]로 받는다. 엔진이 준비 중이면 진행을, 엔진이 없는 플랫폼이면 원문을 보인다.
+ * [onRequest]로 받는다. 엔진이 준비 중이면 진행을, 엔진이 없는 플랫폼이면 원문을 보인다. 엔진을
+ * 준비하지 못했으면 이유와 "다시 받기" 아래에 원문을 읽기 전용으로 보인다(렌더러를 따로 두지 않는다).
  */
 @Composable
 fun DocumentView(
@@ -95,13 +98,22 @@ fun DocumentView(
             modifier
         )
 
-        BrowserStatus.Unavailable -> Box(
-            modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
-        ) {
-            SourceText(document.markdown)
+        BrowserStatus.Unavailable -> RawDocument(document.markdown, modifier)
+
+        is BrowserStatus.Failed -> Column(modifier) {
+            EngineNotice(status, Modifier.fillMaxWidth())
+            RawDocument(document.markdown, Modifier.weight(1f).fillMaxWidth())
         }
 
         else -> EngineNotice(status, modifier)
+    }
+}
+
+/** 원문 md를 읽기 전용으로. 웹 엔진이 없거나 준비하지 못했을 때 쓴다. */
+@Composable
+private fun RawDocument(markdown: String, modifier: Modifier) {
+    Box(modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+        SourceText(markdown)
     }
 }
 

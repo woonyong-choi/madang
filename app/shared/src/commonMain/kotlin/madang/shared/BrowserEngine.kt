@@ -35,6 +35,9 @@ interface BrowserEngine {
     /** 엔진을 준비한다. 첫 실행이면 번들을 내려받는다. 이미 시작했으면 아무것도 하지 않는다. */
     fun prepare()
 
+    /** 엔진 번들을 지우고 다시 받는다. [status]가 [BrowserStatus.Failed]일 때만 한다. */
+    fun reinstall() = Unit
+
     /**
      * [url]을 보이는 웹 화면. [status]가 [BrowserStatus.Ready]일 때만 부른다. [reload]가 바뀌면
      * 같은 주소를 다시 읽는다.
