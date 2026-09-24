@@ -5,20 +5,18 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
-from madang.cli_agent import ops
-from madang.cli_agent.context import (
-    AgentError,
-    PageContext,
-    PageValidationError,
-    resolve,
-)
-from madang.store import frontmatter, git
+from madang.cli_agent import client
+from madang.cli_agent.artifacts import REPO_PREFIX
+from madang.cli_agent.client import CoreClient
+from madang.cli_agent.context import BY_ENV, AgentError
+from madang.runners.base import PAGE_ENV
 
 PageOption = Annotated[
     str | None,
@@ -70,26 +68,66 @@ view_app = typer.Typer(
 )
 
 
+def _page_id(page: str | None) -> tuple[str, bool]:
+    """페이지 id와, 그것을 ``MADANG_PAGE``에서 얻었는지 여부를 반환한다."""
+    if page is not None:
+        return page, False
+    from_env = os.environ.get(PAGE_ENV)
+    if not from_env:
+        raise AgentError(
+            f"{PAGE_ENV}가 설정돼 있지 않다. 에이전트 실행 밖에서는 "
+            "--page <page-id>를 준다"
+        )
+    return from_env, True
+
+
+def _default_by(from_env: bool) -> str:
+    return "agent" if from_env else "human"
+
+
+def _fail(message: str, code: int = 1) -> typer.Exit:
+    typer.echo(f"오류: {message}", err=True)
+    return typer.Exit(code)
+
+
 def _run(
-    page: str | None, home: Path | None, action: Callable[[PageContext], str]
+    page: str | None,
+    home: Path | None,
+    action: Callable[[CoreClient, bool], str],
 ) -> None:
+    """core에 요청을 보내고 결과 한 줄을 출력한다.
+
+    거절은 종료 코드 1, core에 연결할 수 없으면 2로 끝낸다.
+    """
     try:
-        ctx = resolve(page, home)
-        message = action(ctx)
-    except PageValidationError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        page_id, from_env = _page_id(page)
+        core = CoreClient(client.open_transport(home), page_id)
+        message = action(core, from_env)
+    except AgentError as exc:
+        raise _fail(str(exc)) from exc
+    except client.RejectedError as exc:
+        typer.echo(f"오류: {exc}", err=True)
         for issue in exc.issues:
-            typer.echo(f"  {issue.format()}", err=True)
+            typer.echo(f"  {_issue_line(issue)}", err=True)
         raise typer.Exit(1) from exc
-    except (
-        AgentError,
-        frontmatter.FrontmatterError,
-        git.GitError,
-        OSError,
-    ) as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1) from exc
+    except client.CoreUnreachableError as exc:
+        raise _fail(str(exc), 2) from exc
     typer.echo(message)
+
+
+def _issue_line(issue: dict[str, Any]) -> str:
+    where = issue.get("path") or "-"
+    if issue.get("line") is not None:
+        where = f"{where}:{issue['line']}"
+    return f"{where}: {issue.get('code')} {issue.get('message')}"
+
+
+def _local_path(raw: str) -> str:
+    """현재 폴더에 있는 상대 경로는 절대 경로로 바꿔 core에 보낸다."""
+    if raw.startswith(REPO_PREFIX) or Path(raw).expanduser().is_absolute():
+        return raw
+    candidate = Path.cwd() / raw
+    return str(candidate.resolve()) if candidate.exists() else raw
 
 
 def task(
@@ -111,7 +149,12 @@ def task(
     home: HomeOption = None,
 ) -> None:
     """state.md의 태스크를 추가하거나 갱신한다."""
-    _run(page, home, lambda ctx: ops.set_task(ctx, task_id, status, title, due))
+
+    def act(core: CoreClient, from_env: bool) -> str:
+        done = core.set_task(task_id, status, title, due)
+        return f"태스크 {done['id']}: {done['status']}"
+
+    _run(page, home, act)
 
 
 def decide(
@@ -142,20 +185,23 @@ def decide(
     home: HomeOption = None,
 ) -> None:
     """state.md에 결정을 기록한다."""
-    _run(
-        page,
-        home,
-        lambda ctx: ops.decide(
-            ctx,
-            decision_id,
-            topic=topic,
-            choice=choice,
-            options=options,
-            supersedes=supersedes,
-            state=state,
-            by=by,
-        ),
-    )
+
+    def act(core: CoreClient, from_env: bool) -> str:
+        done = core.decide(
+            {
+                "id": decision_id,
+                "topic": topic,
+                "choice": choice,
+                "options": [o.strip() for o in options.split(",")],
+                "state": state,
+                "by": by or os.environ.get(BY_ENV) or _default_by(from_env),
+                **({"supersedes": supersedes} if supersedes else {}),
+            }
+        )
+        suffix = f" ({supersedes} 대체)" if supersedes else ""
+        return f"결정 {done['id']} 기록: {done['choice']}{suffix}"
+
+    _run(page, home, act)
 
 
 @artifact_app.command("add")
@@ -170,7 +216,12 @@ def artifact_add(
     home: HomeOption = None,
 ) -> None:
     """파일을 페이지의 산출물로 등록한다."""
-    _run(page, home, lambda ctx: ops.add_artifact(ctx, path))
+
+    def act(core: CoreClient, from_env: bool) -> str:
+        artifacts = core.add_artifact(_local_path(path))
+        return f"산출물 등록됨(현재 {len(artifacts)}개): {path}"
+
+    _run(page, home, act)
 
 
 def commit(
@@ -181,12 +232,21 @@ def commit(
     home: HomeOption = None,
 ) -> None:
     """스페이스 코드 저장소의 모든 변경을 커밋한다."""
-    _run(page, home, lambda ctx: ops.commit(ctx, message))
+
+    def act(core: CoreClient, from_env: bool) -> str:
+        return f"커밋했다: {core.commit(message)}"
+
+    _run(page, home, act)
 
 
 def push(page: PageOption = None, home: HomeOption = None) -> None:
     """코드 저장소의 현재 브랜치를 푸시한다(강제 푸시 없음)."""
-    _run(page, home, ops.push)
+
+    def act(core: CoreClient, from_env: bool) -> str:
+        pushed = core.push()
+        return f"푸시했다: {pushed['branch']} -> {pushed['remote']}"
+
+    _run(page, home, act)
 
 
 def promote(
@@ -197,7 +257,14 @@ def promote(
     home: HomeOption = None,
 ) -> None:
     """블록 파일을 코드 저장소의 docs/로 복사하고 커밋한다."""
-    _run(page, home, lambda ctx: ops.promote(ctx, block))
+
+    def act(core: CoreClient, from_env: bool) -> str:
+        done = core.promote(block)
+        if done.get("commit") is None:
+            return f"{done['path']}는 코드 저장소에 이미 최신이다"
+        return f"승격했다: {block} -> {done['path']} ({done['commit']})"
+
+    _run(page, home, act)
 
 
 @view_app.command("create")
@@ -220,7 +287,12 @@ def view_create(
     home: HomeOption = None,
 ) -> None:
     """데이터 블록에 묶인 뷰 블록을 만든다."""
-    _run(page, home, lambda ctx: ops.create_view(ctx, template, data, title))
+
+    def act(core: CoreClient, from_env: bool) -> str:
+        made = core.create_view(template, data, title)
+        return f"뷰 {made['id']} 생성({made['file']})"
+
+    _run(page, home, act)
 
 
 def register(root: typer.Typer) -> None:
@@ -259,7 +331,4 @@ def register(root: typer.Typer) -> None:
                 standalone_mode=False,
             )
         except Exception as exc:  # 알 수 없는 명령
-            typer.echo(
-                f"error: unknown command '{' '.join(command)}'", err=True
-            )
-            raise typer.Exit(1) from exc
+            raise _fail(f"알 수 없는 명령 '{' '.join(command)}'") from exc

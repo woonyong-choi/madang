@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from collections.abc import Iterator
-from contextlib import closing, contextmanager
+from contextlib import AbstractContextManager, closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -104,6 +104,9 @@ def checkpointer(home: Path) -> Iterator[SqliteSaver]:
 class Flow:
     """앱 홈 하나에서 흐름을 시작하고, 재개하고, 취소한다.
 
+    실행 커밋을 하는 동안 ``lock``을 잡는다. core가 자기 잠금을 넘겨
+    앱 편집과 실행 커밋이 git index.lock에서 겹치지 않게 한다.
+
     Attributes:
         cfg: 앱 홈 설정.
     """
@@ -114,9 +117,10 @@ class Flow:
         *,
         runners: RunnerFactory = make_runner,
         on_event: events.EventHook = events.ignore,
+        lock: AbstractContextManager[Any] | None = None,
     ) -> None:
         self.cfg = cfg
-        self._nodes = FlowNodes(cfg, runners, on_event, threading.Event())
+        self._nodes = FlowNodes(cfg, runners, on_event, threading.Event(), lock)
 
     def start(
         self,

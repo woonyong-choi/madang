@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 HOME_ENV = "MADANG_HOME"
 DEFAULT_HOME = "~/.madang"
 CONFIG_DIR = "config"
+# core가 고른 포트를 적어 두는 앱 홈 파일
+PORT_FILE = "core.port"
 CONFIG_FILES = ("madang.yaml", "routes.yaml", "runners.yaml")
 
 

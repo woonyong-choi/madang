@@ -16,7 +16,7 @@ from fastapi import Response
 from madang.api import errors, events, models
 from madang.api.core import Core
 from madang.api.routes import CoreDep, Router
-from madang.cli_agent import ops
+from madang.cli_agent import views
 from madang.cli_agent.context import AgentError, PageContext
 from madang.store import blocks, frontmatter, git, pages, summary, trash
 from madang.store import unknown_files as unknown
@@ -177,17 +177,20 @@ def create_block(
 def _create_view(core: Core, page_dir: Path, body: models.BlockCreate) -> str:
     if not body.template:
         raise errors.invalid("view block needs a template")
-    ctx = PageContext(
-        home=core.home, page_dir=page_dir, from_env=False, cfg=core.config()
-    )
+    ctx = PageContext(home=core.home, page_dir=page_dir, cfg=core.config())
     data = [f"{slot}={b}" for slot, b in (body.bindings or {}).items()]
+    data += body.data or []
     try:
-        ops.create_view(ctx, body.template, data, title=body.name)
-    except AgentError as exc:
+        return views.create_view(
+            ctx,
+            body.template,
+            data,
+            title=body.title,
+            run=core.active_run(page_dir),
+        )
+    except (AgentError, frontmatter.FrontmatterError) as exc:
         issues = getattr(exc, "issues", ())
         raise errors.invalid(str(exc), issues) from exc
-    order = pages.read_header(page_dir / "page.md").get("blocks") or []
-    return str(order[-1])
 
 
 @router.get(

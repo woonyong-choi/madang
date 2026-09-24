@@ -235,6 +235,7 @@ class Flows:
             self._core.config(),
             runners=self._core.make_runner,
             on_event=lambda name, payload: self._relay(page_id, name, payload),
+            lock=self._core.lock,
         )
 
     def _launch(

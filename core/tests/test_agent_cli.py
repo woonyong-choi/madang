@@ -4,14 +4,19 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
+from madang.api.app import create_app
 from madang.cli import app
+from madang.cli_agent import client
 from madang.store import frontmatter, git, pages
 from madang.store.home import init_home
 
 PAGE_ID = "2026-09-24-lock"
+LOCAL = "http://127.0.0.1:7470"
 runner = CliRunner()
+open_http_transport = client.open_transport
 
 
 def sh(cwd: Path, *args: str) -> str:
@@ -28,6 +33,7 @@ class Env:
     home: Path
     page: Path
     repo: Path
+    core: object
 
     def state(self) -> dict:
         return frontmatter.read(self.page / "state.md")[0]
@@ -37,7 +43,7 @@ class Env:
 
 
 @pytest.fixture
-def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Env:
+def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     empty = tmp_path / "gitconfig"
     empty.write_text("")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
@@ -60,7 +66,21 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Env:
     git.commit(home, "fixture")
     monkeypatch.setenv("MADANG_HOME", str(home))
     monkeypatch.setenv("MADANG_PAGE", PAGE_ID)
-    return Env(home=home, page=page, repo=repo)
+    monkeypatch.delenv("MADANG_CORE_URL", raising=False)
+
+    # 명령은 core를 부른다. 앱을 같은 프로세스에서 띄워 그리로 보낸다.
+    api = create_app(home)
+
+    def transport(method: str, path: str, payload):
+        response = http.request(method, path, json=payload)
+        return (
+            response.status_code,
+            response.json() if response.content else None,
+        )
+
+    with TestClient(api, base_url=LOCAL) as http:
+        monkeypatch.setattr(client, "open_transport", lambda _home: transport)
+        yield Env(home=home, page=page, repo=repo, core=api.state.core)
 
 
 def invoke(*args: str):
@@ -96,14 +116,14 @@ def test_refuses_without_page(
         ["promote", "b01"],
         ["view", "create", "--template", "table", "--data", "b01"],
     ):
-        refused(*args, match="MADANG_PAGE is not set")
+        refused(*args, match="MADANG_PAGE가 설정돼 있지 않다")
     ok("task", "T1", "--status", "doing", "--title", "x", "--page", PAGE_ID)
     assert env.state()["tasks"] == [
         {"id": "T1", "title": "x", "status": "doing"}
     ]
 
 
-def test_home_option_and_unknown_page(env: Env, tmp_path: Path) -> None:
+def test_unknown_page(env: Env) -> None:
     refused(
         "task",
         "T1",
@@ -115,33 +135,73 @@ def test_home_option_and_unknown_page(env: Env, tmp_path: Path) -> None:
         "2026-01-01-none",
         match="not found",
     )
-    refused(
-        "task",
-        "T1",
-        "--status",
-        "doing",
-        "--title",
-        "x",
-        "--home",
-        str(tmp_path / "nohome"),
-        match="does not exist",
+
+
+def test_core_address_precedence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "addr"
+    home.mkdir()
+    monkeypatch.delenv("MADANG_CORE_URL", raising=False)
+    assert client.core_url(home) == client.DEFAULT_URL
+    (home / "core.port").write_text("7481\n")
+    assert client.core_url(home) == "http://127.0.0.1:7481"
+    monkeypatch.setenv("MADANG_CORE_URL", "http://127.0.0.1:9000/")
+    assert client.core_url(home) == "http://127.0.0.1:9000"
+
+
+def test_home_option_is_used_to_find_core(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[Path | None] = []
+    open_in_process = client.open_transport
+    monkeypatch.setattr(
+        client,
+        "open_transport",
+        lambda home: seen.append(home) or open_in_process(home),
     )
+    ok("task", "T1", "--status", "doing", "--title", "x")
     ok(
         "task",
-        "T1",
+        "T2",
         "--status",
         "doing",
         "--title",
-        "x",
+        "y",
         "--home",
         str(env.home),
     )
+    assert seen == [None, env.home]
 
 
-def test_app_home_is_not_committed(env: Env) -> None:
+def test_unreachable_core_exits_with_2(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(client, "open_transport", open_http_transport)
+    monkeypatch.setenv("MADANG_CORE_URL", "http://127.0.0.1:1")
+    result = invoke("push")
+    assert result.exit_code == 2, result.output
+    assert "연결할 수 없다" in result.output
+    assert "madang serve" in result.output
+
+
+def test_core_commits_state_changes(env: Env) -> None:
     before = git.log_oneline(env.home)
     ok("task", "T1", "--status", "doing", "--title", "x")
     ok("decide", "D1", "--topic", "t", "--choice", "a", "--options", "a,b")
+    added = git.log_oneline(env.home)[: -len(before)]
+    assert [line.split(" ", 1)[1] for line in added] == [
+        f"[{PAGE_ID}] edit state.md",
+        f"[{PAGE_ID}] edit state.md",
+    ]
+
+
+def test_state_change_waits_for_the_running_flow_to_commit(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(env.core.flows, "busy", lambda page: True)
+    before = git.log_oneline(env.home)
+    ok("task", "T1", "--status", "doing", "--title", "x")
     assert git.log_oneline(env.home) == before
 
 
@@ -167,7 +227,7 @@ def test_task_add_and_update(env: Env) -> None:
 
 def test_task_refusals(env: Env) -> None:
     before = (env.page / "state.md").read_bytes()
-    refused("task", "T9", "--status", "doing", match="pass --title")
+    refused("task", "T9", "--status", "doing", match="title이 필요하다")
     refused(
         "task",
         "T1",
@@ -175,7 +235,7 @@ def test_task_refusals(env: Env) -> None:
         "finished",
         "--title",
         "x",
-        match="is not one of",
+        match="status",
     )
     refused(
         "task",
@@ -186,7 +246,7 @@ def test_task_refusals(env: Env) -> None:
         "x",
         "--due",
         "tomorrow",
-        match="YYYY-MM-DD",
+        match="YYYY-MM-DD 날짜가 아니다",
     )
     refused(
         "task",
@@ -195,7 +255,7 @@ def test_task_refusals(env: Env) -> None:
         "doing",
         "--title",
         "x",
-        match="invalid task id",
+        match="잘못된 태스크 id",
     )
     assert (env.page / "state.md").read_bytes() == before
 
@@ -205,7 +265,7 @@ def test_write_rolled_back_when_page_is_invalid(env: Env) -> None:
     state.write_text(state.read_text().replace("## 다음 할 일", "## 다른 절"))
     before = state.read_bytes()
     result = refused(
-        "task", "T1", "--status", "doing", "--title", "x", match="rolled back"
+        "task", "T1", "--status", "doing", "--title", "x", match="되돌렸다"
     )
     assert "missing-section" in result.output
     assert state.read_bytes() == before
@@ -214,9 +274,12 @@ def test_write_rolled_back_when_page_is_invalid(env: Env) -> None:
 # 결정
 
 
-def test_decide_and_supersede(env: Env) -> None:
+def test_decide_and_supersede(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     (env.page / "runs").mkdir()
     (env.page / "runs" / ".last").write_text("3\n")
+    monkeypatch.setattr(env.core.flows, "busy", lambda page: True)
     ok(
         "decide",
         "D1",
@@ -291,7 +354,7 @@ def test_decide_refusals(env: Env) -> None:
         "c",
         "--options",
         "a,b",
-        match="not in options",
+        match="에 없다",
     )
     refused(
         "decide",
@@ -302,7 +365,7 @@ def test_decide_refusals(env: Env) -> None:
         "a",
         "--options",
         "a,b",
-        match="already exists",
+        match="이미 있다",
     )
     refused(
         "decide",
@@ -315,7 +378,7 @@ def test_decide_refusals(env: Env) -> None:
         "a,b",
         "--supersedes",
         "D9",
-        match="does not exist",
+        match="대체할 결정",
     )
     refused(
         "decide",
@@ -326,7 +389,7 @@ def test_decide_refusals(env: Env) -> None:
         "a",
         "--options",
         ",",
-        match="at least one",
+        match="하나 이상",
     )
     refused(
         "decide",
@@ -339,7 +402,7 @@ def test_decide_refusals(env: Env) -> None:
         "a,b",
         "--state",
         "maybe",
-        match="is not one of",
+        match="state",
     )
     assert (env.page / "state.md").read_bytes() == before
 
@@ -354,8 +417,7 @@ def test_artifact_add(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     ok("artifact", "add", "blocks/b01-race.md")
     ok("artifact", "add", str(env.repo / "src" / "lock.ts"))
     monkeypatch.chdir(env.repo)
-    result = ok("artifact", "add", "src/lock.ts")
-    assert "already registered" in result.output
+    ok("artifact", "add", "src/lock.ts")
     ok("artifact", "add", "repo:README.md")
     assert env.state()["artifacts"] == [
         "blocks/b01-race.md",
@@ -366,14 +428,24 @@ def test_artifact_add(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_artifact_refusals(env: Env, tmp_path: Path) -> None:
     before = (env.page / "state.md").read_bytes()
-    result = refused(
-        "artifact", "add", "blocks/missing.md", match="rolled back"
-    )
+    result = refused("artifact", "add", "blocks/missing.md", match="되돌렸다")
     assert "artifact-missing" in result.output
     refused("artifact", "add", "repo:src/none.ts", match="artifact-missing")
     outside = tmp_path / "elsewhere.txt"
     outside.write_text("x")
-    refused("artifact", "add", str(outside), match="outside the page folder")
+    refused("artifact", "add", str(outside), match="밖에 있다")
+    assert (env.page / "state.md").read_bytes() == before
+
+
+def test_artifact_add_rejects_parent_paths(
+    env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    before = (env.page / "state.md").read_bytes()
+    (env.page.parent / "outside.md").write_text("x\n")
+    refused("artifact", "add", "../outside.md", match="상위 폴더")
+    refused("artifact", "add", "repo:../x", match="상위 폴더")
+    monkeypatch.chdir(env.page)
+    refused("artifact", "add", "../outside.md", match="밖에 있다")
     assert (env.page / "state.md").read_bytes() == before
 
 
@@ -389,11 +461,16 @@ def test_commit(env: Env) -> None:
 
 
 def test_commit_refusals(env: Env) -> None:
-    refused("commit", "-m", "nothing", match="nothing to commit")
+    refused("commit", "-m", "nothing", match="커밋할 변경이 없다")
     (env.repo / "a.txt").write_text("a\n")
-    refused("commit", "-m", "  ", match="message is empty")
+    refused("commit", "-m", "  ", match="메시지가 비어 있다")
     (env.repo / ".env").write_text("TOKEN=x\n")
-    refused("commit", "-m", "leak", match="may hold secrets: .env")
+    refused(
+        "commit",
+        "-m",
+        "leak",
+        match="비밀이 들어 있을 수 있는 파일은 커밋하지 않는다: .env",
+    )
     assert sh(env.repo, "diff", "--cached", "--name-only") == ""
     assert len(sh(env.repo, "log", "--oneline").splitlines()) == 1
 
@@ -403,13 +480,14 @@ def test_commit_refused_without_repo(env: Env) -> None:
     space.write_text(
         space.read_text().replace(f"repo: {env.repo}", "repo: null")
     )
-    refused("commit", "-m", "x", match="no code repository")
-    refused("push", match="no code repository")
-    refused("promote", "b01", match="no code repository")
+    (env.page / "blocks" / "b01-x.md").write_text("x\n")
+    refused("commit", "-m", "x", match="코드 저장소가 없다")
+    refused("push", match="코드 저장소가 없다")
+    refused("promote", "b01", match="코드 저장소가 없다")
     space.write_text(
         space.read_text().replace("repo: null", f"repo: {env.home / 'nothing'}")
     )
-    refused("commit", "-m", "x", match="does not exist")
+    refused("commit", "-m", "x", match="가 없다")
 
 
 # 푸시
@@ -426,13 +504,13 @@ def test_push_current_branch(env: Env, tmp_path: Path) -> None:
     remote = add_remote(env, tmp_path)
     sh(env.repo, "branch", "other")
     result = ok("push")
-    assert "pushed main to origin" in result.output
+    assert "푸시했다: main -> origin" in result.output
     assert sh(remote, "rev-parse", "main") == sh(env.repo, "rev-parse", "main")
     assert "other" not in sh(remote, "branch")
 
 
 def test_push_refusals(env: Env, tmp_path: Path) -> None:
-    refused("push", match="no remote")
+    refused("push", match="리모트가 없다")
     remote = add_remote(env, tmp_path)
     ok("push")
     (env.repo / "a.txt").write_text("a\n")
@@ -444,10 +522,10 @@ def test_push_refusals(env: Env, tmp_path: Path) -> None:
     (env.repo / "b.txt").write_text("b\n")
     sh(env.repo, "add", "b.txt")
     git.commit(env.repo, "b")
-    refused("push", match="push to origin/main failed")
+    refused("push", match="origin/main 푸시에 실패했다")
     assert sh(remote, "rev-parse", "main") == pushed
     sh(env.repo, "checkout", "-q", "--detach")
-    refused("push", match="detached")
+    refused("push", match="분리")
 
 
 # 승격
@@ -464,17 +542,24 @@ def test_promote(env: Env) -> None:
     )
     assert sh(env.repo, "status", "--porcelain") == ""
     assert env.state()["artifacts"] == ["repo:docs/race-analysis.md"]
-    assert "already up to date" in ok("promote", "b01").output
+    assert "이미 최신" in ok("promote", "b01").output
 
 
 def test_promote_refusals(env: Env) -> None:
-    refused("promote", "b01", match="no file")
-    refused("promote", "x1", match="not a block id")
+    refused("promote", "b01", match="has no file")
+    refused("promote", "x1", match="has no file")
     (env.page / "blocks" / "b01-race.md").write_text("new\n")
     (env.repo / "docs").mkdir()
     (env.repo / "docs" / "race.md").write_text("local edit\n")
-    refused("promote", "b01", match="uncommitted changes")
+    refused("promote", "b01", match="커밋하지 않은 변경")
     assert (env.repo / "docs" / "race.md").read_text() == "local edit\n"
+    assert env.state()["artifacts"] == []
+
+
+def test_promote_refuses_sensitive_names(env: Env) -> None:
+    (env.page / "blocks" / "b03-secrets.yaml").write_text("key: x\n")
+    refused("promote", "b03", match="승격하지 않는다: docs/secrets.yaml")
+    assert not (env.repo / "docs").exists()
     assert env.state()["artifacts"] == []
 
 
@@ -482,7 +567,7 @@ def test_promote_rolled_back_when_page_is_invalid(env: Env) -> None:
     (env.page / "blocks" / "b01-race.md").write_text("x\n")
     state = env.page / "state.md"
     state.write_text(state.read_text().replace("## 목표", "## 목적"))
-    refused("promote", "b01", match="rolled back")
+    refused("promote", "b01", match="되돌렸다")
     assert not (env.repo / "docs" / "race.md").exists()
     assert len(sh(env.repo, "log", "--oneline").splitlines()) == 1
 
@@ -490,9 +575,10 @@ def test_promote_rolled_back_when_page_is_invalid(env: Env) -> None:
 # 보기
 
 
-def test_view_create(env: Env) -> None:
+def test_view_create(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     (env.page / "runs").mkdir()
     (env.page / "runs" / ".last").write_text("2\n")
+    monkeypatch.setattr(env.core.flows, "busy", lambda page: True)
     (env.page / "blocks" / "b01-cv.json").write_text("{}")
     (env.page / "blocks" / "b02-extra.json").write_text("{}")
     pages.append_block(env.page, "b01")
@@ -506,7 +592,7 @@ def test_view_create(env: Env) -> None:
         "--data",
         "b01",
     )
-    assert "created view b03" in result.output
+    assert "뷰 b03 생성" in result.output
     header, _ = frontmatter.read(env.page / "blocks" / "b03-resume.view.md")
     assert header == {
         "type": "view",
@@ -514,6 +600,7 @@ def test_view_create(env: Env) -> None:
         "bindings": {"base": "b01", "overlay": "b02"},
         "created_by": "run 2",
     }
+    assert env.state()["artifacts"] == ["blocks/b03-resume.view.md"]
     assert env.page_header()["blocks"] == ["b01", "b03"]
     ok("view", "create", "--template", "table@1", "--data", "b01")
     assert env.page_header()["blocks"] == ["b01", "b03", "b04"]
@@ -546,7 +633,7 @@ def test_view_refusals(env: Env) -> None:
         "nope",
         "--data",
         "b01",
-        match="not found",
+        match="이 없다",
     )
     refused(
         "view",
@@ -555,7 +642,7 @@ def test_view_refusals(env: Env) -> None:
         "table@3",
         "--data",
         "b01",
-        match="version 1",
+        match="버전 1",
     )
     refused(
         "view",
@@ -564,7 +651,7 @@ def test_view_refusals(env: Env) -> None:
         "table",
         "--data",
         "b09",
-        match="not found in blocks/",
+        match="blocks/에 없다",
     )
     refused(
         "view",
@@ -573,7 +660,7 @@ def test_view_refusals(env: Env) -> None:
         "table",
         "--data",
         "b02",
-        match="not found in blocks/",
+        match="blocks/에 없다",
     )
     refused(
         "view",
@@ -582,7 +669,7 @@ def test_view_refusals(env: Env) -> None:
         "table",
         "--data",
         "x=b01",
-        match="no slot 'x'",
+        match="슬롯 'x'이 없다",
     )
     refused(
         "view",
@@ -593,7 +680,7 @@ def test_view_refusals(env: Env) -> None:
         "b01",
         "--data",
         "b01",
-        match="too many",
+        match="너무 많다",
     )
     refused(
         "view",
@@ -602,7 +689,7 @@ def test_view_refusals(env: Env) -> None:
         "resume",
         "--data",
         "overlay=b01",
-        match="required slot",
+        match="필수 슬롯",
     )
     assert sorted(p.name for p in (env.page / "blocks").iterdir()) == before
 
@@ -621,7 +708,7 @@ def test_view_rolled_back_when_page_is_invalid(env: Env) -> None:
         "table",
         "--data",
         "b01",
-        match="rolled back",
+        match="되돌렸다",
     )
     assert page_md.read_bytes() == before
     assert not list((env.page / "blocks").glob("*.view.md"))
@@ -645,7 +732,7 @@ def test_help() -> None:
         assert f"madang {name}" in result.output
     assert "--supersedes" in ok("help", "decide").output
     assert "--template" in ok("help", "view", "create").output
-    refused("help", "nope", match="unknown command")
+    refused("help", "nope", match="알 수 없는 명령")
 
 
 def test_malformed_state_is_reported(env: Env) -> None:

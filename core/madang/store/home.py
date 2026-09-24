@@ -30,7 +30,7 @@ _FILES: dict[str, str] = {
 _DIRS = (f"spaces/{ROOT_SPACE}/pages", "templates")
 _KEEP = ".gitkeep"
 # core가 실행 중에 두는 파일. 아직 초기화 전인 폴더에 있어도 된다.
-RUNTIME_FILES = ("core.port", "core.db")
+RUNTIME_FILES = (config.PORT_FILE, "core.db")
 
 
 class NotAHomeError(ValueError):

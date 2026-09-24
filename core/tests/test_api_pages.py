@@ -326,6 +326,38 @@ def test_block_lifecycle(client, home, page, contract) -> None:
     assert clean(home)
 
 
+def test_view_title_comes_from_title_field(
+    client, home, page, contract
+) -> None:
+    contract.check(
+        client.post(
+            f"/pages/{page}/blocks",
+            json={"type": "data", "name": "base", "content": '{"a": 1}'},
+        ),
+        201,
+    )
+    body = {
+        "type": "view",
+        "template": "resume@1",
+        "bindings": {"base": "b01"},
+    }
+    titled = contract.check(
+        client.post(
+            f"/pages/{page}/blocks",
+            json={**body, "name": "n1", "title": "이력서"},
+        ),
+        201,
+    )
+    named = contract.check(
+        client.post(f"/pages/{page}/blocks", json={**body, "name": "n2"}), 201
+    )
+    folder = page_dir(home, page)
+    titled_head, _ = frontmatter.read(folder / titled["file"])
+    named_head, _ = frontmatter.read(folder / named["file"])
+    assert titled_head["title"] == "이력서"
+    assert "title" not in named_head
+
+
 def test_message_blocks_are_read_only(
     client,
     home,

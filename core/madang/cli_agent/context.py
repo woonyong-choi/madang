@@ -1,18 +1,14 @@
-"""명령이 작용할 페이지와, 검증까지 하는 보호된 쓰기."""
+"""변경이 작용할 페이지와, 검증까지 하는 보호된 쓰기."""
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from madang import config
-from madang.runners.base import PAGE_ENV
-from madang.store import runs
 from madang.store.page import space_repo
-from madang.store.pages import PageNotFoundError, find_page
 from madang.validate import Issue, validate_target
 
 BY_ENV = "MADANG_BY"
@@ -30,51 +26,28 @@ class PageValidationError(AgentError):
     """
 
     def __init__(self, issues: list[Issue]) -> None:
-        super().__init__("page validation failed; changes were rolled back")
+        super().__init__("페이지 검증에 실패해 변경을 되돌렸다")
         self.issues = issues
 
 
 @dataclass
 class PageContext:
-    """에이전트 명령이 작용하는 페이지.
+    """변경이 작용하는 페이지.
 
     Attributes:
         home: 앱 홈 디렉터리.
         page_dir: 페이지 폴더.
-        from_env: 페이지를 ``MADANG_PAGE``에서 얻었는지 여부.
         cfg: 로드된 앱 홈 설정.
     """
 
     home: Path
     page_dir: Path
-    from_env: bool
     cfg: config.Config
 
     @property
     def page_id(self) -> str:
         """페이지 id. 페이지 폴더 이름이다."""
         return self.page_dir.name
-
-    @property
-    def run(self) -> int | None:
-        """에이전트 실행에서 호출된 경우 진행 중인 실행."""
-        return runs.current(self.page_dir) if self.from_env else None
-
-    def by(self, explicit: str | None = None) -> str:
-        """결정을 내린 사람을 반환한다.
-
-        Args:
-            explicit: ``--by``로 받은 값. 있으면.
-
-        Returns:
-            ``explicit``, 없으면 ``MADANG_BY``, 그것도 없으면 에이전트 실행
-            안에서는 ``agent``, 밖에서는 ``human``.
-        """
-        return (
-            explicit
-            or os.environ.get(BY_ENV)
-            or ("agent" if self.from_env else "human")
-        )
 
     def repo(self) -> Path | None:
         """스페이스의 코드 저장소를 반환한다. 없으면 None."""
@@ -87,42 +60,6 @@ class PageContext:
             token_limit=self.cfg.madang.limits.state_tokens,
             kinds=self.cfg.routes.kinds,
         )
-
-
-def resolve(page: str | None, home: Path | None) -> PageContext:
-    """``--page`` 또는 ``MADANG_PAGE``로 페이지를 찾는다.
-
-    Args:
-        page: ``--page``로 받은 페이지 id. 있으면.
-        home: ``--home``으로 받은 앱 홈. 있으면.
-
-    Returns:
-        페이지의 컨텍스트.
-
-    Raises:
-        AgentError: ``--page``와 ``MADANG_PAGE``가 모두 없거나, 앱 홈이나
-            페이지가 없거나, 설정을 로드할 수 없다.
-    """
-    from_env = page is None
-    page_id = page if page is not None else os.environ.get(PAGE_ENV)
-    if not page_id:
-        raise AgentError(
-            f"{PAGE_ENV} is not set; outside an agent run pass --page <page-id>"
-        )
-    root = config.resolve_home(home)
-    if not root.is_dir():
-        raise AgentError(
-            f"app home {root} does not exist; run 'madang init' first"
-        )
-    try:
-        page_dir = find_page(root, page_id)
-    except PageNotFoundError as exc:
-        raise AgentError(str(exc)) from exc
-    try:
-        cfg = config.load_config(root)
-    except Exception as exc:
-        raise AgentError(f"cannot load config: {exc}") from exc
-    return PageContext(home=root, page_dir=page_dir, from_env=from_env, cfg=cfg)
 
 
 @dataclass

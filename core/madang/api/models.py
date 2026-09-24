@@ -270,6 +270,8 @@ class BlockCreate(_Body):
     format: Literal["json", "csv"] | None = None
     template: str | None = None
     bindings: dict[str, str] | None = None
+    data: list[str] | None = None
+    title: str | None = None
 
 
 class PromoteResult(_Out):
@@ -470,6 +472,8 @@ class DecisionCreate(_Body):
     choice: str
     options: list[str]
     supersedes: str | None = None
+    state: DecisionState | None = None
+    by: str | None = None
 
 
 class ArtifactAdd(_Body):

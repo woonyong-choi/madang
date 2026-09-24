@@ -7,32 +7,26 @@ state.md를 고친 뒤에는 페이지를 검사하고, 실패하면 되돌린 �
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 from madang.api import errors, events, models
 from madang.api.core import Core
 from madang.api.routes import CoreDep, Router
-from madang.cli_agent import ops
+from madang.cli_agent import artifacts, decisions, promote, tasks
 from madang.cli_agent import repo as coderepo
 from madang.cli_agent.context import AgentError, PageContext
-from madang.store import pages, spaces
+from madang.store import frontmatter, pages, spaces
 from madang.store.page import STATE_FILE
 
 router = Router(tags=["agent"])
 
-_PROMOTED = re.compile(r"^promoted \S+ to (?P<path>\S+) \((?P<sha>\w+)\)$")
-_UP_TO_DATE = re.compile(r"^(?P<path>\S+) is already up to date")
-
 
 def _context(core: Core, page_dir: Path) -> PageContext:
-    return PageContext(
-        home=core.home, page_dir=page_dir, from_env=False, cfg=core.config()
-    )
+    return PageContext(home=core.home, page_dir=page_dir, cfg=core.config())
 
 
-def _rejected(exc: AgentError) -> Exception:
+def _rejected(exc: Exception) -> Exception:
     issues = getattr(exc, "issues", None)
     if issues:
         return errors.invalid(str(exc), issues)
@@ -55,14 +49,14 @@ def set_task(page: str, body: models.TaskUpdate, core: CoreDep) -> models.Task:
     page_dir = core.page_dir(page)
     with core.lock:
         try:
-            ops.set_task(
+            tasks.set_task(
                 _context(core, page_dir),
                 body.id,
                 body.status,
                 title=body.title,
                 due=body.due,
             )
-        except AgentError as exc:
+        except (AgentError, frontmatter.FrontmatterError) as exc:
             raise _rejected(exc) from exc
         _state_changed(core, page_dir)
     task = next(
@@ -87,15 +81,18 @@ def record_decision(
     page_dir = core.page_dir(page)
     with core.lock:
         try:
-            ops.decide(
+            decisions.decide(
                 _context(core, page_dir),
                 body.id,
                 topic=body.topic,
                 choice=body.choice,
-                options=",".join(body.options),
+                options=body.options,
+                by=body.by or "human",
+                run=core.active_run(page_dir),
                 supersedes=body.supersedes,
+                state=body.state or "confirmed",
             )
-        except AgentError as exc:
+        except (AgentError, frontmatter.FrontmatterError) as exc:
             raise _rejected(exc) from exc
         _state_changed(core, page_dir)
     decision = next(
@@ -114,8 +111,8 @@ def add_artifact(
     page_dir = core.page_dir(page)
     with core.lock:
         try:
-            ops.add_artifact(_context(core, page_dir), body.path, cwd=page_dir)
-        except AgentError as exc:
+            artifacts.add_artifact(_context(core, page_dir), body.path)
+        except (AgentError, frontmatter.FrontmatterError) as exc:
             raise _rejected(exc) from exc
         _state_changed(core, page_dir)
     return [str(a) for a in _state_list(page_dir, "artifacts")]
@@ -133,7 +130,7 @@ def _space_page(core: Core, slug: str) -> PageContext:
         raise errors.not_found(str(exc)) from exc
     # 저장소는 space.md만 보므로 공간 안의 가상 페이지 경로로 충분하다.
     probe = space / pages.PAGES_DIR / "_"
-    return PageContext(home=core.home, page_dir=probe, from_env=False, cfg=cfg)
+    return PageContext(home=core.home, page_dir=probe, cfg=cfg)
 
 
 def _require_repo(ctx: PageContext) -> Path:
@@ -181,17 +178,8 @@ def promote_block(page: str, block: str, core: CoreDep) -> models.PromoteResult:
     _require_repo(ctx)
     with core.lock:
         try:
-            said = ops.promote(ctx, block)
+            promoted = promote.promote(ctx, block)
         except AgentError as exc:
             raise errors.conflict(str(exc)) from exc
         _state_changed(core, page_dir)
-    return models.PromoteResult.model_validate(_promoted(said))
-
-
-def _promoted(said: str) -> dict[str, Any]:
-    """``ops.promote``의 요약 줄에서 경로와 커밋을 읽는다."""
-    if match := _PROMOTED.match(said):
-        return {"path": f"repo:{match['path']}", "commit": match["sha"]}
-    if match := _UP_TO_DATE.match(said):
-        return {"path": f"repo:{match['path']}", "commit": None}
-    raise errors.conflict(f"unexpected promote result: {said}")
+    return models.PromoteResult(path=promoted.path, commit=promoted.commit)

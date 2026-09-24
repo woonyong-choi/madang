@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from madang.cli_agent.ops import BUILTIN_TEMPLATES, TEMPLATES_ENV
+from madang.cli_agent.views import BUILTIN_TEMPLATES, TEMPLATES_ENV
 
 TEMPLATES_DIR = "templates"
 TEMPLATE_FILE = "template.yaml"

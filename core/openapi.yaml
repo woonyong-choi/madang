@@ -1737,8 +1737,8 @@ components:
     BlockCreate:
       type: object
       description: >-
-        `doc`과 `data`는 `content`를, `view`는 `template`과 `bindings`를
-        받는다.
+        `doc`과 `data`는 `content`를, `view`는 `template`과 `bindings`나
+        `data`를 받는다.
       required: [type, name]
       properties:
         type:
@@ -1760,6 +1760,16 @@ components:
           type: object
           additionalProperties:
             type: string
+        data:
+          type: array
+          items:
+            type: string
+          description: >-
+            `view`의 데이터 블록. `bNN`은 비어 있는 슬롯에 순서대로,
+            `slot=bNN`은 그 슬롯에 묶는다. `bindings`와 함께 쓸 수 있다.
+        title:
+          type: string
+          description: "`view`의 제목."
       examples:
         - type: view
           name: resume
@@ -2274,6 +2284,13 @@ components:
             type: string
         supersedes:
           type: string
+        state:
+          type: string
+          enum: [proposed, confirmed, superseded, deferred]
+          description: 기본값 confirmed.
+        by:
+          type: string
+          description: 결정한 사람. 기본값 human.
       examples:
         - id: D1
           topic: 지원처별 차이를 담는 방법

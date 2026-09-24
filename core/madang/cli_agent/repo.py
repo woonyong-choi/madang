@@ -47,13 +47,13 @@ def require_repo(ctx: PageContext) -> Path:
     repo = ctx.repo()
     if repo is None:
         raise AgentError(
-            "this page's space has no code repository (set repo in space.md)"
+            "스페이스에 코드 저장소가 없다(space.md에 repo를 지정한다)"
         )
     if not repo.is_dir():
-        raise AgentError(f"code repository {repo} does not exist")
+        raise AgentError(f"코드 저장소 {repo}가 없다")
     proc = git.run(repo, "rev-parse", "--is-inside-work-tree", check=False)
     if proc.returncode != 0 or proc.stdout.strip() != "true":
-        raise AgentError(f"{repo} is not a git repository")
+        raise AgentError(f"{repo}는 git 저장소가 아니다")
     return repo
 
 
@@ -67,27 +67,6 @@ def sensitive(paths: list[str]) -> list[str]:
             for pat in SENSITIVE_NAMES
         )
     ]
-
-
-def _changed_paths(repo: Path) -> list[str]:
-    out = git.run(
-        repo, "status", "--porcelain", "-z", "--untracked-files=all"
-    ).stdout
-    paths: list[str] = []
-    entries = iter(out.split("\0"))
-    for entry in entries:
-        if not entry:
-            continue
-        status, path = entry[:2], entry[3:]
-        paths.append(path)
-        if "R" in status or "C" in status:
-            next(entries, None)  # 이름 변경이나 복사의 원래 이름
-    return paths
-
-
-def head(repo: Path) -> str:
-    """HEAD의 짧은 해시를 반환한다."""
-    return git.run(repo, "rev-parse", "--short", "HEAD").stdout.strip()
 
 
 def commit_all(repo: Path, message: str) -> str:
@@ -105,24 +84,24 @@ def commit_all(repo: Path, message: str) -> str:
             민감해 보이거나, git이 실패했다.
     """
     if not message.strip():
-        raise AgentError("commit message is empty")
-    changed = _changed_paths(repo)
+        raise AgentError("커밋 메시지가 비어 있다")
+    changed = list(git.status(repo))
     if not changed:
-        raise AgentError("nothing to commit in the code repository")
+        raise AgentError("코드 저장소에 커밋할 변경이 없다")
     blocked = sensitive(changed)
     if blocked:
         raise AgentError(
-            "refusing to commit files that may hold secrets: "
+            "비밀이 들어 있을 수 있는 파일은 커밋하지 않는다: "
             + ", ".join(blocked)
         )
     try:
         git.run(repo, "add", "-A")
         if not git.has_staged_changes(repo):
-            raise AgentError("nothing to commit in the code repository")
+            raise AgentError("코드 저장소에 커밋할 변경이 없다")
         git.commit(repo, message)
     except git.GitError as exc:
         raise AgentError(str(exc)) from exc
-    return head(repo)
+    return git.head(repo)
 
 
 def commit_paths(repo: Path, paths: list[str], message: str) -> str | None:
@@ -152,7 +131,7 @@ def commit_paths(repo: Path, paths: list[str], message: str) -> str | None:
     except git.GitError as exc:
         git.run(repo, "reset", "-q", "--", *paths, check=False)
         raise AgentError(str(exc)) from exc
-    return head(repo)
+    return git.head(repo)
 
 
 def push_current(repo: Path) -> tuple[str, str]:
@@ -172,23 +151,21 @@ def push_current(repo: Path) -> tuple[str, str]:
     )
     branch = proc.stdout.strip()
     if proc.returncode != 0 or not branch:
-        raise AgentError("HEAD is detached; check out a branch before pushing")
+        raise AgentError("HEAD가 분리돼 있다. 브랜치를 체크아웃한 뒤 푸시한다")
     remote = git.run(
         repo, "config", f"branch.{branch}.remote", check=False
     ).stdout.strip()
     remotes = git.run(repo, "remote").stdout.split()
     if not remote or remote == ".":
         if "origin" not in remotes:
-            raise AgentError("the code repository has no remote to push to")
+            raise AgentError("코드 저장소에 푸시할 리모트가 없다")
         remote = "origin"
     elif remote not in remotes:
-        raise AgentError(
-            f"remote '{remote}' of branch '{branch}' does not exist"
-        )
+        raise AgentError(f"브랜치 '{branch}'의 리모트 '{remote}'가 없다")
     ref = f"refs/heads/{branch}"
     proc = git.run(repo, "push", remote, f"{ref}:{ref}", check=False)
     if proc.returncode != 0:
         raise AgentError(
-            f"push to {remote}/{branch} failed: {proc.stderr.strip()}"
+            f"{remote}/{branch} 푸시에 실패했다: {proc.stderr.strip()}"
         )
     return remote, branch

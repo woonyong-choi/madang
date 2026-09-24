@@ -17,7 +17,7 @@ from typing import Any
 import yaml
 
 from madang import contract
-from madang.cli_agent.ops import BUILTIN_TEMPLATES
+from madang.cli_agent.views import BUILTIN_TEMPLATES
 from madang.config import Config, default_text
 from madang.store import frontmatter, pages
 from madang.store.page import SPACE_FILE, STATE_FILE, space_dir, work_dir

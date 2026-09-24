@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from madang import cli
 from madang.config import load_config
-from madang.graph import Flow, build_graph, resume
+from madang.graph import Flow, build_graph, resume, steps
 from madang.graph.nodes import FlowNodes
 from madang.runners.base import RunEvent, RunResult, Usage
 from madang.store import frontmatter, pages
@@ -187,6 +187,37 @@ def test_done_after_opposite_review(home: Path, page: Path) -> None:
     progress = next(p for n, p in seen if n == "run.progress")
     assert progress["n"] == 1 and progress["event"]["type"] == "text"
     assert "flow.waiting" not in names
+
+
+class CountingLock:
+    """들어와 있는 동안 ``held``가 참인 잠금."""
+
+    held = False
+
+    def __enter__(self) -> None:
+        self.held = True
+
+    def __exit__(self, *exc) -> None:
+        self.held = False
+
+
+def test_run_commit_holds_the_injected_lock(
+    home: Path, page: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = CountingLock()
+    commit_run = steps.commit_run
+    held_during_commit: list[bool] = []
+
+    def spy(*args, **kwargs):
+        held_during_commit.append(lock.held)
+        return commit_run(*args, **kwargs)
+
+    monkeypatch.setattr(steps, "commit_run", spy)
+    script = Script(set_status("review"), set_status("review"))
+    Flow(load_config(home), runners=script.runner, lock=lock).start(
+        page.name, "로그인 화면 만들어줘"
+    )
+    assert held_during_commit and all(held_during_commit)
 
 
 def test_blocked_promotes_then_done(home: Path, page: Path) -> None:

@@ -17,10 +17,8 @@ from madang.api import errors, events
 from madang.api.availability import Availability, Probe, probe_cli
 from madang.graph.nodes import RunnerFactory
 from madang.runners import make_runner
-from madang.store import blocks, git, pages, summary
+from madang.store import blocks, git, pages, runs, summary
 from madang.store.home import is_initialized
-
-PORT_FILE = "core.port"
 
 
 class Core:
@@ -133,6 +131,12 @@ class Core:
             return None
         return self.commit([page_dir], f"[{page_dir.name}] {message}")
 
+    def active_run(self, page_dir: Path) -> int | None:
+        """이 페이지에서 돌고 있는 실행 번호. 흐름이 없으면 None."""
+        if not self.flows.busy(page_dir.name):
+            return None
+        return runs.current(page_dir)
+
     # 이벤트
 
     def announce_page(self, page_dir: Path, kind: str) -> None:
@@ -207,11 +211,13 @@ class Core:
         if self.port is None:
             return
         self.home.mkdir(parents=True, exist_ok=True)
-        (self.home / PORT_FILE).write_text(f"{self.port}\n", encoding="utf-8")
+        (self.home / config.PORT_FILE).write_text(
+            f"{self.port}\n", encoding="utf-8"
+        )
 
     def remove_port(self) -> None:
         """이 core가 쓴 ``core.port``를 지운다(다른 포트면 그대로 둔다)."""
-        path = self.home / PORT_FILE
+        path = self.home / config.PORT_FILE
         if self.port is None or not path.is_file():
             return
         if path.read_text(encoding="utf-8").strip() == str(self.port):

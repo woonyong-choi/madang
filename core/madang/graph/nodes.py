@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +72,8 @@ class FlowNodes:
         on_event: 이벤트를 받는 콜백.
         cancelled: 설정되면 다음 실행을 시작하지 않고 진행 중인 실행을
             멈춘다.
+        lock: 실행 커밋을 하는 동안 잡는 잠금. 앱 홈에 쓰는 다른 작업과
+            git index.lock이 겹치지 않게 한다.
     """
 
     def __init__(
@@ -79,8 +82,10 @@ class FlowNodes:
         make_runner: RunnerFactory,
         on_event: events.EventHook,
         cancelled: threading.Event,
+        lock: AbstractContextManager[Any] | None = None,
     ) -> None:
         self.cfg = cfg
+        self.lock = lock or nullcontext()
         self.make_runner = make_runner
         self.on_event = on_event
         self.cancelled = cancelled
@@ -231,7 +236,8 @@ class FlowNodes:
             changed.append(page_dir / STATE_FILE)
         if changed:
             files = [p.relative_to(page_dir).as_posix() for p in changed]
-            steps.commit_run(page_dir, self.cfg.home, record, sorted(files))
+            with self.lock:
+                steps.commit_run(page_dir, self.cfg.home, record, sorted(files))
         return {"result_status": "done"}
 
     def ask_human(self, state: FlowState) -> Command:
@@ -410,7 +416,8 @@ class FlowNodes:
                 "files": record.unknown_files,
             }
             self.on_event(events.PAGE_UNKNOWN_FILES, payload)
-        steps.commit_run(page_dir, self.cfg.home, record)
+        with self.lock:
+            steps.commit_run(page_dir, self.cfg.home, record)
         return issues
 
     # 라우팅 표
