@@ -14,7 +14,7 @@ import subprocess
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -229,10 +229,13 @@ class CliRunner:
         model: str,
         effort: str,
         page: str | None = None,
+        records: Path | None = None,
+        extra_args: Sequence[str] = (),
     ) -> list[str]:
         """실행 한 번의 명령줄을 만든다.
 
-        인자가 프롬프트 위치를 정하지 않으면 ``--`` 뒤에 프롬프트를 붙인다.
+        ``extra_args``는 설정 인자 뒤에 붙인다. 인자가 프롬프트 위치를 정하지
+        않으면 그 뒤에 ``--``와 프롬프트를 붙인다.
 
         Args:
             cwd: 실행의 작업 디렉터리.
@@ -240,6 +243,8 @@ class CliRunner:
             model: 모델 이름.
             effort: 추론 강도.
             page: 페이지 id. 실행이 페이지에 속하는 경우.
+            records: 페이지가 속한 프로젝트의 기록 폴더(``{records}``).
+            extra_args: 정책이 더하는 인자(예: 금지 명령).
 
         Returns:
             명령과 그 인자.
@@ -253,10 +258,11 @@ class CliRunner:
             "home": str(self.home),
             "cwd": str(cwd),
             "page": page,
+            "records": None if records is None else str(records),
             "prompt": prompt,
         }
         uses_prompt = any("{prompt}" in arg for arg in self.spec.args)
-        args = render_args(self.spec.args, values)
+        args = [*render_args(self.spec.args, values), *extra_args]
         if not uses_prompt:
             # "--"는 "-"로 시작하는 프롬프트가 옵션으로 읽히지 않게 한다.
             args += ["--", prompt]
@@ -290,6 +296,8 @@ class CliRunner:
         effort: str,
         on_event: Callable[[RunEvent], None],
         page: str | None = None,
+        records: Path | None = None,
+        extra_args: Sequence[str] = (),
         timeout: float | None = None,
         events_log: Path | None = None,
     ) -> RunResult:
@@ -302,6 +310,8 @@ class CliRunner:
             effort: 추론 강도.
             on_event: 이벤트가 도착할 때마다 호출된다.
             page: 페이지 id. 실행이 페이지에 속하는 경우.
+            records: 페이지가 속한 프로젝트의 기록 폴더(``{records}``).
+            extra_args: 정책이 더하는 인자(예: 금지 명령).
             timeout: 프로세스 그룹 전체를 중지하고 실행을
                 ``blocked``로 끝내기까지의 초.
             events_log: 원본 스트림을 줄 단위로 덧붙일 파일.
@@ -313,7 +323,13 @@ class CliRunner:
             ValueError: 인자 자리표시자를 모르거나 값이 없다.
         """
         cmd = self.command(
-            cwd=cwd, prompt=prompt, model=model, effort=effort, page=page
+            cwd=cwd,
+            prompt=prompt,
+            model=model,
+            effort=effort,
+            page=page,
+            records=records,
+            extra_args=extra_args,
         )
         parser = self.new_parser()
         events: list[RunEvent] = []

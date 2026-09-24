@@ -126,6 +126,8 @@ def test_routes_document_is_validated(client, home, contract) -> None:
         "kinds: [build]\ndefault_kind: build\n"
         "tiers: {build: [{runner: gemini, model: x}]}\n": "invalid-value",
         "kinds: nope\ndefault_kind: build\ntiers: {}\n": "invalid-value",
+        "kinds: [build]\ndefault_kind: build\ntiers: {}\n"
+        "page_kinds: {chat: talk}\n": "invalid-value",
     }
     for text, code in cases.items():
         response = client.put("/config/routes", json={"text": text})

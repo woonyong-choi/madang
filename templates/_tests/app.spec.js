@@ -261,26 +261,37 @@ async function differingRatio(page, a, b) {
 
 test.describe('shared shell', () => {
   test('app host and published shell look the same', async ({page}) => {
+    // 앱은 기본 테마의 토큰을, 게시는 tokens.json을 넘긴다. 둘은 같은 값이다.
+    const tokens = readJson(path.join(TEMPLATES, '_runtime', 'tokens.json'));
+    const context = {tokens: tokens};
     const markdown = '# 제목\n\n본문 **문장**이다.\n\n- 하나\n- 둘\n';
-    await openApp(page, {markdown, context: {}});
+    await openApp(page, {markdown, context});
+    await expect(page.locator('html')).toHaveCSS(
+        'background-color', 'rgb(254, 247, 255)');
     const app = await page.screenshot({fullPage: true});
 
     const site = fs.mkdtempSync(path.join(os.tmpdir(), 'madang-shell-'));
-    const runtime = path.join(site, '_madang', 'runtime');
-    fs.mkdirSync(path.dirname(runtime), {recursive: true});
-    fs.symlinkSync(path.join(TEMPLATES, '_runtime'), runtime);
-    const shell = fs.readFileSync(SHELL, 'utf8')
-        .replace(/\$\{title\}/g, '문서')
-        .replace(/\$\{base\}/g, '')
-        .replace('${markdown}', () => JSON.stringify(markdown))
-        .replace('${context}', () => '{}');
-    fs.writeFileSync(path.join(site, 'index.html'), shell);
-    await page.goto(pathToFileURL(path.join(site, 'index.html')).href);
-    await expect(page.locator('#madang-page .madang-document')).toBeVisible();
-    const published = await page.screenshot({fullPage: true});
+    try {
+      const runtime = path.join(site, '_madang', 'runtime');
+      fs.mkdirSync(path.dirname(runtime), {recursive: true});
+      fs.symlinkSync(path.join(TEMPLATES, '_runtime'), runtime);
+      const shell = fs.readFileSync(SHELL, 'utf8')
+          .replace(/\$\{title\}/g, '문서')
+          .replace(/\$\{base\}/g, '')
+          .replace('${markdown}', () => JSON.stringify(markdown))
+          .replace('${context}', () => JSON.stringify(context));
+      fs.writeFileSync(path.join(site, 'index.html'), shell);
+      await page.goto(pathToFileURL(path.join(site, 'index.html')).href);
+      await expect(page.locator('#madang-page .madang-document'))
+          .toBeVisible();
+      await expect(page.locator('html')).toHaveCSS(
+          'background-color', 'rgb(254, 247, 255)');
+      const published = await page.screenshot({fullPage: true});
 
-    const ratio = await differingRatio(page, app, published);
-    expect(ratio).toBeLessThanOrEqual(0.001);
-    fs.rmSync(site, {recursive: true, force: true});
+      const ratio = await differingRatio(page, app, published);
+      expect(ratio).toBeLessThanOrEqual(0.001);
+    } finally {
+      fs.rmSync(site, {recursive: true, force: true});
+    }
   });
 });

@@ -71,6 +71,15 @@ def _check_references(
                 lines.key("default_kind"),
             )
         )
+    for page_kind, kind in routes.page_kinds.items():
+        if kind is not None and kind not in routes.kinds:
+            issues.append(
+                _issue(
+                    "invalid-value",
+                    f"page_kinds.{page_kind} '{kind}' is not in kinds",
+                    lines.key("page_kinds", page_kind),
+                )
+            )
     for kind, tiers in routes.tiers.items():
         if kind not in routes.kinds:
             issues.append(

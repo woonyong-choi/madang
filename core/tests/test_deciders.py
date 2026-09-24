@@ -47,6 +47,38 @@ def test_default_kind_when_nothing_matches(routes: RoutesConfig) -> None:
     assert decision.confidence == routes.decider.min_confidence
 
 
+def test_page_kind_picks_default_work_kind(routes: RoutesConfig) -> None:
+    decider = RulesDecider(routes)
+    text = "대화를 이어 가자"
+    for page_kind, expected in (
+        ("chat", "explore"),
+        ("code", "build"),
+        ("doc", "build"),
+        ("unknown", "build"),
+        (None, "build"),
+    ):
+        question = Question("choice", text, page_kind=page_kind)
+        assert decider.decide(question).choice == expected
+
+
+def test_page_kind_does_not_beat_keywords(routes: RoutesConfig) -> None:
+    question = Question("choice", "오타 고쳐줘", page_kind="chat")
+    assert RulesDecider(routes).decide(question).choice == "small"
+
+
+def test_page_kinds_list_has_no_default_work_kind() -> None:
+    routes = RoutesConfig.model_validate(
+        {
+            "kinds": ["build", "explore"],
+            "page_kinds": ["doc", "chat"],
+            "default_kind": "build",
+        }
+    )
+    assert routes.page_kinds == {"doc": None, "chat": None}
+    assert routes.default_for("chat") == "build"
+    assert routes.accepted_kinds == ["build", "explore", "doc", "chat"]
+
+
 def test_tie_falls_below_confidence(routes: RoutesConfig) -> None:
     question = ask("구조를 검토해줘")
     decision = RulesDecider(routes).decide(question)

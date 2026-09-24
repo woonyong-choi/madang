@@ -9,25 +9,10 @@
   'use strict';
 
   const SCHEME = 'madang-app://';
-  const TOKEN_NAMES = ['bg', 'text', 'accent', 'font', 'radius'];
-  const SAFE_TOKEN = /^[^;{}<>\\]*$/;
   // 문서 안 이동(#제목)은 브라우저에 맡긴다.
   const IN_PAGE = /^#/;
 
   let blockCount = 0;
-
-  // 문서 바탕도 뷰어 iframe과 같은 앱 토큰을 따른다.
-  function applyTokens(tokens) {
-    const style = root.document.documentElement.style;
-    TOKEN_NAMES.forEach((name) => {
-      const value = tokens && tokens[name];
-      if (typeof value === 'string' && SAFE_TOKEN.test(value)) {
-        style.setProperty('--app-' + name, value);
-      } else {
-        style.removeProperty('--app-' + name);
-      }
-    });
-  }
 
   // 문서 옆 파일(상대 경로 이미지)이 문서 폴더에서 풀리게 한다.
   function applyBase(base) {
@@ -55,7 +40,6 @@
    */
   function render(payload) {
     const context = payload.context || {};
-    applyTokens(context.tokens);
     applyBase(payload.base);
     const scroller = root.document.scrollingElement;
     const top = scroller.scrollTop;

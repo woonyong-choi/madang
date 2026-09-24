@@ -58,8 +58,14 @@ def test_default_commands_come_from_runners_yaml(tmp_path: Path) -> None:
     codex = make_runner("codex", config)
     assert isinstance(claude, ClaudeRunner) and isinstance(codex, CodexRunner)
 
+    records = tmp_path / "proj" / ".madang"
     cmd = claude.command(
-        cwd=tmp_path, prompt="-hi", model="claude-haiku-4-5", effort="low"
+        cwd=tmp_path,
+        prompt="-hi",
+        model="claude-haiku-4-5",
+        effort="low",
+        records=records,
+        extra_args=["--disallowedTools", "Bash(git reset --hard)"],
     )
     assert cmd == [
         "claude",
@@ -67,10 +73,21 @@ def test_default_commands_come_from_runners_yaml(tmp_path: Path) -> None:
         "--output-format",
         "stream-json",
         "--verbose",
+        "--permission-mode",
+        "acceptEdits",
+        "--add-dir",
+        str(records),
+        "--allowedTools",
+        "Bash(madang *)",
+        "--disallowedTools",
+        "Bash(git *)",
+        "Bash(gh *)",
         "--model",
         "claude-haiku-4-5",
         "--effort",
         "low",
+        "--disallowedTools",
+        "Bash(git reset --hard)",
         "--",
         "-hi",
     ]

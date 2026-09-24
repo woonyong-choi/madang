@@ -17,7 +17,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+)
 
 HOME_ENV = "MADANG_HOME"
 DEFAULT_HOME = "~/.madang"
@@ -140,13 +146,15 @@ class RoutesConfig(_Model):
     """``config.yaml`` ``routes`` 절의 라우팅 표.
 
     ``kinds``는 요청을 나누는 작업 종류(판정기와 tiers가 쓴다),
-    ``page_kinds``는 페이지가 무엇인지(문서·코드·대화)를 뜻한다. 페이지
-    머리부의 ``kind``는 둘 다 받는다.
+    ``page_kinds``는 페이지 종류(문서·코드·대화) -> 그 페이지의 기본 작업
+    종류다. 값이 없으면 ``default_kind``를 쓴다. 페이지 머리부의 ``kind``는
+    작업 종류와 페이지 종류를 다 받는다.
     """
 
     kinds: list[str]
-    page_kinds: list[str] = Field(
-        default_factory=lambda: ["doc", "code", "chat"]
+    # 절에 키가 없는 설정은 기본 페이지 종류를 받는다.
+    page_kinds: dict[str, str | None] = Field(
+        default_factory=lambda: {"doc": None, "code": None, "chat": None}
     )
     default_kind: str
     prefix_override: bool = True
@@ -155,6 +163,14 @@ class RoutesConfig(_Model):
     limits: RouteLimits = Field(default_factory=RouteLimits)
     decider: DeciderSettings = Field(default_factory=DeciderSettings)
 
+    @field_validator("page_kinds", mode="before")
+    @classmethod
+    def _page_kind_list(cls, value: Any) -> Any:
+        """목록으로 적은 페이지 종류는 기본 작업 종류 없이 받는다."""
+        if isinstance(value, list):
+            return dict.fromkeys(value)
+        return value
+
     @property
     def accepted_kinds(self) -> list[str]:
         """페이지 머리부의 ``kind``로 받아들이는 값: 작업 종류와 페이지 종류."""
@@ -162,6 +178,18 @@ class RoutesConfig(_Model):
             *self.kinds,
             *(k for k in self.page_kinds if k not in self.kinds),
         ]
+
+    def default_for(self, page_kind: str | None) -> str:
+        """규칙이 맞지 않을 때 쓸 작업 종류.
+
+        Args:
+            page_kind: 페이지 머리부의 ``kind``. 없을 수 있다.
+
+        Returns:
+            ``page_kinds``에 적힌 그 페이지 종류의 기본 작업 종류. 없으면
+            ``default_kind``.
+        """
+        return self.page_kinds.get(page_kind or "") or self.default_kind
 
 
 # 러너(runners 절)
@@ -219,6 +247,12 @@ def default_text(name: str) -> str:
 def default_data() -> dict[str, Any]:
     """번들된 기본 ``config.yaml``을 읽은 값을 반환한다."""
     return yaml.safe_load(default_text(CONFIG_FILE)) or {}
+
+
+@lru_cache(maxsize=1)
+def default_routes() -> RoutesConfig:
+    """번들된 기본 ``config.yaml``의 라우팅 표를 반환한다."""
+    return RoutesConfig.model_validate(default_data()[ROUTES_KEY])
 
 
 def load_config(home: str | os.PathLike[str] | None = None) -> Config:

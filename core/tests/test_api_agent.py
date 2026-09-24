@@ -136,6 +136,7 @@ def test_page_kinds_are_accepted_by_default(client, project_root) -> None:
         )
         assert created.status_code == 201, created.text
         assert created.json()["kind"] == kind
+        assert created.json()["busy"] is False
 
 
 def test_agent_commit_goes_to_page_worktree(

@@ -13,9 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from madang import recorder
-from madang.config import Config
+from madang.config import Config, ConfigError
+from madang.policy import Policy
 from madang.runners.base import CliRunner, RunEvent, RunResult
 from madang.store import runs
+from madang.store.page import project_root, records_dir
 
 
 @dataclass
@@ -66,7 +68,9 @@ def run_page(
 ) -> RecordedRun:
     """다음 실행 번호를 할당해 실행하고 실행 기록을 쓴다.
 
-    페이지 id(폴더 이름)는 ``MADANG_PAGE``로 에이전트에 전달한다.
+    페이지 id(폴더 이름)는 ``MADANG_PAGE``로 에이전트에 전달한다. 러너
+    인자의 ``{records}``는 프로젝트 기록 폴더이고, 프로젝트 정책의 금지
+    명령은 러너 인자로 더한다.
 
     Args:
         runner: 사용할 러너.
@@ -94,6 +98,8 @@ def run_page(
         effort=effort,
         on_event=on_event,
         page=page_dir.name,
+        records=records_dir(page_dir),
+        extra_args=deny_args(runner.name, page_dir),
         timeout=timeout_seconds(config, kind),
         events_log=runs.events_path(page_dir, n),
     )
@@ -121,6 +127,26 @@ def run_page(
     )
     path = recorder.save_run(page_dir, record)
     return RecordedRun(n=n, result=result, record=record, path=path)
+
+
+def deny_args(runner: str, page_dir: Path) -> list[str]:
+    """페이지가 속한 프로젝트 정책의 ``deny``를 막는 러너 인자.
+
+    프로젝트 설정을 읽지 못하면 기본 금지 목록으로 막는다.
+
+    Args:
+        runner: 러너 이름.
+        page_dir: 페이지 폴더.
+
+    Returns:
+        명령줄에 더할 인자. 러너가 금지 규칙을 받지 못하면 빈 목록.
+    """
+    root = project_root(page_dir)
+    try:
+        policy = Policy() if root is None else Policy.load(root)
+    except (OSError, ConfigError):
+        policy = Policy()
+    return policy.runner_args(runner)
 
 
 def _relative(path: str, page_dir: Path, cwd: Path) -> str:

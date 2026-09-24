@@ -903,3 +903,4 @@ class PageDetail(_Out):
     runs: list[RunRecord]
     unknown_files: list[UnknownFile]
     waiting: FlowWaitingData | None = None
+    busy: bool = False

@@ -109,12 +109,20 @@ class FlowNodes:
     # 노드
 
     def classify(self, state: FlowState, config: RunnableConfig) -> Command:
-        """요청 종류를 정한다. 블록 대상이면 고정, 아니면 결정기에 묻는다."""
+        """요청 종류를 정한다.
+
+        블록 대상이면 고정, 아니면 메시지 본문과 페이지 종류(page.md
+        ``kind``)로 결정기에 묻는다.
+        """
         kind = target_kind(state["target"])
         if kind is None:
-            text = steps.message_text(self._page_dir(state), state["message"])
+            page_dir = self._page_dir(state)
+            text = steps.message_text(page_dir, state["message"])
             kinds = list(self.cfg.routes.kinds)
-            decision = self.chain.decide(Question("choice", text, kinds))
+            question = Question(
+                "choice", text, kinds, page_kind=pages.page_kind(page_dir)
+            )
+            decision = self.chain.decide(question)
             if decision is None:
                 return self._wait(state, config, WAIT_KIND, kinds)
             kind = str(decision.choice)

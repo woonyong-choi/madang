@@ -6,6 +6,7 @@ WebView와 게시가 함께 쓰는 런타임.
 |---|---|
 | `document.js` | 문서 렌더러. 마크다운(머리부·표·코드)과 view 펜스를 HTML로 그린다 |
 | `document.css` | 렌더 결과의 기본 모양. 앱 토큰(`--app-*`)을 따른다 |
+| `tokens.json` | 기본 앱 토큰. 앱 기본 테마(Material 3 기본 밝은 색)와 같은 값이며 게시가 `context.tokens`로 싣는다 |
 | `app.html`·`app.js` | 앱 문서 탭(WebView)의 호스트. 앱이 넘긴 문서를 `document.js`로 그리고 링크를 앱 요청으로 바꾼다 |
 | `madang.js` | 템플릿 런타임(바인딩, 선택, 편집, 브리지). `renderMarkdown`·`renderDocument`는 `document.js`를 쓴다 |
 | `vendor/marked.umd.js` | 마크다운 해석기(MIT). 고지는 `THIRD_PARTY_NOTICES.md` |
@@ -80,6 +81,12 @@ context = {
 };
 ```
 
+`mountDocument(target, markdown, context)`는 `context.tokens`를 문서의 html 요소에도 `--app-*`로 둔다.
+주지 않았거나 안전하지 않은 토큰은 지워 `document.css`의 대체값이 쓰인다.
+
+앱 문서 탭은 앱 테마의 토큰을, 게시는 `tokens.json`의 기본 토큰을 넘긴다. 앱 기본 테마를 쓰면 두 값이 같아
+로컬과 웹이 같은 색·글꼴·모서리로 그려진다. 앱 기본 테마가 바뀌면 `tokens.json`도 같이 바꾼다.
+
 - `ok`: `sandbox="allow-scripts"`만 있는 iframe(`srcdoc`)에 뷰어를 넣는다. 부모 문서에 접근할 수 없다.
 - `data=`가 있으면 상태와 상관없이 그 파일로 가는 "데이터" 링크(`a.madang-view-data`)를 붙인다.
 - `invalid`·`broken`·`missing`(항목 없음 포함): iframe을 만들지 않고, 이유와 어긋난 경로 목록, 데이터 표를 보여 준다.
@@ -109,7 +116,7 @@ madangApp.render({
 });
 ```
 
-- 토큰 5개는 문서 바탕(`:root`)에도 걸어 앱 테마와 같은 색으로 보인다.
+- 토큰 5개는 `mountDocument`가 문서 바탕(`:root`)에도 걸어 앱 테마와 같은 색으로 보인다.
 - 링크를 누르면 탐색 대신 `madang-app://<type>?<필드>`로 앱에 알린다. 앱은 그 탐색을 막고 탭을 연다.
   `open?href=`(일반 링크·"데이터" 링크), `block?id=&href=`(블록 "열기"), `run?n=`(실행 "열기").
   `#…` 문서 안 이동은 그대로 둔다. "열기"가 있는 블록은 더블클릭해도 그 링크와 같다.

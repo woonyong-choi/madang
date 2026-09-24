@@ -224,10 +224,17 @@ def preview_input(
     chosen = {"block": target, "elements": elements or [], "mode": mode}
     kind = target_kind(chosen)
     if kind is None:
+        page_kind = pages.page_kind(page_dir)
         decision = build_chain(cfg.routes).decide(
-            Question("choice", text, list(cfg.routes.kinds))
+            Question(
+                "choice", text, list(cfg.routes.kinds), page_kind=page_kind
+            )
         )
-        kind = str(decision.choice) if decision else cfg.routes.default_kind
+        kind = (
+            str(decision.choice)
+            if decision
+            else cfg.routes.default_for(page_kind)
+        )
     tiers = cfg.routes.tiers.get(kind)
     if not tiers:
         raise errors.invalid(f"routes has no tiers for kind '{kind}'")

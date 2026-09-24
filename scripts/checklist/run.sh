@@ -5,9 +5,12 @@
 # 사용자 폴더는 건드리지 않고 원격을 쓰지 않는다.
 #
 # 사용: bash scripts/checklist/run.sh
+# 앱 홈 설정은 madang init이 만든 기본 config.yaml 그대로 쓴다(러너 인자·routes를
+# 덧대지 않는다). 바꾸는 것은 라우팅 단계의 모델뿐이다.
+#
 # 환경: CHECKLIST_REPORT  보고서 경로 (기본: 작업 폴더/checklist.md)
 #       CHECKLIST_WORK    작업 폴더 (기본: 새 임시 폴더)
-#       CHECKLIST_MODEL   claude 모델 (기본: claude-sonnet-5)
+#       CHECKLIST_MODEL   라우팅 단계마다 쓸 claude 모델 (기본: claude-sonnet-5)
 # 종료 코드: 모든 항목 PASS면 0, FAIL이 있으면 1, 중간에 멈추면 그 밖의 값.
 
 set -euo pipefail

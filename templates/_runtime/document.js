@@ -555,8 +555,23 @@
     });
   }
 
+  // 문서 바탕도 뷰어 iframe과 같은 앱 토큰을 따른다. 주지 않았거나 안전하지
+  // 않은 토큰은 지워 document.css의 대체값이 쓰이게 한다.
+  function applyTokens(element, tokens) {
+    TOKEN_NAMES.forEach((name) => {
+      const value = tokens && tokens[name];
+      if (typeof value === 'string' && SAFE_TOKEN.test(value)) {
+        element.style.setProperty('--app-' + name, value);
+      } else {
+        element.style.removeProperty('--app-' + name);
+      }
+    });
+  }
+
   /**
    * renderDocument() 결과를 요소에 넣고 뷰어 iframe 높이를 맞춘다.
+   * `context.tokens`는 문서의 html 요소에도 `--app-*`로 둔다. 앱 문서 탭과
+   * 게시 페이지가 이 함수를 같이 쓰므로 같은 토큰이면 같은 모양이다.
    *
    * @param {!Element} target 문서를 넣을 요소. 기존 내용은 지운다.
    * @param {string} markdown 마크다운 원문.
@@ -565,6 +580,8 @@
    */
   function mountDocument(target, markdown, context) {
     const result = renderDocument(markdown, context);
+    applyTokens(target.ownerDocument.documentElement,
+        context && context.tokens);
     target.innerHTML = result.html;
     listenForResize(target.ownerDocument.defaultView);
     return result;

@@ -165,6 +165,34 @@ def test_runner_gets_fresh_session_inputs(home: Path, page: Path) -> None:
     assert record(page, 2)["trigger"]["message"] == "b03"
 
 
+def test_runner_gets_records_and_project_deny(home: Path, page: Path) -> None:
+    root = page.parents[2]
+    (root / ".madang" / "config.yaml").write_text(
+        'policy:\n  deny: ["push --force"]\n', encoding="utf-8"
+    )
+    runner = FakeRunner()
+    run(page, home, runner)
+    call = runner.calls[0]
+    assert call["records"] == (root / ".madang").resolve()
+    assert call["extra_args"] == [
+        "--disallowedTools",
+        "Bash(git push --force)",
+        "Bash(git push --force *)",
+    ]
+
+
+def test_broken_project_config_keeps_default_deny(
+    home: Path, page: Path
+) -> None:
+    root = page.parents[2]
+    (root / ".madang" / "config.yaml").write_text("policy: [", "utf-8")
+    runner = FakeRunner()
+    run(page, home, runner)
+    denied = runner.calls[0]["extra_args"]
+    for rule in config.DEFAULT_DENY:
+        assert f"Bash(git {rule})" in denied
+
+
 def test_target_and_promoted_tier(home: Path, page: Path) -> None:
     (page / "blocks/b02-cv.md").write_text("CV-BODY\n")
     state = page / "ledger.md"

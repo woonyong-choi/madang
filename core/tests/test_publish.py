@@ -240,6 +240,10 @@ def test_build_site_embeds_markdown_context_and_pinned_viewer(
     assert entry["data"] == {"title": "목록", "items": [1, 2]}
     assert entry["html"] == VIEWER_HTML
     assert views["none/here"]["status"] == "missing"
+    tokens = json.loads((RENDERER.parent / "tokens.json").read_text())
+    assert set(tokens) == {"bg", "text", "accent", "font", "radius"}
+    for page in (guide, out / "index.html"):
+        assert page_json(page, "madang-context")["tokens"] == tokens
 
     manifest = json.loads((out / SITE_MANIFEST).read_text())
     assert manifest["viewers"] == [{"name": "demo/list", "pin": pin}]

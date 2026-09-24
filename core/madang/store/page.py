@@ -110,6 +110,22 @@ def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:
     return path, data
 
 
+def records_dir(page_dir: Path) -> Path:
+    """페이지가 속한 프로젝트의 기록 폴더(``<project>/.madang``).
+
+    코드 페이지는 워크트리에서 돌지만 페이지 파일은 메인 체크아웃의 이
+    폴더에 있으므로, 러너가 작업 폴더 밖인 이 폴더에 쓸 수 있어야 한다.
+
+    Args:
+        page_dir: 페이지 폴더.
+
+    Returns:
+        기록 폴더. 프로젝트 밖의 페이지면 페이지 폴더.
+    """
+    root = project_root(page_dir)
+    return page_dir if root is None else root / MADANG_DIR
+
+
 def worktree_path(root: Path, page_id: str) -> Path:
     """페이지 워크트리 폴더 ``<프로젝트>.wt/<page-id>/``를 반환한다."""
     return root.parent / f"{root.name}{WORKTREES_SUFFIX}" / page_id

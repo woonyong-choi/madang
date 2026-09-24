@@ -31,9 +31,10 @@ PROFILE_LAYER, BRIEF_LAYER, LEDGER_LAYER = LAYERS
 
 
 def page_detail(core: Core, page_dir: Path) -> models.PageDetail:
-    """페이지 상세(미등록 파일과 기다리는 결정 포함)를 반환한다."""
+    """페이지 상세(미등록 파일, 흐름 진행 여부, 기다리는 결정 포함)."""
     detail = summary.page_detail(page_dir, core.project_of(page_dir).id)
     detail["unknown_files"] = unknown.list_unknown(page_dir)
+    detail["busy"] = core.flows.busy(page_dir.name)
     waiting = core.flows.waiting(page_dir)
     if waiting is not None:
         detail["waiting"] = waiting

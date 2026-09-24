@@ -365,6 +365,16 @@ def test_explore_ends_after_answer(home: Path, page: Path) -> None:
     assert len(script.calls) == 1
 
 
+def test_chat_page_defaults_to_its_work_kind(home: Path) -> None:
+    pages_dir = projects.get(home, "work").pages_dir
+    chat = pages.create_page(pages_dir, "잡담", slug="chat", kind="chat")
+    script = Script(lambda page_dir: None)
+    result = flow(home, script).start(chat.name, "오늘 할 만한 것")
+
+    assert result.state["kind"] == "explore"
+    assert len(script.calls) == 1
+
+
 def test_cancel_before_run_skips_runner(home: Path, page: Path) -> None:
     script = Script()
     runner = Flow(load_config(home), runners=script.runner)

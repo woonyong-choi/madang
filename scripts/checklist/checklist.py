@@ -1,7 +1,9 @@
 """한 동작 체크리스트: 샘플 세 프로젝트로 core API와 실제 claude를 돌린다.
 
 샘플(``samples/``)을 임시 폴더에 복사해 임시 앱 홈(``MADANG_HOME``)에
-등록하고, ``madang serve``를 띄워 API로만 다음을 확인한다.
+등록하고, ``madang serve``를 띄워 API로만 다음을 확인한다. 앱 홈 설정은
+``madang init``이 만든 기본 config.yaml 그대로이며, 라우팅 단계의 모델만
+체크리스트 모델로 바꾼다. 러너 인자·종류·규칙·한도는 덧대지 않는다.
 
 1. 위키 노트에 요청 → 폴더 대상 게시 HTML에 새 내용.
 2. 코드 프로젝트에 버그 수정 요청 → 선언된 테스트 통과 → 자동 머지 →
@@ -46,8 +48,6 @@ from madang import git
 from madang.viewers import Registry, document_context
 
 PASS, FAIL, NOT_RUN = "PASS", "FAIL", "NOT RUN"
-# 흐름이 돌고 있는지 묻는 탐침. 없는 묻는 블록에 답하면 돌고 있을 때만 409다.
-PROBE_BLOCK = "checklist-probe"
 FLOW_POLL_SECONDS = 5.0
 CORE_START_SECONDS = 60.0
 # 문서 영역 스크린샷에서 다른 픽셀 비율의 상한.
@@ -285,8 +285,7 @@ def prepare(run: Run) -> None:
         shutil.copytree(run.repo / "samples" / name, root)
         core.call("POST", "/projects", {"path": str(root), "id": name})
         run.roots[name] = root
-    code_page_probe(run)
-    configure_flow(run)
+    configure_model(run)
     core.call("POST", "/projects/code/git/init")
     core.call("POST", "/projects/code/git/stage", {})
     core.call("POST", "/projects/code/git/commit", {"message": "init sample"})
@@ -302,56 +301,22 @@ def prepare(run: Run) -> None:
     core.call("POST", "/viewers", {"source": str(viewer), "follow": "live"})
 
 
-def code_page_probe(run: Run) -> None:
-    """기본 설정으로 ``kind: code`` 페이지를 만들 수 있는지 남긴다."""
-    status, body = run.core.call(
-        "POST",
-        "/projects/code/pages",
-        {"title": "probe", "kind": "code"},
-        expect=(201, 400),
-    )
-    if status == 400:
-        run.notes.append(
-            "기본 config.yaml(routes.kinds에 code 없음)으로는 API가 "
-            f"kind=code 페이지를 거부한다: {body.get('message', body)}. "
-            "체크리스트는 routes.kinds에 code·doc를 더해 진행했다."
-        )
-    else:
-        run.core.call("DELETE", f"/pages/{body['id']}")
+def configure_model(run: Run) -> None:
+    """기본 routes 절에서 단계마다 모델만 체크리스트 모델로 바꾼다.
 
-
-def configure_flow(run: Run) -> None:
-    """라우팅을 claude 한 모델로, 러너 권한을 임시 폴더로 좁힌다."""
-    text = run.core.get("/config")["text"]
-    data = yaml.safe_load(text)
-    tier = {"runner": "claude", "model": run.model}
-    data["routes"] = {
-        "kinds": ["build", "review", "code", "doc"],
-        "default_kind": "build",
-        "rules": {},
-        "tiers": {
-            "build": [{**tier, "effort": "medium"}],
-            "review": [{**tier, "effort": "low"}],
-        },
-        "limits": {"max_runs_per_message": 4, "blocked_after_failures": 2},
-        "decider": {"chain": ["rules"], "min_confidence": 0.7},
-    }
-    claude = data["runners"]["claude"]
-    claude["args"] = [
-        *claude["args"],
-        "--permission-mode",
-        "acceptEdits",
-        "--add-dir",
-        str(run.work / "projects"),
-        "--disallowedTools",
-        "Bash(git:*)",
-        "--allowedTools",
-        "Bash(python3:*)",
-        "Bash(madang:*)",
-    ]
-    data["runners"] = {"claude": claude}
-    body = yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
-    run.core.call("PUT", "/config", {"text": body})
+    체크리스트는 claude만 쓰므로 모델을 바꾼 단계의 러너도 claude다. 종류,
+    규칙, 페이지 종류, 한도, 러너 인자는 기본값 그대로 둔다. 모델이
+    비어 있으면 routes 절도 그대로 둔다.
+    """
+    if not run.model:
+        return
+    routes = yaml.safe_load(run.core.get("/config/routes")["text"])
+    for kind, tiers in routes["tiers"].items():
+        routes["tiers"][kind] = [
+            {**tier, "runner": "claude", "model": run.model} for tier in tiers
+        ]
+    body = yaml.safe_dump(routes, allow_unicode=True, sort_keys=False)
+    run.core.call("PUT", "/config/routes", {"text": body})
 
 
 def project_config(
@@ -384,22 +349,11 @@ def send(run: Run, page: str, text: str, timeout: float) -> dict[str, Any]:
     """요청을 보내고 흐름이 끝나거나 멈출 때까지 기다린 뒤 페이지를 준다."""
     run.core.call("POST", f"/pages/{page}/messages", {"text": text})
     deadline = time.monotonic() + timeout
-    while busy(run.core, page):
+    while (detail := run.core.get(f"/pages/{page}"))["busy"]:
         if time.monotonic() > deadline:
             raise TimeoutError(f"flow on {page} still running after {timeout}s")
         time.sleep(FLOW_POLL_SECONDS)
-    return run.core.get(f"/pages/{page}")
-
-
-def busy(core: Core, page: str) -> bool:
-    """페이지에서 흐름이 돌고 있으면 참."""
-    status, _ = core.call(
-        "POST",
-        f"/pages/{page}/asks/{PROBE_BLOCK}/answer",
-        {"choice": "stop"},
-        expect=(404, 409),
-    )
-    return status == 409
+    return detail
 
 
 def ledger_header(core: Core, page: str) -> dict[str, Any]:
@@ -555,9 +509,7 @@ def check_resume(run: Run, item: Item, timeout: float) -> None:
     if full["ratio"] > PIXEL_RATIO_LIMIT:
         run.notes.append(
             "창 전체 스크린샷은 다르다(다른 픽셀 비율 "
-            f"{full['ratio']:.4%}, 크기 {full['sizes']}). 앱 호스트 app.html의 "
-            "body padding(16px 24px 32px)과 게시 껍데기 shell.html의 "
-            "body padding(24px)이 달라 문서 위치가 어긋난다."
+            f"{full['ratio']:.4%}, 크기 {full['sizes']})."
         )
     item.judge(
         {
@@ -587,7 +539,7 @@ def capture(
     """앱이 문서 탭에 넘길 값을 만들고 Node 캡처로 두 화면을 비교한다.
 
     view 펜스 context는 core ``document_context``(앱과 같은 규칙)로 만들고,
-    앱 테마 토큰은 게시와 같게 넣지 않는다.
+    앱 테마 토큰은 앱 기본 테마 값(``tokens.json``)을 앱처럼 더한다.
     """
     markdown = (root / "docs" / "resume.md").read_text()
     context = document_context(
@@ -596,6 +548,8 @@ def capture(
         document_dir=root / "docs",
         project=root,
     )
+    runtime = run.repo / "templates" / "_runtime"
+    context["tokens"] = json.loads((runtime / "tokens.json").read_text())
     payload = {
         "markdown": markdown,
         "context": context,
@@ -610,7 +564,7 @@ def capture(
         "node",
         str(here / "capture.mjs"),
         "--app",
-        str(run.repo / "templates" / "_runtime" / "app.html"),
+        str(runtime / "app.html"),
         "--payload",
         str(payload_path),
         "--site",

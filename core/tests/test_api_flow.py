@@ -4,7 +4,7 @@ import threading
 from contextlib import contextmanager
 from urllib.parse import quote
 
-from api_support import WS, page_dir, set_status
+from api_support import PROJECT, WS, page_dir, set_status
 
 from madang.store import pages
 
@@ -137,6 +137,7 @@ def test_busy_page_and_cancel(
     with listening(client) as events:
         client.post(f"/pages/{page}/messages", json={"text": "구현해줘"})
         assert running.wait(WAIT)
+        assert contract.check(client.get(f"/pages/{page}"), 200)["busy"]
         busy = client.post(f"/pages/{page}/messages", json={"text": "또"})
         assert contract.check(busy, 409)["error"] == "busy"
         contract.check(client.delete(f"/pages/{page}"), 409)
@@ -145,6 +146,8 @@ def test_busy_page_and_cancel(
         release.set()
         join(client, page)
         contract.check(client.post(f"/pages/{page}/runs/1/cancel"), 409)
+        detail = contract.check(client.get(f"/pages/{page}"), 200)
+        assert detail["busy"] is False
 
     failed = [e for e in events if e["type"] == "run.failed"]
     assert failed and failed[0]["data"]["result_status"] == "cancelled"
@@ -224,6 +227,22 @@ def test_preview_input(client, home, project_root, page, contract) -> None:
     contract.check(client.get(url, params={"target": "b09"}), 404)
     # 미리보기는 아무것도 쓰지 않는다
     assert files(project_root) == before
+
+
+def test_page_kind_is_a_routing_input(client, contract) -> None:
+    chat = contract.check(
+        client.post(
+            f"/projects/{PROJECT}/pages", json={"title": "잡담", "kind": "chat"}
+        ),
+        201,
+    )
+    url = f"/pages/{chat['id']}/preview-input"
+    plain = contract.check(client.get(url, params={"text": "안녕"}), 200)
+    assert plain["kind"] == "explore"
+    forced = contract.check(
+        client.get(url, params={"text": "build: 만들어줘"}), 200
+    )
+    assert forced["kind"] == "build"
 
 
 def test_unknown_files_are_reported_and_resolved(

@@ -16,12 +16,15 @@ class Question:
         prompt: 판단할 텍스트. 요청 종류라면 메시지 본문.
         options: ``choice``의 선택지.
         state: 관련 상태 텍스트. 짧게.
+        page_kind: 요청을 받은 페이지의 종류(page.md ``kind``). 규칙이 맞지
+            않을 때 기본 작업 종류를 고르는 데 쓴다.
     """
 
     kind: Literal["choice", "yesno", "score"]
     prompt: str
     options: list[str] | None = None
     state: str = ""
+    page_kind: str | None = None
 
 
 @dataclass

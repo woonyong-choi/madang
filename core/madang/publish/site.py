@@ -3,7 +3,8 @@
 사이트 모양::
 
     <문서>.html         껍데기. md 원문과 렌더러 context(JSON)를 싣고
-                        브라우저에서 renderDocument로 그린다.
+                        브라우저에서 renderDocument로 그린다. context에는
+                        앱 기본 테마와 같은 토큰(``tokens.json``)이 든다.
     <포함한 파일>        그대로 복사(md 원문, 이미지, 데이터 등).
     index.html          포함한 문서에 index.md가 없으면 문서 목록.
     .nojekyll           GitHub Pages가 ``_madang/``을 그대로 내보내게 한다.
@@ -40,6 +41,8 @@ SITE_DIR = "_madang"
 SITE_MANIFEST = f"{SITE_DIR}/site.json"
 RUNTIME_DIR = "_runtime"
 RENDERER = "document.js"
+# 기본 앱 토큰. 앱 기본 테마와 같은 값이라 게시도 이것을 context에 싣는다.
+TOKENS_FILE = "tokens.json"
 # 사이트에 싣는 렌더러 파일(``templates/_runtime`` 기준)
 RUNTIME_FILES = (
     RENDERER,
@@ -108,6 +111,28 @@ def find_runtime() -> Path:
     )
 
 
+def read_tokens(runtime: Path) -> dict[str, Any]:
+    """렌더러 폴더의 기본 앱 토큰을 ``{"tokens": {...}}``로 읽는다.
+
+    앱 문서 탭이 기본 테마로 넘기는 토큰과 같은 값이라, 게시 페이지도
+    이것을 넣어야 로컬과 웹이 같은 모양이 된다.
+
+    Raises:
+        PublishError: 토큰 파일이 없거나 JSON 객체가 아니다
+            (``runtime-missing``).
+    """
+    path = runtime / TOKENS_FILE
+    try:
+        tokens = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PublishError(
+            "runtime-missing", f"cannot read {path}: {exc}"
+        ) from exc
+    if not isinstance(tokens, dict):
+        raise PublishError("runtime-missing", f"{path} must be a JSON object")
+    return {"tokens": tokens}
+
+
 def collect(root: Path, include: list[str], exclude: list[Path]) -> list[str]:
     """포함 경로에서 게시할 파일을 모은다.
 
@@ -174,6 +199,7 @@ def build(
             파일이 나온다(``path-conflict``).
     """
     runtime = find_runtime()
+    tokens = read_tokens(runtime)
     files = collect(root, include, exclude or [])
     site = Site(out)
     copies: dict[tuple[str, str], PinnedCopy] = {}
@@ -191,12 +217,12 @@ def build(
             document_dir=(root / rel).parent,
             project=root,
         )
-        _write_page(out, document, markdown, views.context)
+        _write_page(out, document, markdown, {**views.context, **tokens})
         site.documents.append(document)
         site.warnings += [f"{rel}: {w}" for w in views.warnings]
         copies.update({(c.name, c.pin): c for c in views.copies})
     if INDEX_PAGE not in outputs:
-        _write_index(out, root.name, site.documents)
+        _write_index(out, root.name, site.documents, tokens)
     for copy in copies.values():
         _copy_viewer(copy, out)
     site.viewers = [ViewerPin(name=n, pin=p) for n, p in sorted(copies)]
@@ -269,12 +295,15 @@ def _write_page(
     path.write_text(text, encoding="utf-8")
 
 
-def _write_index(out: Path, title: str, documents: list[Document]) -> None:
+def _write_index(
+    out: Path, title: str, documents: list[Document], tokens: dict[str, Any]
+) -> None:
     """문서 목록을 마크다운으로 만들어 같은 렌더러로 그리는 첫 페이지."""
     lines = [f"# {_link_text(title)}", ""]
     lines += [f"- [{_link_text(d.title)}]({quote(d.page)})" for d in documents]
     index = Document(INDEX_PAGE, INDEX_PAGE, title)
-    _write_page(out, index, "\n".join(lines) + "\n", {"views": {}})
+    context = {"views": {}, **tokens}
+    _write_page(out, index, "\n".join(lines) + "\n", context)
 
 
 def _link_text(text: str) -> str:

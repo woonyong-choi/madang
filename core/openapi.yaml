@@ -2337,6 +2337,13 @@ components:
           $ref: "#/components/schemas/FlowWaitingData"
           description: >-
             flow가 사람 결정이나 runner를 기다리는 동안에만 있다.
+        busy:
+          type: boolean
+          default: false
+          description: >-
+            이 페이지에서 흐름(요청 처리)이 진행 중이면 참. 진행 중에는 새
+            메시지와 답을 409 busy로 거부한다. 흐름이 끝나거나 사람의 답을
+            기다리며 멈추면 거짓이다.
       examples:
         - id: 2026-09-24-resume
           project: jobs

@@ -81,6 +81,15 @@ def read_header(path: Path) -> dict[str, Any]:
     return header
 
 
+def page_kind(page_dir: Path) -> str | None:
+    """page.md 머리부의 ``kind``(doc·code·chat 등). 없거나 못 읽으면 None."""
+    try:
+        kind = read_header(page_dir / PAGE_FILE).get("kind")
+    except (OSError, frontmatter.FrontmatterError):
+        return None
+    return str(kind) if kind else None
+
+
 def update_header(
     path: Path,
     mutate: Callable[[dict[str, Any]], None],

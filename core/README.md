@@ -98,6 +98,10 @@ uv run madang run <page-id> "<요청>" --tool claude|codex --model <모델> [--e
 
 페이지의 한 단계를 새 세션에서 실행한다. 프롬프트를 Profile, Brief, Ledger, 공통 작업 지시, 대상 블록, 요청 순서로 조립하고 부분별 토큰 추정을 실행 기록 `input.parts`에 `profile`, `brief`, `ledger` 이름으로 남긴다(REST 응답도 같은 이름이다). 조립한 프롬프트를 실행기(claude/codex CLI)에 넘기고, 끝나면 ledger.md를 검사한 뒤 결과를 `runs/N.json`에 기록한다. `--target`은 요청이 가리키는 블록 id이다. 작업 폴더는 페이지가 속한 프로젝트 폴더다. 실행이 만들었지만 등록하지 않은 파일은 전후 비교로 찾는다(프로젝트가 git 저장소면 `git status`, 아니면 파일 목록).
 
+기본 `runners.claude.args`는 사용자 `~/.claude` 설정과 상관없이 비대화형으로 돌도록 권한을 준다. 파일 수정 허용(`--permission-mode acceptEdits`), 작업 폴더 밖 기록 폴더 쓰기(`--add-dir {records}`, 코드 페이지는 워크트리에서 돌지만 페이지 파일은 메인 체크아웃 `.madang/`에 있다), `madang` 명령 허용(`--allowedTools "Bash(madang *)"`), git·gh 직접 실행 금지(`--disallowedTools "Bash(git *)" "Bash(gh *)"`)다. 여기에 core가 실행마다 프로젝트 `policy.deny`를 `--disallowedTools`로 더한다. 러너 인자 자리표시자는 `{model}`, `{effort}`, `{home}`, `{cwd}`, `{page}`, `{records}`(프로젝트 `.madang/` 폴더)다.
+
+`--flow`로 흐름을 돌리면 요청 종류를 `routes` 절이 고른다. 접두(`design: …`), 키워드 규칙 순으로 보고, 아무것도 맞지 않으면 page.md `kind`의 기본 작업 종류(`routes.page_kinds`, 기본값 doc·code는 build, chat은 explore)를, 그것도 없으면 `default_kind`를 쓴다.
+
 ### 되돌리기
 
 ```

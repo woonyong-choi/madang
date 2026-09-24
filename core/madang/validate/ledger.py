@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -21,15 +20,6 @@ DECISION_STATES = ("proposed", "confirmed", "superseded", "deferred")
 REPO_PREFIX = "repo:"
 
 _HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*#*[ \t]*$")
-
-
-@lru_cache(maxsize=1)
-def default_kinds() -> tuple[str, ...]:
-    """내장 설정의 ``routes`` 절에 적힌 작업 종류와 페이지 종류를 반환한다."""
-    data = config.default_data()[config.ROUTES_KEY]
-    kinds = list(data.get("kinds") or ())
-    kinds += [k for k in data.get("page_kinds") or () if k not in kinds]
-    return tuple(kinds)
 
 
 def _is_int(value: Any) -> bool:
@@ -60,7 +50,8 @@ def validate_ledger(
     """
     path = Path(path)
     page_dir = path.parent
-    kinds = tuple(kinds) if kinds is not None else default_kinds()
+    if kinds is None:
+        kinds = config.default_routes().accepted_kinds
     issues: list[Issue] = []
 
     def add(

@@ -1,4 +1,4 @@
-"""규칙 결정기: 접두, 키워드 표, 기본 종류로 요청 종류를 고른다."""
+"""규칙 결정기: 접두, 키워드 표, 페이지 종류의 기본값으로 요청 종류를 고른다."""
 
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ NAME = "rules"
 PREFIX_CONFIDENCE = 1.0
 # 한 종류의 키워드만 맞았다.
 KEYWORD_CONFIDENCE = 0.9
-# 맞은 키워드가 없어 기본 종류를 쓴다. 기본 기준(0.7)은 통과한다.
+# 맞은 키워드가 없어 페이지 종류의 기본 작업 종류를 쓴다.
+# 기본 기준(0.7)은 통과한다.
 DEFAULT_CONFIDENCE = 0.7
 # 여러 종류의 키워드가 같은 수만큼 맞았다. 사람에게 묻는다.
 TIE_CONFIDENCE = 0.4
@@ -38,7 +39,7 @@ class RulesDecider:
         """메시지 본문에서 요청 종류를 고른다.
 
         접두(``design: …``)가 있으면 그 종류, 없으면 키워드가 가장 많이
-        맞은 종류, 아무것도 맞지 않으면 기본 종류다.
+        맞은 종류, 아무것도 맞지 않으면 페이지 종류의 기본 작업 종류다.
 
         Args:
             question: ``prompt``가 메시지 본문인 ``choice`` 질문.
@@ -52,7 +53,8 @@ class RulesDecider:
             return Decision(prefixed, PREFIX_CONFIDENCE, NAME)
         scores = keyword_scores(question.prompt, self.routes.rules, kinds)
         if not scores:
-            return Decision(self.routes.default_kind, DEFAULT_CONFIDENCE, NAME)
+            kind = self.routes.default_for(question.page_kind)
+            return Decision(kind, DEFAULT_CONFIDENCE, NAME)
         best = max(scores.values())
         leaders = [kind for kind, score in scores.items() if score == best]
         confidence = KEYWORD_CONFIDENCE if len(leaders) == 1 else TIE_CONFIDENCE
