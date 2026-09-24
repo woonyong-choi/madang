@@ -14,17 +14,10 @@ AI 코딩 에이전트와 함께 일하는 사람을 위한, 문서·화면·실
 ## 구조
 
 ```
-docs/        승인된 문서
-docs/ai/     AI가 쓴 초안. 승인되면 docs/로 이동
 core/        Python: 흐름 엔진(LangGraph), 실행기, 저장, madang CLI
 app/         Kotlin Multiplatform: macOS · Windows (· Android · iOS)
 templates/   내장 템플릿
-ops/         빌드 오케스트레이션 (오너·빌더 프롬프트, 보드, 보고)
 ```
-
-## 문서
-
-읽는 순서: [비전](docs/ai/00-vision.md) → [아키텍처](docs/ai/01-architecture.md) → [core 스펙](docs/ai/02-core-spec.md) → [앱 스펙](docs/ai/03-app-spec.md) → [로드맵](docs/ai/04-roadmap.md) → [결정 기록](docs/ai/05-decisions.md) → [빌드 오케스트레이션](docs/ai/06-build-orchestration.md)
 
 ## 라이선스
 
