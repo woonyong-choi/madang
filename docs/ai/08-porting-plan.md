@@ -1,3 +1,5 @@
+> **v2 주의(2026-09-24):** 이 문서는 10-spec-v2.md 이전 초안이다. 충돌하는 부분은 10-spec-v2.md와 05-decisions.md D26~D33이 우선한다.
+
 # Madang: 독립 앱 방향 확정과 Orca·Notebook Navigator 이식 계획
 
 상태: 초안 (AI 작성, 미승인)
