@@ -6,9 +6,7 @@ byte for byte.
 
 from __future__ import annotations
 
-import os
 import re
-import tempfile
 import unicodedata
 from collections.abc import Callable
 from datetime import date, datetime
@@ -16,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from madang.store import frontmatter
+from madang.store.files import atomic_write
 from madang.store.page import PAGE_FILE, SPACE_FILE, STATE_FILE
 
 SPACES_DIR = "spaces"
@@ -366,22 +365,3 @@ def create_page(
 def now() -> datetime:
     """Returns the local time with its offset, to the second."""
     return datetime.now().astimezone().replace(microsecond=0)
-
-
-def atomic_write(path: Path, text: str) -> None:
-    """Replaces ``path`` with ``text`` through a temporary file.
-
-    Args:
-        path: The file to write.
-        text: The new contents, written as UTF-8 without newline translation.
-    """
-    fd, tmp = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-            f.write(text)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise

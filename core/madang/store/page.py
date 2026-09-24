@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from madang.store import frontmatter
+from madang.store import frontmatter, runs
 
 PAGE_FILE = "page.md"
 STATE_FILE = "state.md"
 SPACE_FILE = "space.md"
-RUNS_DIR = "runs"
 
 PageStatus = Literal["planning", "doing", "blocked", "review", "done"]
 PAGE_STATUSES: tuple[str, ...] = (
@@ -25,8 +23,6 @@ PAGE_STATUSES: tuple[str, ...] = (
     "review",
     "done",
 )
-
-_RUN_FILE = re.compile(r"^(\d+)\.json$")
 
 
 class Page(BaseModel):
@@ -120,17 +116,10 @@ def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:
     Raises:
         ValueError: That file is not a JSON object.
     """
-    runs = page_dir / RUNS_DIR
-    if not runs.is_dir():
+    numbers = runs.list_runs(page_dir)
+    if not numbers:
         return None
-    numbered = [
-        (int(m.group(1)), p)
-        for p in runs.iterdir()
-        if p.is_file() and (m := _RUN_FILE.match(p.name))
-    ]
-    if not numbered:
-        return None
-    _, path = max(numbered)
+    path = runs.record_path(page_dir, numbers[-1])
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -138,3 +127,15 @@ def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:
     if not isinstance(data, dict):
         raise ValueError(f"{path.name}: expected a JSON object")
     return path, data
+
+
+def work_dir(page_dir: Path) -> Path:
+    """Returns where an agent works: the space's code repository, if any.
+
+    Args:
+        page_dir: The page folder.
+
+    Returns:
+        The code repository of the page's space, else the page folder.
+    """
+    return space_repo(page_dir) or page_dir

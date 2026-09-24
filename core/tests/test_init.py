@@ -195,3 +195,48 @@ def test_version() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
     assert __version__ in result.output
+
+
+def test_init_refuses_unrelated_folder(home: Path) -> None:
+    home.mkdir()
+    (home / "notes.txt").write_text("mine")
+    result = runner.invoke(app, ["init", "--home", str(home)])
+    assert result.exit_code == 1
+    assert "refusing" in result.output
+    assert sorted(p.name for p in home.iterdir()) == ["notes.txt"]
+
+
+def test_init_refuses_repository_with_history(home: Path) -> None:
+    home.mkdir()
+    git(home, "init", "-q")
+    git(
+        home,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "x",
+    )
+    result = runner.invoke(app, ["init", "--home", str(home)])
+    assert result.exit_code == 1
+    assert not (home / "config").exists()
+
+
+def test_init_commits_unsigned(home: Path, tmp_path: Path) -> None:
+    (tmp_path / "gitconfig").write_text(
+        "[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = false\n"
+    )
+    result = runner.invoke(app, ["init", "--home", str(home)])
+    assert result.exit_code == 0, result.output
+    assert git(home, "log", "--format=%s") == "[home] init\n"
+
+
+def test_git_timeout_raises(tmp_path: Path) -> None:
+    from madang.store import git as store_git
+
+    with pytest.raises(store_git.GitError, match="timed out"):
+        store_git.run(tmp_path, "version", timeout=1e-9)

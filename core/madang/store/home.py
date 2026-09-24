@@ -10,6 +10,7 @@ from madang.store import git
 
 INIT_MESSAGE = "[home] init"
 ROOT_SPACE = "root"
+MARKER = f"{config.CONFIG_DIR}/madang.yaml"
 
 # relative path -> bundled default file
 _FILES: dict[str, str] = {
@@ -22,6 +23,10 @@ _FILES: dict[str, str] = {
 # empty directories kept in git with a placeholder
 _DIRS = (f"spaces/{ROOT_SPACE}/pages", "templates")
 _KEEP = ".gitkeep"
+
+
+class NotAHomeError(ValueError):
+    """A folder that holds other content and is not an app home."""
 
 
 @dataclass
@@ -52,10 +57,12 @@ def init_home(home: Path) -> InitResult:
         What was created and whether a commit was made.
 
     Raises:
+        NotAHomeError: The folder is not empty and has no ``MARKER``.
         GitError: A git command fails.
         OSError: A file cannot be written.
     """
     home.mkdir(parents=True, exist_ok=True)
+    _refuse_foreign(home)
     result = InitResult(home=home)
 
     for rel, default in _FILES.items():
@@ -86,7 +93,19 @@ def init_home(home: Path) -> InitResult:
     if pending:
         git.add(home, pending)
         if git.has_staged_changes(home):
-            git.commit(home, INIT_MESSAGE, pending)
+            git.commit(home, INIT_MESSAGE, pending, unsigned=True)
             result.committed = True
 
     return result
+
+
+def _refuse_foreign(home: Path) -> None:
+    """Raises unless ``home`` is empty, a fresh repository, or an app home."""
+    if (home / MARKER).is_file():
+        return
+    others = [p.name for p in home.iterdir() if p.name != ".git"]
+    if others or (git.is_repo(home) and git.log_oneline(home)):
+        raise NotAHomeError(
+            f"{home} is not empty and has no {MARKER}; "
+            "refusing to turn it into an app home"
+        )

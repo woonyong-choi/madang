@@ -201,3 +201,27 @@ def test_changed_files_relative_to_page(
         kind="small",
     )
     assert run.record.changed_files == ["blocks/b03.json"]
+
+
+def test_latest_run_picks_highest_numbered_record(page_dir: Path) -> None:
+    assert latest_run(page_dir) is None
+    runs_dir = page_dir / "runs"
+    runs_dir.mkdir()
+    for n in (2, 10):
+        (runs_dir / f"{n}.json").write_text(json.dumps({"n": n}))
+    (runs_dir / "11.events.jsonl").write_text("")
+    (runs_dir / ".last").write_text("11\n")
+    path, data = latest_run(page_dir)
+    assert path.name == "10.json" and data == {"n": 10}
+    (runs_dir / "12.json").write_text("[1]")
+    with pytest.raises(ValueError, match="JSON object"):
+        latest_run(page_dir)
+
+
+def test_atomic_write_keeps_newlines(tmp_path: Path) -> None:
+    from madang.store.files import atomic_write
+
+    target = tmp_path / "a.txt"
+    atomic_write(target, "one\r\ntwo\n")
+    assert target.read_bytes() == b"one\r\ntwo\n"
+    assert list(tmp_path.iterdir()) == [target]

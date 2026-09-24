@@ -9,12 +9,13 @@ from __future__ import annotations
 import json
 import os
 import re
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from madang.store.files import atomic_write
 
 RUNS_DIR = "runs"
 LAST_FILE = ".last"
@@ -61,6 +62,10 @@ class RunRecord(_Model):
     result_status: str | None = None
     commit: str | None = None
     events_log: str | None = None
+    contract: str | None = None
+    duration: float | None = None
+    error: str | None = None
+    state_check: dict[str, Any] | None = None
 
 
 def runs_dir(page_dir: Path) -> Path:
@@ -149,7 +154,7 @@ def allocate(page_dir: Path) -> int:
             continue
         os.close(fd)
         break
-    _atomic_write(runs / LAST_FILE, f"{n}\n")
+    atomic_write(runs / LAST_FILE, f"{n}\n")
     return n
 
 
@@ -166,7 +171,7 @@ def write_run(page_dir: Path, record: RunRecord) -> Path:
     path = record_path(page_dir, record.n)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = record.model_dump(mode="json")
-    _atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     return path
 
 
@@ -190,16 +195,3 @@ def read_run(page_dir: Path, n: int) -> RunRecord:
     except json.JSONDecodeError as exc:
         raise ValueError(f"{path.name}: invalid JSON: {exc}") from exc
     return RunRecord.model_validate(data)
-
-
-def _atomic_write(path: Path, text: str) -> None:
-    fd, tmp = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
