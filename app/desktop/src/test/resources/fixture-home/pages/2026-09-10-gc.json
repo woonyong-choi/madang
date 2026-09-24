@@ -1,6 +1,6 @@
 {
   "id": "2026-09-10-gc",
-  "space": "blog",
+  "project": "blog",
   "title": "가비지 컬렉터 정리",
   "kind": "build",
   "status": "planning",

@@ -11,6 +11,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import madang.api.client.RunnersApi
+import madang.api.client.SetupApi
 import madang.api.client.SystemApi
 import madang.api.infrastructure.HttpResponse
 import madang.api.model.ApiError
@@ -21,7 +22,7 @@ import madang.api.model.Issue
  * madang-core 연결 하나.
  *
  * HTTP 클라이언트 하나를 만들어 생성된 API 클래스들이 함께 쓰게 한다. 화면은 [api]로
- * 필요한 생성 클라이언트(`SpacesApi`, `PagesApi` 등)를 얻는다.
+ * 필요한 생성 클라이언트(`ProjectsApi`, `PagesApi` 등)를 얻는다.
  *
  * [engine]을 넘기면 전송 계층을 바꿀 수 있다(테스트와 가짜 core는 MockEngine 사용).
  */
@@ -36,7 +37,7 @@ class CoreClient(baseUrl: String = DEFAULT_BASE_URL, engine: HttpClientEngine? =
 
     val system: SystemApi = api(::SystemApi)
     val runners: RunnersApi = api(::RunnersApi)
-    val setup: CoreSetupApi = CoreSetupApi(this.baseUrl, http)
+    val setup: SetupApi = api(::SetupApi)
 
     /** 이 연결의 HTTP 클라이언트를 공유하는 생성 API 클라이언트를 만든다. */
     fun <T> api(factory: (String, HttpClient) -> T): T = factory(baseUrl, http)

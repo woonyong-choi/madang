@@ -13,51 +13,51 @@ class NavigationTest {
     }
 
     @Test
-    fun firstLoadSelectsRootAndExpandsParents() {
+    fun firstLoadSelectsFirstProjectAndExpandsParents() {
         val state = Home.state()
 
-        assertEquals(ListSource.InSpace(ROOT_SPACE), state.source)
-        assertEquals(setOf("jobs"), state.expandedSpaces)
+        assertEquals(ListSource.InProject(NOTES), state.source)
+        assertEquals(setOf("jobs"), state.expandedProjects)
         assertEquals(
-            listOf(ROOT_SPACE, "blog", "jobs", "jobs-2026"),
-            state.spaceRows.map { it.space.slug }
+            listOf(NOTES, "blog", "jobs", "jobs-2026"),
+            state.projectRows.map { it.project.id }
         )
     }
 
     @Test
-    fun upDownMoveThroughSpacesThenTags() {
+    fun upDownMoveThroughProjectsThenTags() {
         val state = Home.state()
 
         val down = state.press(NavKey.DOWN, NavKey.DOWN).state
-        assertEquals(ListSource.InSpace("jobs"), down.source)
+        assertEquals(ListSource.InProject("jobs"), down.source)
 
         val bottom = state.press(*Array(10) { NavKey.DOWN }).state
         assertEquals(ListSource.WithTag("이력서"), bottom.source)
         assertEquals(bottom.source, bottom.press(NavKey.DOWN).state.source)
 
         val top = down.press(NavKey.UP, NavKey.UP, NavKey.UP).state
-        assertEquals(ListSource.InSpace(ROOT_SPACE), top.source)
+        assertEquals(ListSource.InProject(NOTES), top.source)
     }
 
     @Test
     fun leftCollapsesThenGoesToParentAndRightExpands() {
-        val child = Home.state().copy(source = ListSource.InSpace("jobs-2026"))
+        val child = Home.state().copy(source = ListSource.InProject("jobs-2026"))
 
         val parent = child.press(NavKey.LEFT).state
-        assertEquals(ListSource.InSpace("jobs"), parent.source)
+        assertEquals(ListSource.InProject("jobs"), parent.source)
 
         val collapsed = parent.press(NavKey.LEFT).state
-        assertEquals(emptySet(), collapsed.expandedSpaces)
-        assertEquals(ListSource.InSpace("jobs"), collapsed.source)
+        assertEquals(emptySet(), collapsed.expandedProjects)
+        assertEquals(ListSource.InProject("jobs"), collapsed.source)
 
         val expanded = collapsed.press(NavKey.RIGHT).state
-        assertEquals(setOf("jobs"), expanded.expandedSpaces)
-        assertEquals(Pane.SPACES, expanded.pane)
+        assertEquals(setOf("jobs"), expanded.expandedProjects)
+        assertEquals(Pane.PROJECTS, expanded.pane)
     }
 
     @Test
-    fun rightOnExpandedSpaceEntersListAndOpensFirstPage() {
-        val jobs = Home.state().copy(source = ListSource.InSpace("jobs"))
+    fun rightOnExpandedProjectEntersListAndOpensFirstPage() {
+        val jobs = Home.state().copy(source = ListSource.InProject("jobs"))
 
         val outcome = jobs.press(NavKey.RIGHT)
 
@@ -68,7 +68,10 @@ class NavigationTest {
 
     @Test
     fun enterKeepsSelectedPageWhenItIsListed() {
-        val state = Home.state().copy(source = ListSource.InSpace("jobs"), selectedPage = "posting")
+        val state = Home.state().copy(
+            source = ListSource.InProject("jobs"),
+            selectedPage = "posting"
+        )
 
         val outcome = state.press(NavKey.ENTER)
 
@@ -79,7 +82,7 @@ class NavigationTest {
 
     @Test
     fun listArrowsSelectAndOpenPagesInDisplayOrder() {
-        val list = Home.state(Pane.LIST).copy(source = ListSource.InSpace("jobs"))
+        val list = Home.state(Pane.LIST).copy(source = ListSource.InProject("jobs"))
 
         val first = list.press(NavKey.DOWN)
         assertEquals(KeyEffect.OpenPage("resume"), first.effect)
@@ -99,7 +102,7 @@ class NavigationTest {
 
     @Test
     fun enterAndBackspaceMoveBetweenColumns() {
-        val list = Home.state(Pane.LIST).copy(source = ListSource.InSpace("jobs"))
+        val list = Home.state(Pane.LIST).copy(source = ListSource.InProject("jobs"))
 
         assertEquals(Pane.LIST, list.press(NavKey.ENTER).state.pane)
 
@@ -108,8 +111,8 @@ class NavigationTest {
         assertEquals(Pane.PAGE, page.pane)
 
         assertEquals(Pane.LIST, page.press(NavKey.BACK).state.pane)
-        assertEquals(Pane.SPACES, page.press(NavKey.BACK, NavKey.BACK).state.pane)
-        assertEquals(Pane.SPACES, page.press(NavKey.LEFT, NavKey.LEFT).state.pane)
+        assertEquals(Pane.PROJECTS, page.press(NavKey.BACK, NavKey.BACK).state.pane)
+        assertEquals(Pane.PROJECTS, page.press(NavKey.LEFT, NavKey.LEFT).state.pane)
     }
 
     @Test
@@ -118,7 +121,10 @@ class NavigationTest {
 
         assertEquals(Pane.LIST, state.press(NavKey.FOCUS_LIST).state.pane)
         assertEquals(Pane.PAGE, state.press(NavKey.FOCUS_PAGE).state.pane)
-        assertEquals(Pane.SPACES, state.press(NavKey.FOCUS_PAGE, NavKey.FOCUS_SPACES).state.pane)
+        assertEquals(
+            Pane.PROJECTS,
+            state.press(NavKey.FOCUS_PAGE, NavKey.FOCUS_PROJECTS).state.pane
+        )
         assertEquals(KeyEffect.NewPage, state.press(NavKey.NEW_PAGE).effect)
     }
 
@@ -138,11 +144,11 @@ class NavigationTest {
 
     @Test
     fun panesCollapseWithWidth() {
-        assertEquals(Pane.entries, visiblePanes(1400f, Pane.SPACES))
-        assertEquals(listOf(Pane.SPACES, Pane.PAGE), visiblePanes(900f, Pane.SPACES))
+        assertEquals(Pane.entries, visiblePanes(1400f, Pane.PROJECTS))
+        assertEquals(listOf(Pane.PROJECTS, Pane.PAGE), visiblePanes(900f, Pane.PROJECTS))
         assertEquals(listOf(Pane.LIST, Pane.PAGE), visiblePanes(900f, Pane.LIST))
         assertEquals(listOf(Pane.LIST, Pane.PAGE), visiblePanes(900f, Pane.PAGE))
         assertEquals(listOf(Pane.PAGE), visiblePanes(500f, Pane.PAGE))
-        assertEquals(listOf(Pane.SPACES), visiblePanes(500f, Pane.SPACES))
+        assertEquals(listOf(Pane.PROJECTS), visiblePanes(500f, Pane.PROJECTS))
     }
 }

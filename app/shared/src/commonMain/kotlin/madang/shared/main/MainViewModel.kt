@@ -16,8 +16,8 @@ import madang.api.client.DecisionsApi
 import madang.api.client.MemoryApi
 import madang.api.client.MessagesApi
 import madang.api.client.PagesApi
+import madang.api.client.ProjectsApi
 import madang.api.client.RunsApi
-import madang.api.client.SpacesApi
 import madang.api.client.TrashApi
 import madang.api.model.BlockAddedEvent
 import madang.api.model.BlockDeletedEvent
@@ -35,16 +35,16 @@ import madang.api.model.PageDeletedEvent
 import madang.api.model.PageUnknownFilesEvent
 import madang.api.model.PageUpdate
 import madang.api.model.PageUpdatedEvent
+import madang.api.model.Project
+import madang.api.model.ProjectCreate
+import madang.api.model.ProjectCreatedEvent
+import madang.api.model.ProjectDeletedEvent
+import madang.api.model.ProjectSort
+import madang.api.model.ProjectUpdate
+import madang.api.model.ProjectUpdatedEvent
 import madang.api.model.RunFailedEvent
 import madang.api.model.RunFinishedEvent
 import madang.api.model.RunStartedEvent
-import madang.api.model.Space
-import madang.api.model.SpaceCreate
-import madang.api.model.SpaceCreatedEvent
-import madang.api.model.SpaceDeletedEvent
-import madang.api.model.SpaceSort
-import madang.api.model.SpaceUpdate
-import madang.api.model.SpaceUpdatedEvent
 import madang.api.model.Target
 import madang.api.model.UnknownFile
 import madang.api.model.UnknownFileAction
@@ -58,10 +58,11 @@ import madang.shared.settings.AppSettingsStore
 import madang.shared.settings.InMemorySettingsStore
 
 /**
- * 메인 화면(공간 / 페이지 목록 / 가운데 열).
+ * 메인 화면(프로젝트 / 페이지 목록 / 가운데 열).
  *
- * 연결이 열릴 때마다 공간과 모든 페이지 카드를 다시 받고, 이후에는 이벤트로 고친다.
- * 사용자 조작은 core에 요청하고 core의 응답(수정된 공간·카드)으로 상태를 고친다. 응답과 같은
+ * 프로젝트는 core에 등록한 로컬 폴더이고 페이지 기록은 그 폴더의 `.madang/`에 있다.
+ * 연결이 열릴 때마다 프로젝트와 모든 페이지 카드를 다시 받고, 이후에는 이벤트로 고친다.
+ * 사용자 조작은 core에 요청하고 core의 응답(수정된 프로젝트·카드)으로 상태를 고친다. 응답과 같은
  * 내용의 이벤트가 다시 와도 id로 덮어쓰므로 결과가 같다. 낙관적 갱신은 보낸 메시지뿐이다.
  *
  * 가운데 열은 페이지 탭과 doc·data·run 탭이다. 탭 세트는 페이지마다 앱 설정에 저장해 두고
@@ -82,7 +83,7 @@ class MainViewModel(
     private val _state = MutableStateFlow(MainState(baseUrl = core.baseUrl))
     val state: StateFlow<MainState> = _state.asStateFlow()
 
-    private val spacesApi = core.api(::SpacesApi)
+    private val projectsApi = core.api(::ProjectsApi)
     private val pagesApi = core.api(::PagesApi)
     private val blocksApi = core.api(::BlocksApi)
     private val runsApi = core.api(::RunsApi)
@@ -118,12 +119,12 @@ class MainViewModel(
 
     /** 1열 항목을 고른다. [advance]면 목록 열로 넘어간다(열이 모자랄 때). */
     fun select(source: ListSource, advance: Boolean = false) = _state.update {
-        it.copy(source = source, pane = if (advance) Pane.LIST else Pane.SPACES)
+        it.copy(source = source, pane = if (advance) Pane.LIST else Pane.PROJECTS)
     }
 
-    fun toggleSpace(slug: String) = _state.update {
-        val open = it.expandedSpaces
-        it.copy(expandedSpaces = if (slug in open) open - slug else open + slug)
+    fun toggleProject(id: String) = _state.update {
+        val open = it.expandedProjects
+        it.copy(expandedProjects = if (id in open) open - id else open + id)
     }
 
     fun toggleTag(path: String) = _state.update {
@@ -131,21 +132,23 @@ class MainViewModel(
         it.copy(expandedTags = if (path in open) open - path else open + path)
     }
 
-    /** 공간 포커스. null이면 해제한다. */
-    fun focusOn(slug: String?) = _state.update {
+    /** 프로젝트 포커스. null이면 해제한다. */
+    fun focusOn(id: String?) = _state.update {
         it.copy(
-            focusSpace = slug,
-            source = slug?.let(ListSource::InSpace) ?: it.source,
-            expandedSpaces = slug?.let { s -> it.expandedSpaces + s } ?: it.expandedSpaces
+            focusProject = id,
+            source = id?.let(ListSource::InProject) ?: it.source,
+            expandedProjects = id?.let { s -> it.expandedProjects + s } ?: it.expandedProjects
         )
     }
 
     fun setFilter(filter: PageFilter) = _state.update { it.copy(filter = filter) }
 
-    /** 고른 공간의 정렬을 바꾼다. 태그를 보고 있으면 바꿀 공간이 없다. */
-    fun setSort(sort: SpaceSort) {
-        val slug = (_state.value.source as? ListSource.InSpace)?.slug ?: return
-        request { upsertSpace(spacesApi.updateSpace(slug, SpaceUpdate(sort = sort)).bodyOrThrow()) }
+    /** 고른 프로젝트의 정렬을 바꾼다. 태그를 보고 있으면 바꿀 프로젝트가 없다. */
+    fun setSort(sort: ProjectSort) {
+        val id = (_state.value.source as? ListSource.InProject)?.id ?: return
+        request {
+            upsertProject(projectsApi.updateProject(id, ProjectUpdate(sort = sort)).bodyOrThrow())
+        }
     }
 
     /** 페이지를 고르고 연다. [advance]면 본문 열로 넘어간다(열이 모자랄 때). */
@@ -186,15 +189,18 @@ class MainViewModel(
         it.copy(toggled = if (key in it.toggled) it.toggled - key else it.toggled + key)
     }
 
+    /** 고른 프로젝트에 새 페이지를 만든다. 등록한 프로젝트가 없으면 아무것도 하지 않는다. */
     fun newPage() {
-        val space = _state.value.targetSpace
+        val project = _state.value.targetProject ?: return
         request {
-            val created = pagesApi.createPage(space, PageCreate(title = newPageTitle)).bodyOrThrow()
-            val cards = pagesApi.listPages(space).bodyOrThrow()
+            val created = pagesApi.createPage(project, PageCreate(title = newPageTitle))
+                .bodyOrThrow()
+            val cards = pagesApi.listPages(project).bodyOrThrow()
             _state.update { state ->
                 state.copy(
-                    cards = state.cards.filter { it.space != space } + cards,
-                    source = state.source as? ListSource.InSpace ?: ListSource.InSpace(space),
+                    cards = state.cards.filter { it.project != project } + cards,
+                    source = state.source as? ListSource.InProject
+                        ?: ListSource.InProject(project),
                     selectedPage = created.id,
                     page = OpenPage(created),
                     tabs = TabSet(),
@@ -204,26 +210,19 @@ class MainViewModel(
         }
     }
 
-    /** 최상위 공간을 만든다. slug는 제목에서 만든다. */
-    fun createSpace(title: String) {
-        val taken = _state.value.spaces.mapTo(mutableSetOf()) { it.slug }
-        request {
-            val space = spacesApi.createSpace(
-                SpaceCreate(slug = slugFor(title, taken), title = title)
-            )
-                .bodyOrThrow()
-            upsertSpace(space)
-            _state.update { it.copy(source = ListSource.InSpace(space.slug)) }
-        }
+    /** 로컬 폴더를 프로젝트로 등록하고 고른다. core가 폴더에 `.madang/`을 만든다. */
+    fun addProject(path: String) = request {
+        val project = projectsApi.createProject(ProjectCreate(path = path)).bodyOrThrow()
+        upsertProject(project)
+        _state.update { it.copy(source = ListSource.InProject(project.id)) }
     }
 
-    fun renameSpace(slug: String, title: String) = updateSpace(slug, SpaceUpdate(title = title))
+    fun renameProject(id: String, title: String) = updateProject(id, ProjectUpdate(title = title))
 
-    fun linkRepo(slug: String, path: String) = updateSpace(slug, SpaceUpdate(repo = path))
-
-    fun deleteSpace(slug: String) = request {
-        spacesApi.deleteSpace(slug).bodyOrThrow()
-        removeSpace(slug)
+    /** 프로젝트 등록을 지운다. 폴더와 그 안의 기록은 그대로 남는다. */
+    fun removeProject(id: String) = request {
+        projectsApi.deleteProject(id).bodyOrThrow()
+        forgetProject(id)
     }
 
     fun setPinned(id: String, pinned: Boolean) = updatePage(id, PageUpdate(pinned = pinned))
@@ -236,9 +235,9 @@ class MainViewModel(
         if (tag !in card.tags) setTags(id, card.tags + tag)
     }
 
-    fun movePage(id: String, space: String) {
+    fun movePage(id: String, project: String) {
         val card = _state.value.cards.firstOrNull { it.id == id } ?: return
-        if (card.space != space) updatePage(id, PageUpdate(space = space))
+        if (card.project != project) updatePage(id, PageUpdate(project = project))
     }
 
     fun deletePage(id: String) = request {
@@ -346,11 +345,11 @@ class MainViewModel(
             it.copy(activeRuns = it.activeRuns.withRunEvent(payload, timeSource::markNow))
         }
         when (payload) {
-            is SpaceCreatedEvent -> upsertSpace(payload.data.space)
+            is ProjectCreatedEvent -> upsertProject(payload.data.project)
 
-            is SpaceUpdatedEvent -> upsertSpace(payload.data.space)
+            is ProjectUpdatedEvent -> upsertProject(payload.data.project)
 
-            is SpaceDeletedEvent -> removeSpace(payload.data.id)
+            is ProjectDeletedEvent -> forgetProject(payload.data.id)
 
             is PageCreatedEvent -> upsertCard(payload.data.page)
 
@@ -374,9 +373,9 @@ class MainViewModel(
     }
 
     private fun reloadAll() = request {
-        val spaces = spacesApi.listSpaces().bodyOrThrow()
-        val cards = spaces.flatMap { pagesApi.listPages(it.slug).bodyOrThrow() }
-        _state.update { it.withLoaded(spaces, cards) }
+        val projects = projectsApi.listProjects().bodyOrThrow()
+        val cards = projects.flatMap { pagesApi.listPages(it.id).bodyOrThrow() }
+        _state.update { it.withLoaded(projects, cards) }
         _state.value.selectedPage?.let(::loadPage)
     }
 
@@ -459,21 +458,25 @@ class MainViewModel(
         it.copy(detail = it.detail.copy(waiting = waiting), answered = null)
     }
 
-    private fun updateSpace(slug: String, update: SpaceUpdate) = request {
-        upsertSpace(spacesApi.updateSpace(slug, update).bodyOrThrow())
+    private fun updateProject(id: String, update: ProjectUpdate) = request {
+        upsertProject(projectsApi.updateProject(id, update).bodyOrThrow())
     }
 
     private fun updatePage(id: String, update: PageUpdate) = request {
         upsertCard(pagesApi.updatePage(id, update).bodyOrThrow())
     }
 
-    private fun upsertSpace(space: Space) = _state.update { state ->
-        val others = state.spaces.filter { it.slug != space.slug }
-        state.copy(spaces = others + space)
+    private fun upsertProject(project: Project) = _state.update { state ->
+        val others = state.projects.filter { it.id != project.id }
+        state.copy(projects = others + project)
     }
 
-    private fun removeSpace(slug: String) = _state.update { state ->
-        state.withLoaded(state.spaces.filter { it.slug != slug }, state.cards)
+    /** 등록이 지워진 프로젝트와 그 카드를 목록에서 뺀다. */
+    private fun forgetProject(id: String) = _state.update { state ->
+        state.withLoaded(
+            state.projects.filter { it.id != id },
+            state.cards.filter { it.project != id }
+        )
     }
 
     private fun upsertCard(card: PageCard) = _state.update { state ->

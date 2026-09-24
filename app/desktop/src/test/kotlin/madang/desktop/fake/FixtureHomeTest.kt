@@ -10,8 +10,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import madang.api.client.BlocksApi
 import madang.api.client.PagesApi
-import madang.api.client.SpacesApi
+import madang.api.client.ProjectsApi
 import madang.api.model.PageUpdate
+import madang.api.model.ProjectCreate
 import madang.shared.core.CoreClient
 import madang.shared.core.bodyOrThrow
 import madang.shared.core.decodeEvent
@@ -26,10 +27,10 @@ class FixtureHomeTest {
     }
 
     @Test
-    fun servesSpacesWithCountsAndPinnedCardsFirst() = runBlocking {
+    fun servesProjectsWithCountsAndPinnedCardsFirst() = runBlocking {
         client(FixtureHome(home)).use { core ->
-            val spaces = core.api(::SpacesApi).listSpaces().bodyOrThrow()
-            val jobs = spaces.first { it.slug == "jobs" }
+            val projects = core.api(::ProjectsApi).listProjects().bodyOrThrow()
+            val jobs = projects.first { it.id == "jobs" }
             assertEquals(2, jobs.pages)
 
             val cards = core.api(::PagesApi).listPages("jobs").bodyOrThrow()
@@ -64,15 +65,38 @@ class FixtureHomeTest {
             val next = async { fixture.events.first() }
             yield()
 
-            val card = pages.updatePage("2026-09-10-gc", PageUpdate(pinned = true, space = "root"))
+            val card = pages.updatePage(
+                "2026-09-10-gc",
+                PageUpdate(pinned = true, project = "notes")
+            )
                 .bodyOrThrow()
 
-            assertEquals("root", card.space)
+            assertEquals("notes", card.project)
             assertTrue(card.pinned)
             val event = decodeEvent(next.await())
             assertEquals("page.updated", event?.envelope?.type?.value)
-            val pinned = pages.listPages("root").bodyOrThrow().filter { it.pinned }
+            val pinned = pages.listPages("notes").bodyOrThrow().filter { it.pinned }
             assertEquals(listOf("2026-09-10-gc"), pinned.map { it.id })
+        }
+    }
+
+    @Test
+    fun addingAFolderRegistersAProjectAndRemovingKeepsOthers() = runBlocking {
+        client(FixtureHome(home)).use { core ->
+            val projects = core.api(::ProjectsApi)
+
+            val added = projects.createProject(ProjectCreate(path = "/work/My Site/"))
+                .bodyOrThrow()
+            assertEquals("my-site", added.id)
+            assertEquals("My Site", added.title)
+            assertEquals("/work/My Site", added.path)
+            val again = projects.createProject(ProjectCreate(path = "/work/My Site"))
+            assertEquals(409, again.status)
+
+            assertEquals(409, projects.deleteProject("jobs").status)
+            projects.deleteProject("blog").bodyOrThrow()
+            val left = projects.listProjects().bodyOrThrow().map { it.id }
+            assertEquals(listOf("notes", "jobs", "jobs-2026", "auth-svc", "my-site"), left)
         }
     }
 }

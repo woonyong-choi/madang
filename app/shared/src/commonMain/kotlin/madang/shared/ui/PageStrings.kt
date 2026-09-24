@@ -48,7 +48,7 @@ val KoreanPageStrings = PageStrings(
     memoryLayer = {
         when (it) {
             MemoryLayer.ROOT -> "root"
-            MemoryLayer.SPACE -> "space"
+            MemoryLayer.PROJECT -> "project"
             MemoryLayer.STATE -> "state"
         }
     },

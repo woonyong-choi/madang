@@ -37,7 +37,7 @@ class PageFlowTest {
 
     private val page = PageDetail(
         id = "p",
-        space = ROOT_SPACE,
+        project = NOTES,
         title = "p",
         status = PageStatus.DOING,
         pinned = false,
@@ -128,7 +128,7 @@ class PageFlowTest {
         val started = RunStartedEvent(
             type = RunStartedEvent.Type.RUN_PERIOD_STARTED,
             ts = "t",
-            space = "jobs",
+            project = "jobs",
             page = "p",
             run = 2,
             data = RunStartedData(runner = "codex", model = "gpt-6-luna", kind = "small", tier = 1)
@@ -136,7 +136,7 @@ class PageFlowTest {
         val progress = RunProgressEvent(
             type = RunProgressEvent.Type.RUN_PERIOD_PROGRESS,
             ts = "t",
-            space = "jobs",
+            project = "jobs",
             page = "p",
             run = 2,
             data = RunStreamEvent(type = RunStreamEvent.Type.FILE_CHANGED, path = "a.json")
@@ -144,7 +144,7 @@ class PageFlowTest {
         val finished = RunFinishedEvent(
             type = RunFinishedEvent.Type.RUN_PERIOD_FINISHED,
             ts = "t",
-            space = "jobs",
+            project = "jobs",
             page = "p",
             run = 2,
             data = run(2, null)

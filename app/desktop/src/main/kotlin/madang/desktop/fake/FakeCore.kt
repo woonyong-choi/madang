@@ -28,10 +28,10 @@ import madang.shared.core.EventTransport
 /**
  * 개발용 가짜 core(`MADANG_FAKE_CORE=1`).
  *
- * 계약에 있는 경로는 계약 예시로 답한다. 계약에 아직 없는 설정 경로(`/home`,
- * `/config/routes`)는 메모리 상태로 흉내 낸다. 앱 홈은 처음에 없는 상태로 시작한다.
+ * 계약에 있는 경로는 계약 예시로 답한다. 설정 경로(`/home`, `/config/routes`)는 메모리
+ * 상태로 흉내 낸다. 전역 설정은 처음에 없는 상태로 시작한다([homeReady]가 거짓일 때).
  *
- * [fixture]가 있으면 공간·페이지·블록 경로는 픽스처 앱 홈으로 답하고, 이벤트도 픽스처의
+ * [fixture]가 있으면 프로젝트·페이지·블록 경로는 픽스처 앱 홈으로 답하고, 이벤트도 픽스처의
  * 것을 보낸다.
  */
 class FakeCore(
@@ -40,7 +40,7 @@ class FakeCore(
     private val fixture: FixtureHome? = null
 ) {
 
-    private var home = HomeState(path = "~/.madang", initialized = homeReady, remote = null)
+    private var home = HomeState(path = "~/.madang", initialized = homeReady)
     private var routes = SAMPLE_ROUTES
 
     val engine: HttpClientEngine = MockEngine { request -> handle(request) }
@@ -111,10 +111,9 @@ class FakeCore(
             ?: return error(HttpStatusCode.BadRequest, "invalid", "missing body")
         home = HomeState(
             path = request["path"]?.jsonPrimitive?.content ?: home.path,
-            initialized = true,
-            remote = request["remote"]?.jsonPrimitive?.content
+            initialized = true
         )
-        return json(home.toJson(), HttpStatusCode.Created)
+        return json(home.toJson())
     }
 
     private fun MockRequestHandleScope.saveRoutes(body: String?): HttpResponseData {
@@ -168,11 +167,10 @@ class FakeCore(
         status: HttpStatusCode = HttpStatusCode.OK
     ) = respond(body.toString(), status, headersOf(HttpHeaders.ContentType, "application/json"))
 
-    private data class HomeState(val path: String, val initialized: Boolean, val remote: String?) {
+    private data class HomeState(val path: String, val initialized: Boolean) {
         fun toJson(): JsonObject = buildJsonObject {
             put("path", path)
             put("initialized", initialized)
-            put("remote", remote)
         }
     }
 

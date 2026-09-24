@@ -12,15 +12,15 @@ data class KeyOutcome(val state: MainState, val effect: KeyEffect? = null)
 /**
  * 레이어 0 키보드 탐색.
  *
- * - 공간 열: 위아래로 공간·태그를 고른다(목록이 바로 바뀐다). 오른쪽은 접힌 항목을 펼치고,
+ * - 프로젝트 열: 위아래로 프로젝트·태그를 고른다(목록이 바로 바뀐다). 오른쪽은 접힌 항목을 펼치고,
  *   펼쳐져 있거나 하위가 없으면 목록 열로 간다. 왼쪽은 펼친 항목을 접고, 접혀 있으면
  *   상위로 간다. Enter는 목록 열로 간다.
  * - 목록 열: 위아래로 페이지를 고르고 연다. 오른쪽·Enter는 본문 열로, 왼쪽·Backspace는
- *   공간 열로 간다.
+ *   프로젝트 열로 간다.
  * - 본문 열: 왼쪽·Backspace는 목록 열로 간다.
  */
 fun MainState.onKey(key: NavKey): KeyOutcome = when (key) {
-    NavKey.FOCUS_SPACES -> KeyOutcome(copy(pane = Pane.SPACES))
+    NavKey.FOCUS_PROJECTS -> KeyOutcome(copy(pane = Pane.PROJECTS))
 
     NavKey.FOCUS_LIST -> KeyOutcome(copy(pane = Pane.LIST))
 
@@ -29,13 +29,13 @@ fun MainState.onKey(key: NavKey): KeyOutcome = when (key) {
     NavKey.NEW_PAGE -> KeyOutcome(this, KeyEffect.NewPage)
 
     else -> when (pane) {
-        Pane.SPACES -> spacesKey(key)
+        Pane.PROJECTS -> projectsKey(key)
         Pane.LIST -> listKey(key)
         Pane.PAGE -> pageKey(key)
     }
 }
 
-private fun MainState.spacesKey(key: NavKey): KeyOutcome = when (key) {
+private fun MainState.projectsKey(key: NavKey): KeyOutcome = when (key) {
     NavKey.UP -> KeyOutcome(copy(source = step(navItems, source, -1)))
     NavKey.DOWN -> KeyOutcome(copy(source = step(navItems, source, +1)))
     NavKey.RIGHT -> expandOrEnterList()
@@ -58,7 +58,7 @@ private fun MainState.listKey(key: NavKey): KeyOutcome = when (key) {
     NavKey.RIGHT, NavKey.ENTER ->
         KeyOutcome(if (selectedPage != null) copy(pane = Pane.PAGE) else this)
 
-    NavKey.LEFT, NavKey.BACK -> KeyOutcome(copy(pane = Pane.SPACES))
+    NavKey.LEFT, NavKey.BACK -> KeyOutcome(copy(pane = Pane.PROJECTS))
 
     else -> KeyOutcome(this)
 }
@@ -70,10 +70,10 @@ private fun MainState.pageKey(key: NavKey): KeyOutcome = when (key) {
 
 private fun MainState.expandOrEnterList(): KeyOutcome {
     when (val current = source) {
-        is ListSource.InSpace -> {
-            val row = spaceRows.firstOrNull { it.space.slug == current.slug }
+        is ListSource.InProject -> {
+            val row = projectRows.firstOrNull { it.project.id == current.id }
             if (row != null && row.hasChildren && !row.expanded) {
-                return KeyOutcome(copy(expandedSpaces = expandedSpaces + current.slug))
+                return KeyOutcome(copy(expandedProjects = expandedProjects + current.id))
             }
         }
 
@@ -90,12 +90,12 @@ private fun MainState.expandOrEnterList(): KeyOutcome {
 }
 
 private fun MainState.collapseOrGoUp(): MainState = when (val current = source) {
-    is ListSource.InSpace -> when {
-        current.slug in expandedSpaces -> copy(expandedSpaces = expandedSpaces - current.slug)
+    is ListSource.InProject -> when {
+        current.id in expandedProjects -> copy(expandedProjects = expandedProjects - current.id)
 
-        else -> spaces.firstOrNull { it.slug == current.slug }?.parent
-            ?.takeIf { parent -> spaceRows.any { it.space.slug == parent } }
-            ?.let { copy(source = ListSource.InSpace(it)) }
+        else -> projects.firstOrNull { it.id == current.id }?.parent
+            ?.takeIf { parent -> projectRows.any { it.project.id == parent } }
+            ?.let { copy(source = ListSource.InProject(it)) }
             ?: this
     }
 

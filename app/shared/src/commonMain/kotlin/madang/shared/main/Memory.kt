@@ -58,7 +58,7 @@ data class MemoryState(
 }
 
 /**
- * 메모리 패널. root·space·state 세 파일을 core에서 받아 고치고 저장한다.
+ * 메모리 패널. root·project·state 세 파일을 core에서 받아 고치고 저장한다.
  *
  * 저장은 core 검사기를 통과해야 한다. 거부되면(400) 오류를 줄 위치와 함께 [MemoryDraft.issues]에
  * 둔다. 다른 곳에서 파일이 바뀌면(`memory.updated`) 고치지 않은 층만 다시 받는다.
@@ -109,7 +109,7 @@ class MemoryViewModel(private val api: MemoryApi, private val scope: CoroutineSc
         }
     }
 
-    /** `memory.updated`. 열린 페이지의 state, 또는 모든 페이지가 함께 쓰는 root·space면 다시 받는다. */
+    /** `memory.updated`. 열린 페이지의 state, 또는 모든 페이지가 함께 쓰는 root·project면 다시 받는다. */
     fun onUpdated(page: String?, layer: MemoryLayer) {
         val open = _state.value.page ?: return
         if (layer == MemoryLayer.STATE && page != open) return
@@ -133,7 +133,7 @@ class MemoryViewModel(private val api: MemoryApi, private val scope: CoroutineSc
 
     /** 새로 받은 파일로 바꾸되 고치던 층은 사용자의 문장을 둔다. */
     private fun merge(drafts: Map<MemoryLayer, MemoryDraft>, memory: Memory) =
-        listOf(memory.root, memory.space, memory.state).associate { file ->
+        listOf(memory.root, memory.project, memory.state).associate { file ->
             val old = drafts[file.layer]
             file.layer to if (old != null && old.dirty) old.copy(file = file) else MemoryDraft(file)
         }

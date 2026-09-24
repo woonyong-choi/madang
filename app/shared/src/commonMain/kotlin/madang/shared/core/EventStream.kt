@@ -23,6 +23,9 @@ import madang.api.model.PageCreatedEvent
 import madang.api.model.PageDeletedEvent
 import madang.api.model.PageUnknownFilesEvent
 import madang.api.model.PageUpdatedEvent
+import madang.api.model.ProjectCreatedEvent
+import madang.api.model.ProjectDeletedEvent
+import madang.api.model.ProjectUpdatedEvent
 import madang.api.model.RunAssembledEvent
 import madang.api.model.RunFailedEvent
 import madang.api.model.RunFallbackEvent
@@ -30,9 +33,6 @@ import madang.api.model.RunFinishedEvent
 import madang.api.model.RunProgressEvent
 import madang.api.model.RunStartedEvent
 import madang.api.model.RunnerAvailabilityEvent
-import madang.api.model.SpaceCreatedEvent
-import madang.api.model.SpaceDeletedEvent
-import madang.api.model.SpaceUpdatedEvent
 
 /**
  * core 이벤트 하나.
@@ -44,7 +44,7 @@ data class CoreEvent(val envelope: EventEnvelope, val payload: Any)
 /** [EventStream]이 내보내는 항목. */
 sealed interface EventStreamItem {
     /**
-     * 연결이 열렸다. 받은 쪽은 공간·페이지·열린 페이지를 전부 다시 가져온다.
+     * 연결이 열렸다. 받은 쪽은 프로젝트·페이지·열린 페이지를 전부 다시 가져온다.
      * [reconnected]는 끊긴 뒤 다시 붙었을 때 참이다.
      */
     data class Resync(val reconnected: Boolean) : EventStreamItem
@@ -133,9 +133,9 @@ fun decodeEvent(text: String): CoreEvent? = try {
 }
 
 private fun serializerFor(type: EventType): KSerializer<out Any> = when (type) {
-    EventType.SPACE_PERIOD_CREATED -> SpaceCreatedEvent.serializer()
-    EventType.SPACE_PERIOD_UPDATED -> SpaceUpdatedEvent.serializer()
-    EventType.SPACE_PERIOD_DELETED -> SpaceDeletedEvent.serializer()
+    EventType.PROJECT_PERIOD_CREATED -> ProjectCreatedEvent.serializer()
+    EventType.PROJECT_PERIOD_UPDATED -> ProjectUpdatedEvent.serializer()
+    EventType.PROJECT_PERIOD_DELETED -> ProjectDeletedEvent.serializer()
     EventType.PAGE_PERIOD_CREATED -> PageCreatedEvent.serializer()
     EventType.PAGE_PERIOD_UPDATED -> PageUpdatedEvent.serializer()
     EventType.PAGE_PERIOD_DELETED -> PageDeletedEvent.serializer()

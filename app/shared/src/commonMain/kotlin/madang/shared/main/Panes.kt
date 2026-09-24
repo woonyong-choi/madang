@@ -1,7 +1,7 @@
 package madang.shared.main
 
 /** 레이어 0의 세 열. */
-enum class Pane { SPACES, LIST, PAGE }
+enum class Pane { PROJECTS, LIST, PAGE }
 
 /** 레이어 0이 받는 키 동작. 실제 키와의 대응은 화면에서 정한다. */
 enum class NavKey {
@@ -11,7 +11,7 @@ enum class NavKey {
     RIGHT,
     ENTER,
     BACK,
-    FOCUS_SPACES,
+    FOCUS_PROJECTS,
     FOCUS_LIST,
     FOCUS_PAGE,
     NEW_PAGE
@@ -26,10 +26,10 @@ const val MEDIUM_MIN_WIDTH = 720f
 /**
  * 창 폭에서 보일 열.
  *
- * 넓으면 3열, 좁으면 (공간 또는 목록) + 본문 2열, 더 좁으면 포커스가 있는 열 하나다.
+ * 넓으면 3열, 좁으면 (프로젝트 또는 목록) + 본문 2열, 더 좁으면 포커스가 있는 열 하나다.
  */
 fun visiblePanes(widthDp: Float, focus: Pane): List<Pane> {
-    val navigator = if (focus == Pane.SPACES) Pane.SPACES else Pane.LIST
+    val navigator = if (focus == Pane.PROJECTS) Pane.PROJECTS else Pane.LIST
     return when {
         widthDp >= WIDE_MIN_WIDTH -> Pane.entries
         widthDp >= MEDIUM_MIN_WIDTH -> listOf(navigator, Pane.PAGE)

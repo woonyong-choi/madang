@@ -7,6 +7,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlinx.coroutines.runBlocking
+import madang.shared.onboarding.ClaudeStatus
 import madang.shared.settings.AppSettings
 import madang.shared.settings.Language
 
@@ -93,5 +95,28 @@ class DesktopServicesTest {
             home.resolve("elsewhere"),
             DesktopPaths.appHome(AppSettings(homePath = "~/elsewhere"))
         )
+    }
+
+    @Test
+    fun claudeAuthStatusKeepsOnlyLoginAndMethod() {
+        val loggedIn = parseAuthStatus(
+            """{"loggedIn": true, "authMethod": "claude.ai", "email": "me@example.com"}"""
+        )
+        assertEquals(
+            ClaudeStatus(installed = true, loggedIn = true, authMethod = "claude.ai"),
+            loggedIn
+        )
+
+        val loggedOut = parseAuthStatus("""{"loggedIn": false, "authMethod": "none"}""")
+        assertEquals(ClaudeStatus(installed = true, loggedIn = false), loggedOut)
+
+        assertEquals(ClaudeStatus(installed = true, loggedIn = false), parseAuthStatus("error"))
+    }
+
+    @Test
+    fun missingClaudeCommandIsNotInstalled() = runBlocking {
+        val status = CommandClaudeProbe(dir.resolve("no-such-claude").path).check()
+
+        assertEquals(ClaudeStatus(installed = false, loggedIn = false), status)
     }
 }

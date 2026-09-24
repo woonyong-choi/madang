@@ -1,6 +1,6 @@
 {
   "id": "2026-09-18-token-rotation",
-  "space": "auth-svc",
+  "project": "auth-svc",
   "title": "토큰 교체 설계",
   "kind": "design",
   "status": "done",
@@ -63,7 +63,6 @@
         "ok": null
       },
       "result_status": "done",
-      "commit": "abc1234",
       "events_log": "runs/1.events.jsonl"
     }
   ],

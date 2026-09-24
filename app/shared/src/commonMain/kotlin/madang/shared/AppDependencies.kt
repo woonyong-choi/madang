@@ -5,7 +5,7 @@ import madang.shared.core.CoreLauncher
 import madang.shared.core.EventTransport
 import madang.shared.core.PortFileReader
 import madang.shared.core.WebSocketEventTransport
-import madang.shared.onboarding.ToolProbe
+import madang.shared.onboarding.ClaudeProbe
 import madang.shared.settings.AppSettings
 import madang.shared.settings.AppSettingsStore
 
@@ -16,14 +16,16 @@ import madang.shared.settings.AppSettingsStore
  * @property portFile 설정의 앱 홈에서 `core.port`를 읽는 방법.
  * @property launcher core를 띄우는 방법. core를 띄울 수 없는 플랫폼은 null.
  * @property eventTransport 연결에서 이벤트를 받는 방법.
+ * @property folderPicker 프로젝트 폴더를 고르는 대화상자.
  */
 class AppDependencies(
     val settings: AppSettingsStore,
-    val toolProbe: ToolProbe,
+    val claudeProbe: ClaudeProbe,
     val portFile: (AppSettings) -> PortFileReader,
     val launcher: ((AppSettings) -> CoreLauncher)?,
     val connect: (baseUrl: String) -> CoreClient = { CoreClient(it) },
     val eventTransport: (CoreClient) -> EventTransport = {
         WebSocketEventTransport(it.http, it.baseUrl)
-    }
+    },
+    val folderPicker: FolderPicker = NoFolderPicker
 )

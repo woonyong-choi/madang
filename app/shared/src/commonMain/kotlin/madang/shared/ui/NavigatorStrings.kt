@@ -3,12 +3,12 @@ package madang.shared.ui
 import kotlinx.datetime.LocalDateTime
 import madang.api.model.BlockType
 import madang.api.model.PageStatus
-import madang.api.model.SpaceSort
+import madang.api.model.ProjectSort
 
-/** 레이어 0(공간 / 페이지 목록 / 페이지 본문) 문구. */
+/** 레이어 0(프로젝트 / 페이지 목록 / 페이지 본문) 문구. */
 data class NavigatorStrings(
     val tags: String,
-    val newSpace: String,
+    val newProject: String,
     val newPage: String,
     val untitledPage: String,
     val collapseAll: String,
@@ -20,7 +20,7 @@ data class NavigatorStrings(
     val month: (year: Int, month: Int) -> String,
     val year: (Int) -> String,
     val sort: String,
-    val sortName: (SpaceSort) -> String,
+    val sortName: (ProjectSort) -> String,
     val filter: String,
     val clearFilter: String,
     val status: (PageStatus) -> String,
@@ -35,15 +35,16 @@ data class NavigatorStrings(
     val unfocus: String,
     val focused: String,
     val rename: String,
-    val linkRepo: String,
+    val removeProject: String,
     val cancel: String,
     val confirm: String,
-    val spaceNameLabel: String,
-    val repoLabel: String,
+    val projectNameLabel: String,
+    val chooseProjectFolder: String,
+    val noProjects: String,
     val tagsLabel: String,
     val tagsHint: String,
     val deletePageConfirm: (String) -> String,
-    val deleteSpaceConfirm: (String) -> String,
+    val removeProjectConfirm: (String) -> String,
     val noPages: String,
     val noPageSelected: String,
     val expandAll: String,
@@ -77,7 +78,7 @@ data class NavigatorStrings(
 
 val KoreanNavigatorStrings = NavigatorStrings(
     tags = "태그",
-    newSpace = "공간",
+    newProject = "프로젝트",
     newPage = "페이지",
     untitledPage = "제목 없음",
     collapseAll = "모두 접기",
@@ -91,9 +92,9 @@ val KoreanNavigatorStrings = NavigatorStrings(
     sort = "정렬",
     sortName = {
         when (it) {
-            SpaceSort.UPDATED -> "갱신순"
-            SpaceSort.CREATED -> "생성순"
-            SpaceSort.TITLE -> "제목순"
+            ProjectSort.UPDATED -> "갱신순"
+            ProjectSort.CREATED -> "생성순"
+            ProjectSort.TITLE -> "제목순"
         }
     },
     filter = "필터",
@@ -136,15 +137,18 @@ val KoreanNavigatorStrings = NavigatorStrings(
     unfocus = "포커스 해제",
     focused = "포커스",
     rename = "이름 변경",
-    linkRepo = "저장소 연결",
+    removeProject = "등록 해제",
     cancel = "취소",
     confirm = "확인",
-    spaceNameLabel = "공간 이름",
-    repoLabel = "코드 저장소 경로",
+    projectNameLabel = "프로젝트 이름",
+    chooseProjectFolder = "프로젝트로 쓸 폴더 고르기",
+    noProjects = "프로젝트가 없습니다. 폴더를 추가하세요.",
     tagsLabel = "태그",
     tagsHint = "쉼표로 구분합니다. 하위 태그는 a/b",
     deletePageConfirm = { "'$it' 페이지를 지울까요? 최근 삭제에서 되살릴 수 있습니다." },
-    deleteSpaceConfirm = { "'$it' 공간을 지울까요? 빈 공간만 지울 수 있습니다." },
+    removeProjectConfirm = {
+        "'$it' 프로젝트 등록을 해제할까요? 폴더와 그 안의 .madang 기록은 그대로 남습니다."
+    },
     noPages = "페이지가 없습니다",
     noPageSelected = "페이지를 고르세요",
     expandAll = "모두 펼치기",
@@ -178,7 +182,7 @@ val KoreanNavigatorStrings = NavigatorStrings(
 
 val EnglishNavigatorStrings = KoreanNavigatorStrings.copy(
     tags = "Tags",
-    newSpace = "Space",
+    newProject = "Project",
     newPage = "Page",
     untitledPage = "Untitled",
     collapseAll = "Collapse all",
@@ -192,9 +196,9 @@ val EnglishNavigatorStrings = KoreanNavigatorStrings.copy(
     sort = "Sort",
     sortName = {
         when (it) {
-            SpaceSort.UPDATED -> "Updated"
-            SpaceSort.CREATED -> "Created"
-            SpaceSort.TITLE -> "Title"
+            ProjectSort.UPDATED -> "Updated"
+            ProjectSort.CREATED -> "Created"
+            ProjectSort.TITLE -> "Title"
         }
     },
     filter = "Filter",
@@ -218,15 +222,18 @@ val EnglishNavigatorStrings = KoreanNavigatorStrings.copy(
     unfocus = "Unfocus",
     focused = "Focus",
     rename = "Rename",
-    linkRepo = "Link repository",
+    removeProject = "Remove",
     cancel = "Cancel",
     confirm = "OK",
-    spaceNameLabel = "Space name",
-    repoLabel = "Code repository path",
+    projectNameLabel = "Project name",
+    chooseProjectFolder = "Choose a folder for the project",
+    noProjects = "No projects yet. Add a folder.",
     tagsLabel = "Tags",
     tagsHint = "Comma separated. Nested tags use a/b",
     deletePageConfirm = { "Delete page '$it'? You can restore it from recently deleted." },
-    deleteSpaceConfirm = { "Delete space '$it'? Only empty spaces can be deleted." },
+    removeProjectConfirm = {
+        "Remove project '$it'? The folder and its .madang records stay on disk."
+    },
     noPages = "No pages",
     noPageSelected = "Select a page",
     expandAll = "Expand all",

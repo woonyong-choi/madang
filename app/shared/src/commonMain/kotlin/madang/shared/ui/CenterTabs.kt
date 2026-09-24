@@ -296,7 +296,7 @@ private fun ColumnScope.RunDrawer(run: RunRecord, events: List<RunStreamEvent>?)
         listOf(
             "system" to parts.systemEst,
             "root" to parts.root,
-            "space" to parts.space,
+            "project" to parts.project,
             "state" to parts.state,
             "contract" to parts.contract,
             "target" to parts.target,

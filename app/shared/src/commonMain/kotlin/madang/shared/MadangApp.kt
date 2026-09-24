@@ -22,7 +22,10 @@ fun MadangApp(viewModel: AppViewModel) {
     val screen by viewModel.screen.collectAsState()
     val language by viewModel.language.collectAsState()
     LaunchedEffect(viewModel) { viewModel.start() }
-    CompositionLocalProvider(LocalStrings provides stringsFor(language)) {
+    CompositionLocalProvider(
+        LocalStrings provides stringsFor(language),
+        LocalFolderPicker provides viewModel.folderPicker
+    ) {
         MaterialTheme {
             Surface(modifier = Modifier.fillMaxSize()) {
                 when (val current = screen) {

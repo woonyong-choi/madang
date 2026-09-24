@@ -57,15 +57,16 @@ private fun dependencies(): AppDependencies {
     if (fakeCoreMode) return fakeDependencies()
     return AppDependencies(
         settings = FileSettingsStore(DesktopPaths.appConfigDir().resolve("settings.json")),
-        toolProbe = CommandToolProbe(),
+        claudeProbe = CommandClaudeProbe(),
         portFile = { CorePortFile(DesktopPaths.appHome(it)) },
-        launcher = { ProcessCoreLauncher(it) }
+        launcher = { ProcessCoreLauncher(it) },
+        folderPicker = DesktopFolderPicker()
     )
 }
 
 /**
  * 가짜 core는 떠 있는 core처럼 기본 주소에서 답한다. 앱 설정 파일은 건드리지 않는다.
- * `MADANG_FAKE_FIXTURE=<폴더>`면 그 픽스처 앱 홈으로 공간·페이지에 답하고 메인부터 시작한다.
+ * `MADANG_FAKE_FIXTURE=<폴더>`면 그 픽스처로 프로젝트·페이지에 답하고 메인부터 시작한다.
  */
 private fun fakeDependencies(): AppDependencies {
     val spec = File(System.getProperty("madang.openapiSpec") ?: "../core/openapi.yaml")
@@ -78,11 +79,12 @@ private fun fakeDependencies(): AppDependencies {
     println("madang: using fake core from ${spec.path}")
     return AppDependencies(
         settings = InMemorySettingsStore(),
-        toolProbe = CommandToolProbe(),
+        claudeProbe = CommandClaudeProbe(),
         portFile = { { null } },
         launcher = null,
         connect = { CoreClient(it, fake.engine) },
-        eventTransport = { fake.events }
+        eventTransport = { fake.events },
+        folderPicker = DesktopFolderPicker()
     )
 }
 

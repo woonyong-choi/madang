@@ -81,7 +81,7 @@ class ComposerTest {
 
     private fun detail(userBlocks: List<String>) = PageDetail(
         id = "p",
-        space = "root",
+        project = "root",
         title = "p",
         status = PageStatus.DOING,
         pinned = false,

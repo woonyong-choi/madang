@@ -17,13 +17,9 @@ import madang.shared.main.MainViewModel
 
 /** 레이어 0에서 여는 대화상자. */
 sealed interface MainDialog {
-    data object NewSpace : MainDialog
+    data class RenameProject(val id: String, val title: String) : MainDialog
 
-    data class RenameSpace(val slug: String, val title: String) : MainDialog
-
-    data class LinkRepo(val slug: String, val repo: String) : MainDialog
-
-    data class DeleteSpace(val slug: String, val title: String) : MainDialog
+    data class RemoveProject(val id: String, val title: String) : MainDialog
 
     data class EditTags(val page: String, val tags: List<String>) : MainDialog
 
@@ -38,24 +34,9 @@ sealed interface MainDialog {
 fun MainDialogView(dialog: MainDialog, viewModel: MainViewModel, onDismiss: () -> Unit) {
     val strings = LocalStrings.current.navigator
     when (dialog) {
-        MainDialog.NewSpace -> TextDialog(
-            strings.newSpace,
-            strings.spaceNameLabel,
-            "",
-            null,
-            onDismiss
-        ) {
-            viewModel.createSpace(it)
-        }
-
-        is MainDialog.RenameSpace ->
-            TextDialog(strings.rename, strings.spaceNameLabel, dialog.title, null, onDismiss) {
-                viewModel.renameSpace(dialog.slug, it)
-            }
-
-        is MainDialog.LinkRepo ->
-            TextDialog(strings.linkRepo, strings.repoLabel, dialog.repo, null, onDismiss) {
-                viewModel.linkRepo(dialog.slug, it)
+        is MainDialog.RenameProject ->
+            TextDialog(strings.rename, strings.projectNameLabel, dialog.title, null, onDismiss) {
+                viewModel.renameProject(dialog.id, it)
             }
 
         is MainDialog.EditTags -> TextDialog(
@@ -69,13 +50,16 @@ fun MainDialogView(dialog: MainDialog, viewModel: MainViewModel, onDismiss: () -
             viewModel.setTags(dialog.page, parseTags(text))
         }
 
-        is MainDialog.DeleteSpace ->
-            ConfirmDialog(strings.deleteSpaceConfirm(dialog.title), onDismiss) {
-                viewModel.deleteSpace(dialog.slug)
-            }
+        is MainDialog.RemoveProject -> ConfirmDialog(
+            strings.removeProjectConfirm(dialog.title),
+            strings.removeProject,
+            onDismiss
+        ) {
+            viewModel.removeProject(dialog.id)
+        }
 
         is MainDialog.DeletePage ->
-            ConfirmDialog(strings.deletePageConfirm(dialog.title), onDismiss) {
+            ConfirmDialog(strings.deletePageConfirm(dialog.title), strings.delete, onDismiss) {
                 viewModel.deletePage(dialog.page)
             }
 
@@ -83,8 +67,8 @@ fun MainDialogView(dialog: MainDialog, viewModel: MainViewModel, onDismiss: () -
 
         MainDialog.Search -> {
             val state by viewModel.state.collectAsState()
-            SearchDialog(state.cards, state.spaces, onDismiss = onDismiss, onOpen = { card ->
-                viewModel.select(ListSource.InSpace(card.space))
+            SearchDialog(state.cards, state.projects, onDismiss = onDismiss, onOpen = { card ->
+                viewModel.select(ListSource.InProject(card.project))
                 viewModel.openPage(card.id, advance = true)
             })
         }
@@ -136,7 +120,12 @@ private fun TextDialog(
 }
 
 @Composable
-private fun ConfirmDialog(message: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+private fun ConfirmDialog(
+    message: String,
+    confirmLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
     val strings = LocalStrings.current.navigator
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -145,7 +134,7 @@ private fun ConfirmDialog(message: String, onDismiss: () -> Unit, onConfirm: () 
             TextButton(onClick = {
                 onDismiss()
                 onConfirm()
-            }) { Text(strings.delete, color = MaterialTheme.colorScheme.error) }
+            }) { Text(confirmLabel, color = MaterialTheme.colorScheme.error) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(strings.cancel) } }
     )

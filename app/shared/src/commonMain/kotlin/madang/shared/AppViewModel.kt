@@ -7,9 +7,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.job
+import madang.api.model.HomeStatus
 import madang.shared.core.CoreClient
 import madang.shared.core.EventStream
-import madang.shared.core.HomeStatus
 import madang.shared.main.MainViewModel
 import madang.shared.onboarding.OnboardingViewModel
 import madang.shared.settings.Language
@@ -29,7 +29,7 @@ sealed interface Screen {
 }
 
 /**
- * 화면 전환. 시작 → (앱 홈이 없으면 온보딩) → 메인 ↔ 설정.
+ * 화면 전환. 시작 → (전역 설정이 없으면 온보딩) → 메인 ↔ 설정.
  *
  * 연결 하나([CoreClient])를 온보딩·메인·설정이 함께 쓰고, 다시 연결하면 새로 만든다.
  */
@@ -41,6 +41,9 @@ class AppViewModel(private val deps: AppDependencies, private val scope: Corouti
     private var client: CoreClient? = null
     private var sessionScope: CoroutineScope = childScope()
     private var main: MainViewModel? = null
+
+    /** 화면이 프로젝트 폴더를 고를 때 쓰는 플랫폼 대화상자. */
+    val folderPicker: FolderPicker get() = deps.folderPicker
 
     private val _screen = MutableStateFlow<Screen>(newStart())
     val screen: StateFlow<Screen> = _screen.asStateFlow()
@@ -70,12 +73,13 @@ class AppViewModel(private val deps: AppDependencies, private val scope: Corouti
         _screen.value = newStart().also { it.viewModel.start() }
     }
 
-    private fun onConnected(core: CoreClient, home: HomeStatus?) {
+    private fun onConnected(core: CoreClient, home: HomeStatus) {
         client = core
-        if (home?.initialized == false) {
-            _screen.value = Screen.Onboarding(
-                OnboardingViewModel(core, deps.toolProbe, deps.settings, sessionScope, ::showMain)
-            )
+        if (!home.initialized) {
+            val onboarding =
+                OnboardingViewModel(core, deps.claudeProbe, home.path, sessionScope, ::showMain)
+            _screen.value = Screen.Onboarding(onboarding)
+            onboarding.start()
         } else {
             showMain()
         }

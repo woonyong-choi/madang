@@ -15,13 +15,13 @@ import madang.api.model.RunProgressEvent
 class EventStreamTest {
 
     private val progress = """
-        {"type":"run.progress","ts":"2026-09-24T09:31:12+09:00","space":"jobs",
+        {"type":"run.progress","ts":"2026-09-24T09:31:12+09:00","project":"jobs",
          "page":"2026-09-24-resume","run":2,
          "data":{"type":"file_changed","path":"blocks/b05-base.json"}}
     """.trimIndent()
 
     private val pageDeleted = """
-        {"type":"page.deleted","ts":"2026-09-24T10:00:00+09:00","space":"jobs",
+        {"type":"page.deleted","ts":"2026-09-24T10:00:00+09:00","project":"jobs",
          "page":"2026-09-20-old","data":{"id":"2026-09-20-old"}}
     """.trimIndent()
 
@@ -37,7 +37,7 @@ class EventStreamTest {
 
     @Test
     fun ignoresUnknownOrBrokenFrames() {
-        assertNull(decodeEvent("""{"type":"space.renamed","ts":"2026-09-24T10:00:00+09:00"}"""))
+        assertNull(decodeEvent("""{"type":"project.renamed","ts":"2026-09-24T10:00:00+09:00"}"""))
         assertNull(decodeEvent("not json"))
     }
 

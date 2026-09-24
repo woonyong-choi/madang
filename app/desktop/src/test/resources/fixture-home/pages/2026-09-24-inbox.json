@@ -1,6 +1,6 @@
 {
   "id": "2026-09-24-inbox",
-  "space": "root",
+  "project": "notes",
   "title": "할 일 모음",
   "kind": "build",
   "status": "doing",

@@ -36,14 +36,14 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import madang.api.model.PageCard
-import madang.api.model.Space
+import madang.api.model.Project
 import madang.shared.main.searchPages
 
 /** 페이지 검색(Cmd/Ctrl+K). 위아래로 고르고 Enter나 클릭으로 연다. */
 @Composable
 fun SearchDialog(
     cards: List<PageCard>,
-    spaces: List<Space>,
+    projects: List<Project>,
     onOpen: (PageCard) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -93,8 +93,8 @@ fun SearchDialog(
                 }
                 LazyColumn(modifier = Modifier.heightIn(max = 360.dp).padding(top = 8.dp)) {
                     itemsIndexed(results, key = { _, card -> card.id }) { index, card ->
-                        val space = spaces.firstOrNull { it.slug == card.space }?.title
-                        SearchRow(card, space ?: card.space, index == selected) { open(card) }
+                        val project = projects.firstOrNull { it.id == card.project }?.title
+                        SearchRow(card, project ?: card.project, index == selected) { open(card) }
                     }
                 }
             }
@@ -104,7 +104,7 @@ fun SearchDialog(
 }
 
 @Composable
-private fun SearchRow(card: PageCard, space: String, selected: Boolean, onClick: () -> Unit) {
+private fun SearchRow(card: PageCard, project: String, selected: Boolean, onClick: () -> Unit) {
     val background =
         if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
     Row(
@@ -127,7 +127,7 @@ private fun SearchRow(card: PageCard, space: String, selected: Boolean, onClick:
             }
         }
         Text(
-            space,
+            project,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.padding(start = 8.dp)

@@ -40,6 +40,10 @@ import madang.api.model.PageDetail
 import madang.api.model.PageStatus
 import madang.api.model.PageUpdate
 import madang.api.model.PendingDecision
+import madang.api.model.Project
+import madang.api.model.ProjectCreate
+import madang.api.model.ProjectSort
+import madang.api.model.ProjectUpdate
 import madang.api.model.Question
 import madang.api.model.RunInput
 import madang.api.model.RunRecord
@@ -48,10 +52,6 @@ import madang.api.model.RunResultStatus
 import madang.api.model.RunTrigger
 import madang.api.model.RunUsage
 import madang.api.model.RunVerify
-import madang.api.model.Space
-import madang.api.model.SpaceCreate
-import madang.api.model.SpaceSort
-import madang.api.model.SpaceUpdate
 import madang.api.model.TrashEntry
 import madang.api.model.TrashRestore
 import madang.api.model.UnknownFile
@@ -63,11 +63,11 @@ import madang.shared.core.CoreClient
 data class FixtureResponse(val status: Int, val body: String?)
 
 /**
- * 폴더에 담긴 앱 홈 픽스처로 공간·페이지·블록 경로에 답한다.
+ * 폴더에 담긴 픽스처로 프로젝트·페이지·블록 경로에 답한다.
  *
- * 폴더 구성: `spaces.json`(Space 배열), `pages/<id>.json`(PageDetail),
+ * 폴더 구성: `projects.json`(등록한 Project 배열), `pages/<id>.json`(PageDetail),
  * `blocks/<페이지 id>/<블록 id>.<확장자>`(doc·data 내용), 선택 `events.jsonl`(연결되면 보낼 이벤트).
- * 카드와 공간의 페이지 수는 페이지에서 계산한다. 바꾸는 요청은 메모리에만 반영하고 이벤트를 낸다.
+ * 카드와 프로젝트의 페이지 수는 페이지에서 계산한다. 바꾸는 요청은 메모리에만 반영하고 이벤트를 낸다.
  *
  * 메시지를 받으면 run 하나를 흉내 낸다. [runStep]마다 `run.*` 이벤트를 내고, 끝나면 router·agent
  * 메시지와 run 기록을 붙이고 미등록 파일 하나를 남긴다. 문장에 "결정"이 있으면 도중에
@@ -77,7 +77,10 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
 
     private val json = CoreClient.CoreJson
     private val lock = Any()
-    private val spaces = decodeFile(File(dir, "spaces.json"), ListSerializer(Space.serializer()))
+    private val projects = decodeFile(
+        File(dir, "projects.json"),
+        ListSerializer(Project.serializer())
+    )
         .toMutableList()
     private val pages = (
         File(dir, "pages").listFiles { f ->
@@ -137,15 +140,15 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
             parts.size == 5 && parts[0] == "pages" && parts[2] == "decisions" &&
                 parts[4] == "answer" && method == "POST" -> answer(parts[1], parts[3], body)
 
-            parts == listOf("spaces") && method == "GET" -> ok(spacesJson())
+            parts == listOf("projects") && method == "GET" -> ok(projectsJson())
 
             parts == listOf(
-                "spaces"
-            ) && method == "POST" -> createSpace(decode(body, SpaceCreate.serializer()))
+                "projects"
+            ) && method == "POST" -> createProject(decode(body, ProjectCreate.serializer()))
 
-            parts.size == 2 && parts[0] == "spaces" -> spaceRequest(method, parts[1], body)
+            parts.size == 2 && parts[0] == "projects" -> projectRequest(method, parts[1], body)
 
-            parts.size == 3 && parts[0] == "spaces" && parts[2] == "pages" ->
+            parts.size == 3 && parts[0] == "projects" && parts[2] == "pages" ->
                 pagesRequest(method, parts[1], body)
 
             parts.size == 2 && parts[0] == "pages" -> pageRequest(method, parts[1], body)
@@ -160,32 +163,32 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         }
     }
 
-    private fun spaceRequest(method: String, slug: String, body: String?): FixtureResponse? {
-        val index = spaces.indexOfFirst { it.slug == slug }
-        if (index < 0) return notFound("space $slug")
+    private fun projectRequest(method: String, id: String, body: String?): FixtureResponse? {
+        val index = projects.indexOfFirst { it.id == id }
+        if (index < 0) return notFound("project $id")
         return when (method) {
             "PATCH" -> {
-                val update = decode(body, SpaceUpdate.serializer())
-                val old = spaces[index]
-                spaces[index] = old.copy(
+                val update = decode(body, ProjectUpdate.serializer())
+                val old = projects[index]
+                projects[index] = old.copy(
                     title = update.title ?: old.title,
-                    repo = update.repo ?: old.repo,
                     parent = update.parent ?: old.parent,
                     icon = update.icon ?: old.icon,
                     color = update.color ?: old.color,
                     sort = update.sort ?: old.sort
                 )
-                val space = withCounts(spaces[index])
-                emitSpace("space.updated", space)
-                ok(json.encodeToString(Space.serializer(), space))
+                val project = withCounts(projects[index])
+                emitProject("project.updated", project)
+                ok(json.encodeToString(Project.serializer(), project))
             }
 
             "DELETE" -> {
-                if (pages.values.any { it.space == slug } || spaces.any { it.parent == slug }) {
-                    return error(409, "conflict", "space $slug is not empty")
+                if (projects.any { it.parent == id }) {
+                    return error(409, "conflict", "project $id still has child projects")
                 }
-                spaces.removeAt(index)
-                emit("space.deleted", slug, null, buildJsonObject { put("id", slug) })
+                projects.removeAt(index)
+                pages.values.removeAll { it.project == id }
+                emit("project.deleted", id, null, buildJsonObject { put("id", id) })
                 FixtureResponse(204, null)
             }
 
@@ -193,39 +196,51 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         }
     }
 
-    private fun createSpace(request: SpaceCreate): FixtureResponse {
-        if (spaces.any { it.slug == request.slug }) return error(409, "conflict", "space exists")
-        val space = Space(
-            slug = request.slug,
-            title = request.title,
-            repo = request.repo,
+    /** 폴더를 프로젝트로 등록한다. id를 생략하면 폴더 이름에서 만들고 겹치면 번호를 붙인다. */
+    private fun createProject(request: ProjectCreate): FixtureResponse {
+        val path = request.path.trimEnd('/')
+        if (projects.any { it.path == path }) return error(409, "conflict", "$path is registered")
+        val name = path.substringAfterLast('/')
+        val base = request.id ?: name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+            .ifEmpty { "project" }
+        val id = generateSequence(1) { it + 1 }
+            .map { if (it == 1) base else "$base-$it" }
+            .first { candidate -> projects.none { it.id == candidate } }
+        val project = Project(
+            id = id,
+            title = request.title ?: name,
+            path = path,
             parent = request.parent,
             icon = request.icon,
             color = request.color,
-            sort = request.sort ?: SpaceSort.UPDATED
+            sort = request.sort ?: ProjectSort.UPDATED
         )
-        spaces += space
-        emitSpace("space.created", withCounts(space))
-        return FixtureResponse(201, json.encodeToString(Space.serializer(), withCounts(space)))
+        projects += project
+        emitProject("project.created", withCounts(project))
+        return FixtureResponse(201, json.encodeToString(Project.serializer(), withCounts(project)))
     }
 
-    private fun pagesRequest(method: String, slug: String, body: String?): FixtureResponse? {
-        val space = spaces.firstOrNull { it.slug == slug } ?: return notFound("space $slug")
+    private fun pagesRequest(method: String, id: String, body: String?): FixtureResponse? {
+        val project = projects.firstOrNull { it.id == id } ?: return notFound("project $id")
         return when (method) {
-            "GET" -> ok(json.encodeToString(ListSerializer(PageCard.serializer()), cardsIn(space)))
-            "POST" -> createPage(slug, decode(body, PageCreate.serializer()))
+            "GET" -> ok(
+                json.encodeToString(ListSerializer(PageCard.serializer()), cardsIn(project))
+            )
+
+            "POST" -> createPage(id, decode(body, PageCreate.serializer()))
+
             else -> null
         }
     }
 
-    private fun createPage(space: String, request: PageCreate): FixtureResponse {
+    private fun createPage(project: String, request: PageCreate): FixtureResponse {
         val now = now()
         val id = generateSequence(1) { it + 1 }
             .map { "${now.take(10)}-page-$it" }
             .first { it !in pages }
         val page = PageDetail(
             id = id,
-            space = space,
+            project = project,
             title = request.title,
             status = PageStatus.PLANNING,
             pinned = false,
@@ -250,14 +265,14 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
 
             "PATCH" -> {
                 val update = decode(body, PageUpdate.serializer())
-                if (update.space != null && spaces.none { it.slug == update.space }) {
-                    return notFound("space ${update.space}")
+                if (update.project != null && projects.none { it.id == update.project }) {
+                    return notFound("project ${update.project}")
                 }
                 val changed = page.copy(
                     title = update.title ?: page.title,
                     pinned = update.pinned ?: page.pinned,
                     tags = update.tags ?: page.tags,
-                    space = update.space ?: page.space,
+                    project = update.project ?: page.project,
                     updated = now()
                 )
                 pages[id] = changed
@@ -268,7 +283,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
             "DELETE" -> {
                 pages.remove(id)
                 trash.add(page, now())
-                emit("page.deleted", page.space, id, buildJsonObject { put("id", id) })
+                emit("page.deleted", page.project, id, buildJsonObject { put("id", id) })
                 FixtureResponse(204, null)
             }
 
@@ -295,7 +310,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
             put("result_status", "cancelled")
             put("error", "cancelled")
         }
-        emit("run.failed", page.space, pageId, data, run)
+        emit("run.failed", page.project, pageId, data, run)
         return FixtureResponse(202, null)
     }
 
@@ -379,7 +394,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         delay(runStep)
         synchronized(lock) {
             val page = pages[run.page] ?: return
-            emit(type, page.space, page.id, data(page), run.n)
+            emit(type, page.project, page.id, data(page), run.n)
         }
     }
 
@@ -402,7 +417,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
             waitingRuns[page.id] = run
             emit(
                 "flow.waiting",
-                page.space,
+                page.project,
                 page.id,
                 json.encodeToJsonElement(FlowWaitingData.serializer(), waiting),
                 run.n
@@ -471,14 +486,14 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         emitBlock(finished, agent.id, run.n)
         emit(
             "run.finished",
-            page.space,
+            page.project,
             page.id,
             json.encodeToJsonElement(RunRecord.serializer(), record),
             run.n
         )
         emit(
             "page.unknown_files",
-            page.space,
+            page.project,
             page.id,
             buildJsonObject {
                 put("files", json.parseToJsonElement(unknownFilesJson(finished)))
@@ -494,13 +509,13 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         val parts = InputParts(
             systemEst = SYSTEM_TOKENS,
             root = memory.root.tokens,
-            space = memory.space.tokens,
+            project = memory.project.tokens,
             state = memory.state.tokens,
             contract = CONTRACT_TOKENS,
             target = 0,
             request = FixtureMemory.tokens(text.orEmpty())
         )
-        val total = parts.systemEst + parts.root + parts.space + parts.state + parts.contract +
+        val total = parts.systemEst + parts.root + parts.project + parts.state + parts.contract +
             parts.target + parts.request
         return InputPreview(
             kind = route.kind,
@@ -514,8 +529,8 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
     }
 
     private fun memoryOf(page: PageDetail): Memory {
-        val title = spaces.firstOrNull { it.slug == page.space }?.title ?: page.space
-        return Memory(memory.root(), memory.space(page.space, title), memory.state(page))
+        val project = projects.first { it.id == page.project }
+        return Memory(memory.root(), memory.project(project), memory.state(page, project))
     }
 
     private fun saveMemory(pageId: String, layerName: String, body: String?): FixtureResponse {
@@ -537,12 +552,12 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         }
         val saved = when (layer) {
             MemoryLayer.ROOT -> memoryOf(page).root
-            MemoryLayer.SPACE -> memoryOf(page).space
+            MemoryLayer.PROJECT -> memoryOf(page).project
             MemoryLayer.STATE -> memoryOf(page).state
         }
         emit(
             "memory.updated",
-            page.space,
+            page.project,
             page.id,
             buildJsonObject {
                 put("layer", layer.value)
@@ -561,12 +576,12 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         return ok(unknownFilesJson(changed))
     }
 
-    private fun restore(commit: String): FixtureResponse {
-        val page = trash.restore(commit) ?: return notFound("commit $commit")
+    private fun restore(id: String): FixtureResponse {
+        val page = trash.restore(id) ?: return notFound("trash entry $id")
         if (page.id in pages) return error(409, "conflict", "page ${page.id} exists")
         pages[page.id] = page
         emitPage("page.created", page)
-        val restored = TrashRestore(trash.nextCommit(), listOf(FixtureTrash.pagePath(page)))
+        val restored = TrashRestore(id, listOf(FixtureTrash.pagePath(page)))
         return ok(json.encodeToString(TrashRestore.serializer(), restored))
     }
 
@@ -583,7 +598,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         val header = page.blocks.first { it.id == blockId }
         emit(
             "block.added",
-            page.space,
+            page.project,
             page.id,
             buildJsonObject {
                 put("block", json.encodeToJsonElement(BlockHeader.serializer(), header))
@@ -593,41 +608,41 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         )
     }
 
-    private fun spacesJson(): String =
-        json.encodeToString(ListSerializer(Space.serializer()), spaces.map(::withCounts))
+    private fun projectsJson(): String =
+        json.encodeToString(ListSerializer(Project.serializer()), projects.map(::withCounts))
 
-    private fun withCounts(space: Space): Space {
-        val inSpace = pages.values.filter { it.space == space.slug }
-        return space.copy(
-            pages = inSpace.size,
-            activePages = inSpace.count {
+    private fun withCounts(project: Project): Project {
+        val inProject = pages.values.filter { it.project == project.id }
+        return project.copy(
+            pages = inProject.size,
+            activePages = inProject.count {
                 it.status == PageStatus.DOING ||
                     it.status == PageStatus.BLOCKED
             }
         )
     }
 
-    /** 고정 먼저, 그다음 공간의 정렬. */
-    private fun cardsIn(space: Space): List<PageCard> {
-        val cards = pages.values.filter { it.space == space.slug }.map { it.toCard() }
-        val order: Comparator<PageCard> = when (space.sort ?: SpaceSort.UPDATED) {
-            SpaceSort.UPDATED -> compareByDescending { it.updated.orEmpty() }
-            SpaceSort.CREATED -> compareByDescending { it.created.orEmpty() }
-            SpaceSort.TITLE -> compareBy { it.title }
+    /** 고정 먼저, 그다음 프로젝트의 정렬. */
+    private fun cardsIn(project: Project): List<PageCard> {
+        val cards = pages.values.filter { it.project == project.id }.map { it.toCard() }
+        val order: Comparator<PageCard> = when (project.sort ?: ProjectSort.UPDATED) {
+            ProjectSort.UPDATED -> compareByDescending { it.updated.orEmpty() }
+            ProjectSort.CREATED -> compareByDescending { it.created.orEmpty() }
+            ProjectSort.TITLE -> compareBy { it.title }
         }
         return cards.sortedWith(compareByDescending<PageCard> { it.pinned }.then(order))
     }
 
-    private fun emitSpace(type: String, space: Space) = emit(
+    private fun emitProject(type: String, project: Project) = emit(
         type,
-        space.slug,
+        project.id,
         null,
-        buildJsonObject { put("space", json.encodeToJsonElement(Space.serializer(), space)) }
+        buildJsonObject { put("project", json.encodeToJsonElement(Project.serializer(), project)) }
     )
 
     private fun emitPage(type: String, page: PageDetail) = emit(
         type,
-        page.space,
+        page.project,
         page.id,
         buildJsonObject {
             put("page", json.encodeToJsonElement(PageCard.serializer(), page.toCard()))
@@ -636,7 +651,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
 
     private fun emit(
         type: String,
-        space: String,
+        project: String,
         page: String?,
         data: JsonElement,
         run: Int? = null,
@@ -645,7 +660,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         val event = buildJsonObject {
             put("type", type)
             put("ts", now())
-            put("space", space)
+            put("project", project)
             page?.let { put("page", it) }
             run?.let { put("run", JsonPrimitive(it)) }
             block?.let { put("block", it) }
@@ -716,7 +731,7 @@ fun PageDetail.toCard(): PageCard {
     }
     return PageCard(
         id = id,
-        space = space,
+        project = project,
         title = title,
         status = status,
         pinned = pinned,

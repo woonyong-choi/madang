@@ -1,6 +1,6 @@
 {
   "id": "2026-08-02-kmp",
-  "space": "blog",
+  "project": "blog",
   "title": "Compose Multiplatform 후기",
   "kind": "build",
   "status": "done",
@@ -63,7 +63,6 @@
         "ok": null
       },
       "result_status": "done",
-      "commit": "feed123",
       "events_log": "runs/1.events.jsonl"
     }
   ],

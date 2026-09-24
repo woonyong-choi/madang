@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import madang.api.model.PageStatus
-import madang.api.model.SpaceSort
+import madang.api.model.ProjectSort
 
 class PageListTest {
 
@@ -13,13 +13,13 @@ class PageListTest {
     private val now = Instant.parse("2026-09-24T12:00:00+09:00")
 
     private fun ids(source: ListSource, filter: PageFilter = PageFilter()) =
-        visibleCards(Home.cards, Home.spaces, source, filter).map { it.id }
+        visibleCards(Home.cards, Home.projects, source, filter).map { it.id }
 
     @Test
     fun pinnedFirstThenUpdatedNewestFirst() {
         assertEquals(
             listOf("resume", "cover", "posting"),
-            sortCards(listOf(Home.posting, Home.cover, Home.resume), SpaceSort.UPDATED).map {
+            sortCards(listOf(Home.posting, Home.cover, Home.resume), ProjectSort.UPDATED).map {
                 it.id
             }
         )
@@ -31,7 +31,7 @@ class PageListTest {
 
         assertEquals(
             listOf("posting", "draft", "resume", "cover"),
-            sortCards(unpinned, SpaceSort.CREATED).map { it.id }
+            sortCards(unpinned, ProjectSort.CREATED).map { it.id }
         )
     }
 
@@ -39,7 +39,7 @@ class PageListTest {
     fun titleSortIsAlphabeticalAfterPinned() {
         assertEquals(
             listOf("resume", "draft", "posting", "cover"),
-            sortCards(Home.cards, SpaceSort.TITLE).map { it.id }
+            sortCards(Home.cards, ProjectSort.TITLE).map { it.id }
         )
     }
 
@@ -50,17 +50,17 @@ class PageListTest {
 
         assertEquals(
             listOf("utc", "kst"),
-            sortCards(listOf(seoulEarlier, utcLater), SpaceSort.UPDATED).map { it.id }
+            sortCards(listOf(seoulEarlier, utcLater), ProjectSort.UPDATED).map { it.id }
         )
     }
 
     @Test
-    fun spaceListIncludesSubspacesAndUsesThatSpaceSort() {
-        assertEquals(listOf("resume", "cover", "posting"), ids(ListSource.InSpace("jobs")))
-        assertEquals(listOf("cover"), ids(ListSource.InSpace("jobs-2026")))
-        assertEquals(emptyList(), ids(ListSource.InSpace(ROOT_SPACE)))
-        assertEquals(SpaceSort.CREATED, sortOf(ListSource.InSpace("blog"), Home.spaces))
-        assertEquals(SpaceSort.UPDATED, sortOf(ListSource.WithTag("글"), Home.spaces))
+    fun projectListIncludesSubprojectsAndUsesThatProjectSort() {
+        assertEquals(listOf("resume", "cover", "posting"), ids(ListSource.InProject("jobs")))
+        assertEquals(listOf("cover"), ids(ListSource.InProject("jobs-2026")))
+        assertEquals(emptyList(), ids(ListSource.InProject(NOTES)))
+        assertEquals(ProjectSort.CREATED, sortOf(ListSource.InProject("blog"), Home.projects))
+        assertEquals(ProjectSort.UPDATED, sortOf(ListSource.WithTag("글"), Home.projects))
     }
 
     @Test
@@ -71,7 +71,7 @@ class PageListTest {
 
     @Test
     fun filterByStatusAndTag() {
-        val jobs = ListSource.InSpace("jobs")
+        val jobs = ListSource.InProject("jobs")
 
         assertEquals(
             listOf("resume", "posting"),
@@ -98,7 +98,7 @@ class PageListTest {
             card("undated")
         )
 
-        val sections = listSections(cards, SpaceSort.UPDATED, now, seoul)
+        val sections = listSections(cards, ProjectSort.UPDATED, now, seoul)
 
         assertEquals(
             listOf(
@@ -118,28 +118,28 @@ class PageListTest {
 
     @Test
     fun titleSortHasOnlyPinnedAndPlainSections() {
-        val sorted = sortCards(Home.cards, SpaceSort.TITLE)
+        val sorted = sortCards(Home.cards, ProjectSort.TITLE)
 
-        val sections = listSections(sorted, SpaceSort.TITLE, now, seoul)
+        val sections = listSections(sorted, ProjectSort.TITLE, now, seoul)
 
         assertEquals(listOf(SectionHeader.Pinned, SectionHeader.Plain), sections.map { it.header })
     }
 
     @Test
-    fun spaceTreeFocusShowsOnlyThatSubtree() {
-        val rows = spaceRows(Home.spaces, expanded = setOf("jobs"), focus = "jobs")
+    fun projectTreeFocusShowsOnlyThatSubtree() {
+        val rows = projectRows(Home.projects, expanded = setOf("jobs"), focus = "jobs")
 
-        assertEquals(listOf("jobs" to 0, "jobs-2026" to 1), rows.map { it.space.slug to it.depth })
-        assertEquals(setOf("jobs", "jobs-2026"), spaceWithDescendants("jobs", Home.spaces))
+        assertEquals(listOf("jobs" to 0, "jobs-2026" to 1), rows.map { it.project.id to it.depth })
+        assertEquals(setOf("jobs", "jobs-2026"), projectWithDescendants("jobs", Home.projects))
     }
 
     @Test
-    fun spaceStatsCountPagesAndActiveWork() {
-        val stats = spaceStats(Home.cards)
+    fun projectStatsCountPagesAndActiveWork() {
+        val stats = projectStats(Home.cards)
 
-        assertEquals(SpaceStats(pages = 2, active = true), stats["jobs"])
-        assertEquals(SpaceStats(pages = 1, active = false), stats["jobs-2026"])
-        assertEquals(SpaceStats(pages = 1, active = true), stats["blog"])
+        assertEquals(ProjectStats(pages = 2, active = true), stats["jobs"])
+        assertEquals(ProjectStats(pages = 1, active = false), stats["jobs-2026"])
+        assertEquals(ProjectStats(pages = 1, active = true), stats["blog"])
     }
 
     @Test
@@ -154,12 +154,5 @@ class PageListTest {
         )
         assertEquals("공고", expanded.last().name)
         assertEquals(1, expanded.last().depth)
-    }
-
-    @Test
-    fun slugsAreAsciiAndUnique() {
-        assertEquals("auth-svc", slugFor("Auth Svc", emptySet()))
-        assertEquals("space", slugFor("지원", emptySet()))
-        assertEquals("space-3", slugFor("블로그", setOf("space", "space-2")))
     }
 }

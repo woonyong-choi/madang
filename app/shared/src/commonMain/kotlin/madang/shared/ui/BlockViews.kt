@@ -356,8 +356,7 @@ fun RunItem(run: RunRecord, folded: Boolean, onOpen: () -> Unit) {
         }
         if (!folded) {
             Column(modifier = Modifier.padding(top = 6.dp)) {
-                val meta =
-                    listOfNotNull(run.kind, run.tier?.let { "tier $it" }, run.effort, run.commit)
+                val meta = listOfNotNull(run.kind, run.tier?.let { "tier $it" }, run.effort)
                 Text(meta.joinToString(" · "), style = MaterialTheme.typography.labelSmall)
                 for (file in run.changedFiles) {
                     Text(

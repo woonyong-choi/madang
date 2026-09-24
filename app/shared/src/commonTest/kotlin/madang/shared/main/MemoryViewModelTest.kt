@@ -43,8 +43,8 @@ class MemoryViewModelTest {
 
     private fun memoryJson() = """{
         "root":{"layer":"root","path":"root.md","content":"# 나\n","tokens":3},
-        "space":{"layer":"space","path":"spaces/jobs/space.md","content":"지원\n","tokens":2},
-        "state":{"layer":"state","path":"spaces/jobs/pages/resume/state.md",
+        "project":{"layer":"project","path":"projects/jobs/project.md","content":"지원\n","tokens":2},
+        "state":{"layer":"state","path":"projects/jobs/pages/resume/state.md",
           "content":"$stateContent","tokens":12,"token_limit":2000}}"""
 
     @Test

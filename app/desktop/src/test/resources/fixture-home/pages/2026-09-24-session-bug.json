@@ -1,6 +1,6 @@
 {
   "id": "2026-09-24-session-bug",
-  "space": "auth-svc",
+  "project": "auth-svc",
   "title": "세션 갱신 경합",
   "kind": "design",
   "status": "blocked",
@@ -103,7 +103,6 @@
         "ok": null
       },
       "result_status": "review",
-      "commit": "c0ffee1",
       "events_log": "runs/1.events.jsonl"
     },
     {
@@ -130,7 +129,6 @@
         "ok": null
       },
       "result_status": "blocked",
-      "commit": "d00d2e3",
       "events_log": "runs/2.events.jsonl"
     }
   ],

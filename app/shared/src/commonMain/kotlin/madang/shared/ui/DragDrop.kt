@@ -30,7 +30,7 @@ import madang.api.model.PageCard
 
 /** 페이지 카드를 놓을 수 있는 곳. */
 sealed interface DropTarget {
-    data class ToSpace(val slug: String) : DropTarget
+    data class ToProject(val id: String) : DropTarget
 
     data class ToTag(val path: String) : DropTarget
 }
@@ -42,7 +42,7 @@ fun hitTarget(targets: Map<DropTarget, Rect>, point: Offset): DropTarget? =
 /**
  * 카드 끌어다 놓기. 좌표는 모두 창 기준이다.
  *
- * 카드는 [dragSource], 공간·태그 줄은 [dropTarget]을 단다. 놓으면 [onDrop]이 불린다.
+ * 카드는 [dragSource], 프로젝트·태그 줄은 [dropTarget]을 단다. 놓으면 [onDrop]이 불린다.
  */
 class DragDropState(private val onDrop: (PageCard, DropTarget) -> Unit) {
     var dragging by mutableStateOf<PageCard?>(null)

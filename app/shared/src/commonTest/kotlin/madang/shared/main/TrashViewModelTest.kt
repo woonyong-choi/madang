@@ -16,10 +16,11 @@ import madang.shared.json
 @OptIn(ExperimentalCoroutinesApi::class)
 class TrashViewModelTest {
 
-    private val entry = """{"commit":"9f8e7d6","deleted":"2026-09-23T18:02:11+09:00",
-        "space":"jobs","page":"2026-09-20-cover-letter","block":null,
-        "paths":["spaces/jobs/pages/2026-09-20-cover-letter"],
-        "message":"[2026-09-20-cover-letter] delete page"}"""
+    private val entryId = "20260923T180211045122-page"
+
+    private val entry = """{"id":"$entryId","deleted":"2026-09-23T18:02:11+09:00",
+        "project":"jobs","page":"2026-09-20-cover-letter","block":null,
+        "paths":[".madang/pages/2026-09-20-cover-letter"]}"""
 
     @Test
     fun restoreReloadsTheListAndNotifies() = runTest {
@@ -29,9 +30,9 @@ class TrashViewModelTest {
             when (request.url.encodedPath) {
                 "/trash" -> json(trash)
 
-                "/trash/9f8e7d6/restore" -> {
+                "/trash/$entryId/restore" -> {
                     trash = "[]"
-                    json("""{"commit":"0a1b2c3","paths":["spaces/jobs/pages/x"]}""")
+                    json("""{"id":"$entryId","paths":[".madang/pages/2026-09-20-cover-letter"]}""")
                 }
 
                 else -> json("""{"error":"not_found","message":"x"}""", HttpStatusCode.NotFound)
@@ -42,13 +43,13 @@ class TrashViewModelTest {
 
         viewModel.load()
         runCurrent()
-        assertEquals(listOf("9f8e7d6"), viewModel.state.value.entries?.map { it.commit })
+        assertEquals(listOf(entryId), viewModel.state.value.entries?.map { it.id })
 
-        viewModel.restore("9f8e7d6")
-        assertEquals("9f8e7d6", viewModel.state.value.restoring)
+        viewModel.restore(entryId)
+        assertEquals(entryId, viewModel.state.value.restoring)
         runCurrent()
 
-        assertTrue("POST /trash/9f8e7d6/restore" to null in mock.requests)
+        assertTrue("POST /trash/$entryId/restore" to null in mock.requests)
         assertEquals(emptyList(), viewModel.state.value.entries)
         assertNull(viewModel.state.value.restoring)
         assertEquals(1, restored)
@@ -71,7 +72,7 @@ class TrashViewModelTest {
         viewModel.load()
         runCurrent()
 
-        viewModel.restore("9f8e7d6")
+        viewModel.restore(entryId)
         runCurrent()
 
         assertEquals("conflict: path exists", viewModel.state.value.error)

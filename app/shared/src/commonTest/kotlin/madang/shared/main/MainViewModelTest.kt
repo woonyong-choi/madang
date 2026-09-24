@@ -1,5 +1,6 @@
 package madang.shared.main
 
+import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import kotlin.test.Test
@@ -17,8 +18,8 @@ import madang.api.model.BlockHeader
 import madang.api.model.BlockType
 import madang.api.model.PageCard
 import madang.api.model.PageDetail
-import madang.api.model.Space
-import madang.api.model.SpaceSort
+import madang.api.model.Project
+import madang.api.model.ProjectSort
 import madang.shared.MockCore
 import madang.shared.core.CoreClient
 import madang.shared.core.EventStream
@@ -33,7 +34,7 @@ class MainViewModelTest {
 
     private val resumeDetail = PageDetail(
         id = "resume",
-        space = "jobs",
+        project = "jobs",
         title = "이력서",
         status = Home.resume.status,
         pinned = true,
@@ -52,19 +53,27 @@ class MainViewModelTest {
         val mock = MockCore(this) { request ->
             val path = request.url.encodedPath
             when {
-                path == "/spaces" ->
-                    json(codec.encodeToString(ListSerializer(Space.serializer()), Home.spaces))
+                path == "/projects" && request.method == HttpMethod.Post -> json(
+                    codec.encodeToString(Project.serializer(), project("site")),
+                    HttpStatusCode.Created
+                )
 
-                path.startsWith("/spaces/") && path.endsWith("/pages") -> {
-                    val slug = path.removePrefix("/spaces/").removeSuffix("/pages")
-                    val cards = Home.cards.filter { it.space == slug }
+                path == "/projects" ->
+                    json(codec.encodeToString(ListSerializer(Project.serializer()), Home.projects))
+
+                path == "/projects/blog" && request.method == HttpMethod.Delete ->
+                    respond("", HttpStatusCode.NoContent)
+
+                path.startsWith("/projects/") && path.endsWith("/pages") -> {
+                    val id = path.removePrefix("/projects/").removeSuffix("/pages")
+                    val cards = Home.cards.filter { it.project == id }
                     json(codec.encodeToString(ListSerializer(PageCard.serializer()), cards))
                 }
 
-                path == "/spaces/jobs" && request.method == HttpMethod.Patch -> json(
+                path == "/projects/jobs" && request.method == HttpMethod.Patch -> json(
                     codec.encodeToString(
-                        Space.serializer(),
-                        Home.spaces[1].copy(sort = SpaceSort.TITLE)
+                        Project.serializer(),
+                        Home.projects[1].copy(sort = ProjectSort.TITLE)
                     )
                 )
 
@@ -96,16 +105,16 @@ class MainViewModelTest {
     }
 
     @Test
-    fun resyncLoadsSpacesAndEveryPage() = runTest {
+    fun resyncLoadsProjectsAndEveryPage() = runTest {
         val (viewModel, _) = fixture()
 
         runCurrent()
 
         val state = viewModel.state.value
         assertEquals(EventLink.Live, state.link)
-        assertEquals(Home.spaces.map { it.slug }.toSet(), state.spaces.map { it.slug }.toSet())
+        assertEquals(Home.projects.map { it.id }.toSet(), state.projects.map { it.id }.toSet())
         assertEquals(Home.cards.map { it.id }.toSet(), state.cards.map { it.id }.toSet())
-        assertEquals(ListSource.InSpace(ROOT_SPACE), state.source)
+        assertEquals(ListSource.InProject(NOTES), state.source)
     }
 
     @Test
@@ -113,7 +122,7 @@ class MainViewModelTest {
         val (viewModel, _) = fixture()
         runCurrent()
 
-        viewModel.select(ListSource.InSpace("jobs"))
+        viewModel.select(ListSource.InProject("jobs"))
         viewModel.onKey(NavKey.ENTER)
         runCurrent()
 
@@ -130,13 +139,13 @@ class MainViewModelTest {
     fun sortAndPinGoToCoreAndApplyTheResponse() = runTest {
         val (viewModel, mock) = fixture()
         runCurrent()
-        viewModel.select(ListSource.InSpace("jobs"))
+        viewModel.select(ListSource.InProject("jobs"))
 
-        viewModel.setSort(SpaceSort.TITLE)
+        viewModel.setSort(ProjectSort.TITLE)
         viewModel.setPinned("posting", true)
         runCurrent()
 
-        assertTrue("PATCH /spaces/jobs" to """{"sort":"title"}""" in mock.requests)
+        assertTrue("PATCH /projects/jobs" to """{"sort":"title"}""" in mock.requests)
         assertTrue("PATCH /pages/posting" to """{"pinned":true}""" in mock.requests)
         val state = viewModel.state.value
         assertEquals(listOf("posting", "resume", "cover"), state.listCards.map { it.id })
@@ -150,15 +159,60 @@ class MainViewModelTest {
 
         val updated = codec.encodeToString(PageCard.serializer(), Home.draft.copy(title = "GC 정리"))
         events.send(
-            """{"type":"page.updated","ts":"t","space":"blog","page":"draft","data":{"page":$updated}}"""
+            """{"type":"page.updated","ts":"t","project":"blog","page":"draft","data":{"page":$updated}}"""
         )
         events.send(
-            """{"type":"page.deleted","ts":"t","space":"jobs","page":"cover","data":{"id":"cover"}}"""
+            """{"type":"page.deleted","ts":"t","project":"jobs","page":"cover","data":{"id":"cover"}}"""
         )
         runCurrent()
 
         val cards = viewModel.state.value.cards
         assertEquals("GC 정리", cards.first { it.id == "draft" }.title)
         assertTrue(cards.none { it.id == "cover" })
+    }
+
+    @Test
+    fun addedFolderBecomesSelectedProjectOnceEvenWithItsEvent() = runTest {
+        val events = Channel<String>(Channel.UNLIMITED)
+        val (viewModel, mock) = fixture(events)
+        runCurrent()
+
+        viewModel.addProject("/work/site")
+        runCurrent()
+        val created = codec.encodeToString(Project.serializer(), project("site"))
+        events.send(
+            """{"type":"project.created","ts":"t","project":"site","data":{"project":$created}}"""
+        )
+        runCurrent()
+
+        assertTrue("POST /projects" to """{"path":"/work/site"}""" in mock.requests)
+        val state = viewModel.state.value
+        assertEquals(1, state.projects.count { it.id == "site" })
+        assertEquals(ListSource.InProject("site"), state.source)
+        assertEquals("site", state.targetProject)
+    }
+
+    @Test
+    fun removedProjectDropsItsCardsAndSelection() = runTest {
+        val (viewModel, mock) = fixture()
+        runCurrent()
+        viewModel.select(ListSource.InProject("blog"))
+
+        viewModel.removeProject("blog")
+        runCurrent()
+
+        assertTrue("DELETE /projects/blog" to null in mock.requests)
+        val state = viewModel.state.value
+        assertTrue(state.projects.none { it.id == "blog" })
+        assertTrue(state.cards.none { it.project == "blog" })
+        assertEquals(ListSource.InProject(NOTES), state.source)
+    }
+
+    @Test
+    fun newPageNeedsAProject() = runTest {
+        val empty = MainState(baseUrl = "http://core").withLoaded(emptyList(), emptyList())
+
+        assertEquals(null, empty.targetProject)
+        assertEquals(null, empty.source)
     }
 }

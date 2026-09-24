@@ -75,8 +75,8 @@ class LayerZeroScreenshotTest {
         withTimeout(10.seconds) { state.first(condition) }
     }
 
-    private fun MainViewModel.show(space: String, page: String, pane: Pane) {
-        select(ListSource.InSpace(space))
+    private fun MainViewModel.show(project: String, page: String, pane: Pane) {
+        select(ListSource.InProject(project))
         openPage(page)
         await { it.page?.detail?.id == page && it.page?.contents?.size == docAndDataCount(it) }
         focusPane(pane)
@@ -131,7 +131,7 @@ class LayerZeroScreenshotTest {
     fun rendersWideNarrowAndSinglePageLayouts() {
         val viewModel = viewModel()
         val loaded = viewModel.await { it.loaded && it.activeRuns.isNotEmpty() }
-        assertEquals(5, loaded.spaces.size)
+        assertEquals(5, loaded.projects.size)
         assertEquals(9, loaded.cards.size)
 
         viewModel.show("jobs", "2026-09-24-resume", Pane.LIST)

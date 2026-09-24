@@ -25,12 +25,18 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.outlined.UnfoldLess
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,39 +49,40 @@ import madang.api.model.PageStatus
 import madang.shared.main.ListSource
 import madang.shared.main.MainState
 import madang.shared.main.Pane
-import madang.shared.main.ROOT_SPACE
-import madang.shared.main.SpaceRow
+import madang.shared.main.ProjectRow
 import madang.shared.main.TagRow
-import madang.shared.main.spaceStats
+import madang.shared.main.projectStats
 
 /** 1열 조작. 화면이 ViewModel과 대화상자로 이어 준다. */
-class SpacesActions(
+class ProjectsActions(
     val select: (ListSource) -> Unit,
-    val toggleSpace: (String) -> Unit,
+    val toggleProject: (String) -> Unit,
     val toggleTag: (String) -> Unit,
     val collapseAll: () -> Unit,
     val focusOn: (String?) -> Unit,
-    val newSpace: () -> Unit,
-    val rename: (SpaceRow) -> Unit,
-    val linkRepo: (SpaceRow) -> Unit,
-    val delete: (SpaceRow) -> Unit,
+    val addProject: () -> Unit,
+    val rename: (ProjectRow) -> Unit,
+    val remove: (ProjectRow) -> Unit,
     val openTrash: () -> Unit,
     val openSettings: () -> Unit
 )
 
-/** 1열: 공간 트리와 태그 트리, 아래에 "+ 공간". */
+/**
+ * 1열: 프로젝트 트리와 태그 트리, 아래에 "+ 프로젝트". 프로젝트 줄은 이름을 보이고 마우스를
+ * 올리면 폴더 경로를 보인다. "+ 프로젝트"는 폴더를 골라 등록한다.
+ */
 @Composable
-fun SpacesColumn(state: MainState, actions: SpacesActions, modifier: Modifier) {
+fun ProjectsColumn(state: MainState, actions: ProjectsActions, modifier: Modifier) {
     val strings = LocalStrings.current
-    val focused = state.pane == Pane.SPACES
-    val stats = spaceStats(state.cards)
+    val focused = state.pane == Pane.PROJECTS
+    val stats = projectStats(state.cards)
     Column(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                strings.spaces,
+                strings.projects,
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f)
             )
@@ -86,25 +93,35 @@ fun SpacesColumn(state: MainState, actions: SpacesActions, modifier: Modifier) {
             )
             ToolbarIcon(
                 Icons.Outlined.CreateNewFolder,
-                strings.navigator.newSpace,
-                actions.newSpace
+                strings.navigator.newProject,
+                actions.addProject
             )
             ToolbarIcon(Icons.Outlined.Settings, strings.settings, actions.openSettings)
         }
-        state.focusSpace?.let { slug ->
-            val title = state.spaces.firstOrNull { it.slug == slug }?.title ?: slug
+        state.focusProject?.let { id ->
+            val title = state.projects.firstOrNull { it.id == id }?.title ?: id
             FocusBanner("${strings.navigator.focused}: $title") { actions.focusOn(null) }
         }
         LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 6.dp)) {
-            items(state.spaceRows, key = { "space:${it.space.slug}" }) { row ->
-                val stat = stats[row.space.slug]
-                SpaceRowItem(
+            if (state.loaded && state.projects.isEmpty()) {
+                item(key = "no-projects") {
+                    Text(
+                        strings.navigator.noProjects,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+            items(state.projectRows, key = { "project:${it.project.id}" }) { row ->
+                val stat = stats[row.project.id]
+                ProjectRowItem(
                     row = row,
-                    count = stat?.pages ?: row.space.pages ?: 0,
-                    active = stat?.active ?: ((row.space.activePages ?: 0) > 0),
-                    selected = state.source == ListSource.InSpace(row.space.slug),
+                    count = stat?.pages ?: row.project.pages ?: 0,
+                    active = stat?.active ?: ((row.project.activePages ?: 0) > 0),
+                    selected = state.source == ListSource.InProject(row.project.id),
                     paneFocused = focused,
-                    focusedSpace = state.focusSpace == row.space.slug,
+                    focusedProject = state.focusProject == row.project.id,
                     actions = actions
                 )
             }
@@ -128,65 +145,74 @@ fun SpacesColumn(state: MainState, actions: SpacesActions, modifier: Modifier) {
             }
         }
         HorizontalDivider()
-        TextButton(onClick = actions.newSpace, modifier = Modifier.padding(4.dp)) {
+        TextButton(onClick = actions.addProject, modifier = Modifier.padding(4.dp)) {
             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
-            Text(strings.navigator.newSpace)
+            Text(strings.navigator.newProject)
         }
     }
 }
 
 @Composable
-private fun SpaceRowItem(
-    row: SpaceRow,
+private fun ProjectRowItem(
+    row: ProjectRow,
     count: Int,
     active: Boolean,
     selected: Boolean,
     paneFocused: Boolean,
-    focusedSpace: Boolean,
-    actions: SpacesActions
+    focusedProject: Boolean,
+    actions: ProjectsActions
 ) {
     val strings = LocalStrings.current.navigator
     val trashLabel = LocalStrings.current.page.recentlyDeleted
-    val slug = row.space.slug
+    val id = row.project.id
     ContextMenuBox(
         actions = {
             listOf(
-                if (focusedSpace) {
+                if (focusedProject) {
                     MenuAction(strings.unfocus) { actions.focusOn(null) }
                 } else {
-                    MenuAction(strings.focus) { actions.focusOn(slug) }
+                    MenuAction(strings.focus) { actions.focusOn(id) }
                 },
                 MenuAction(strings.rename) { actions.rename(row) },
-                MenuAction(strings.linkRepo) { actions.linkRepo(row) },
-                MenuAction(trashLabel, actions.openTrash)
-            ) +
-                if (slug !=
-                    ROOT_SPACE
-                ) {
-                    listOf(MenuAction(strings.delete) { actions.delete(row) })
-                } else {
-                    emptyList()
-                }
+                MenuAction(trashLabel, actions.openTrash),
+                MenuAction(strings.removeProject) { actions.remove(row) }
+            )
         }
     ) { menu ->
-        NavRow(
-            depth = row.depth,
-            expandable = row.hasChildren,
-            expanded = row.expanded,
-            onToggle = { actions.toggleSpace(slug) },
-            icon = spaceIcon(row.space.icon, slug == ROOT_SPACE),
-            iconTint = parseColor(row.space.color),
-            label = row.space.title,
-            count = count,
-            active = active,
-            selected = selected,
-            paneFocused = paneFocused,
-            target = DropTarget.ToSpace(slug),
-            modifier = menu,
-            onClick = { actions.select(ListSource.InSpace(slug)) }
-        )
+        PathTooltip(row.project.path) {
+            NavRow(
+                depth = row.depth,
+                expandable = row.hasChildren,
+                expanded = row.expanded,
+                onToggle = { actions.toggleProject(id) },
+                icon = projectIcon(row.project.icon),
+                iconTint = parseColor(row.project.color),
+                label = row.project.title,
+                count = count,
+                active = active,
+                selected = selected,
+                paneFocused = paneFocused,
+                target = DropTarget.ToProject(id),
+                modifier = menu,
+                onClick = { actions.select(ListSource.InProject(id)) }
+            )
+        }
     }
+}
+
+/** 마우스를 올리면 [path]를 보이는 툴팁. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PathTooltip(path: String, content: @Composable () -> Unit) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+            TooltipAnchorPosition.Below
+        ),
+        tooltip = { PlainTooltip { Text(path) } },
+        state = rememberTooltipState(),
+        content = content
+    )
 }
 
 @Composable
@@ -194,7 +220,7 @@ private fun TagRowItem(
     row: TagRow,
     selected: Boolean,
     paneFocused: Boolean,
-    actions: SpacesActions
+    actions: ProjectsActions
 ) {
     NavRow(
         depth = row.depth,

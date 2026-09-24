@@ -57,7 +57,7 @@ import kotlinx.datetime.toLocalDateTime
 import madang.api.model.BlockType
 import madang.api.model.PageCard
 import madang.api.model.PageStatus
-import madang.api.model.SpaceSort
+import madang.api.model.ProjectSort
 import madang.shared.main.ListSection
 import madang.shared.main.ListSource
 import madang.shared.main.MainState
@@ -72,7 +72,7 @@ import madang.shared.main.sortOf
 class ListActions(
     val open: (PageCard) -> Unit,
     val newPage: () -> Unit,
-    val setSort: (SpaceSort) -> Unit,
+    val setSort: (ProjectSort) -> Unit,
     val setFilter: (PageFilter) -> Unit,
     val setPinned: (PageCard, Boolean) -> Unit,
     val editTags: (PageCard) -> Unit,
@@ -87,7 +87,7 @@ fun PageListColumn(state: MainState, actions: ListActions, modifier: Modifier) {
     val strings = LocalStrings.current.navigator
     val clock = LocalListClock.current
     val cards = state.listCards
-    val sort = sortOf(state.source, state.spaces)
+    val sort = sortOf(state.source, state.projects)
     val sections = listSections(cards, sort, clock.now(), clock.zone)
     val listState = rememberLazyListState()
     val selectedIndex = lazyIndexOf(sections, state.selectedPage)
@@ -140,11 +140,11 @@ fun PageListColumn(state: MainState, actions: ListActions, modifier: Modifier) {
 }
 
 @Composable
-private fun ListHeader(state: MainState, sort: SpaceSort, actions: ListActions) {
+private fun ListHeader(state: MainState, sort: ProjectSort, actions: ListActions) {
     val strings = LocalStrings.current.navigator
     val title = when (val source = state.source) {
-        is ListSource.InSpace -> state.spaces.firstOrNull { it.slug == source.slug }?.title
-            ?: source.slug
+        is ListSource.InProject -> state.projects.firstOrNull { it.id == source.id }?.title
+            ?: source.id
 
         is ListSource.WithTag -> "#${source.path}"
 
@@ -169,13 +169,13 @@ private fun ListHeader(state: MainState, sort: SpaceSort, actions: ListActions) 
             modifier = Modifier.padding(end = 4.dp)
         )
         ToolbarIcon(Icons.AutoMirrored.Outlined.NoteAdd, strings.newPage, actions.newPage)
-        if (state.source is ListSource.InSpace) SortMenu(sort, actions.setSort)
+        if (state.source is ListSource.InProject) SortMenu(sort, actions.setSort)
         FilterMenu(state, actions.setFilter)
     }
 }
 
 @Composable
-private fun SortMenu(sort: SpaceSort, onSort: (SpaceSort) -> Unit) {
+private fun SortMenu(sort: ProjectSort, onSort: (ProjectSort) -> Unit) {
     val strings = LocalStrings.current.navigator
     var open by remember { mutableStateOf(false) }
     Box {
@@ -343,7 +343,7 @@ private fun CardBody(card: PageCard, state: MainState) {
         }
         Row {
             Text(
-                cardTime(card, sortOf(state.source, state.spaces)),
+                cardTime(card, sortOf(state.source, state.projects)),
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.padding(end = 6.dp)
@@ -373,10 +373,10 @@ private fun CardBody(card: PageCard, state: MainState) {
                 }
             }
         }
-        val fromOtherSpace = source is ListSource.InSpace && source.slug != card.space
-        if (fromOtherSpace || card.tags.isNotEmpty()) {
+        val fromOtherProject = source is ListSource.InProject && source.id != card.project
+        if (fromOtherProject || card.tags.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (fromOtherSpace) {
+                if (fromOtherProject) {
                     Icon(
                         Icons.Outlined.Folder,
                         contentDescription = null,
@@ -384,7 +384,7 @@ private fun CardBody(card: PageCard, state: MainState) {
                         tint = colors.onSurfaceVariant
                     )
                     Text(
-                        state.spaces.firstOrNull { it.slug == card.space }?.title ?: card.space,
+                        state.projects.firstOrNull { it.id == card.project }?.title ?: card.project,
                         style = MaterialTheme.typography.labelSmall,
                         color = colors.onSurfaceVariant,
                         modifier = Modifier.padding(end = 8.dp)
@@ -426,12 +426,12 @@ private fun QuickActions(
             Box {
                 QuickIcon(Icons.AutoMirrored.Outlined.DriveFileMove, strings.move) { moving = true }
                 DropdownMenu(expanded = moving, onDismissRequest = { moving = false }) {
-                    for (space in state.spaces.filter { it.slug != card.space }) {
+                    for (project in state.projects.filter { it.id != card.project }) {
                         DropdownMenuItem(
-                            text = { Text(space.title) },
+                            text = { Text(project.title) },
                             onClick = {
                                 moving = false
-                                actions.move(card, space.slug)
+                                actions.move(card, project.id)
                             }
                         )
                     }
@@ -457,16 +457,16 @@ private fun cardMenu(
         actions.setPinned(card, !card.pinned)
     },
     MenuAction(strings.tag) { actions.editTags(card) }
-) + state.spaces.filter { it.slug != card.space }.map { space ->
-    MenuAction("${strings.move}: ${space.title}") { actions.move(card, space.slug) }
+) + state.projects.filter { it.id != card.project }.map { project ->
+    MenuAction("${strings.move}: ${project.title}") { actions.move(card, project.id) }
 } + MenuAction(strings.delete) { actions.delete(card) }
 
 /** 카드 시각. 생성순이면 생성 시각, 아니면 갱신 시각(목록 묶음과 같은 기준). */
 @Composable
-private fun cardTime(card: PageCard, sort: SpaceSort): String {
+private fun cardTime(card: PageCard, sort: ProjectSort): String {
     val clock = LocalListClock.current
     val strings = LocalStrings.current.navigator
-    val stamp = if (sort == SpaceSort.CREATED) card.created else card.updated
+    val stamp = if (sort == ProjectSort.CREATED) card.created else card.updated
     val instant = instantOrNull(stamp) ?: return ""
     val time = instant.toLocalDateTime(clock.zone)
     val today = clock.now().toLocalDateTime(clock.zone).date

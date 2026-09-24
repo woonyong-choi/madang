@@ -146,8 +146,9 @@ class FixtureFlowTest {
             val trash = core.api(::TrashApi)
             val entry = trash.listTrash().bodyOrThrow().single()
             assertEquals("2026-09-20-cover-letter", entry.page)
+            assertEquals(listOf(".madang/pages/2026-09-20-cover-letter"), entry.paths)
 
-            trash.restoreTrash(entry.commit).bodyOrThrow()
+            assertEquals(entry.id, trash.restoreTrash(entry.id).bodyOrThrow().id)
 
             assertTrue(trash.listTrash().bodyOrThrow().isEmpty())
             assertEquals(

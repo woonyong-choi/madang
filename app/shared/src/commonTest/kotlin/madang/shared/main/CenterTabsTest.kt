@@ -20,10 +20,10 @@ import madang.api.model.BlockType
 import madang.api.model.PageCard
 import madang.api.model.PageDetail
 import madang.api.model.PageStatus
+import madang.api.model.Project
 import madang.api.model.RunRecord
 import madang.api.model.RunUsage
 import madang.api.model.RunVerify
-import madang.api.model.Space
 import madang.shared.MockCore
 import madang.shared.core.CoreClient
 import madang.shared.core.EventStream
@@ -41,7 +41,7 @@ class CenterTabsTest {
 
     private val resume = PageDetail(
         id = "resume",
-        space = "jobs",
+        project = "jobs",
         title = "이력서",
         status = PageStatus.DOING,
         pinned = true,
@@ -66,7 +66,7 @@ class CenterTabsTest {
 
     private val cover = resume.copy(
         id = "cover",
-        space = "jobs-2026",
+        project = "jobs-2026",
         title = "자기소개서",
         blocks = listOf(BlockHeader(id = "b01", type = BlockType.DOC, file = "blocks/b01.md")),
         runs = emptyList()
@@ -78,12 +78,12 @@ class CenterTabsTest {
         val mock = MockCore(this) { request ->
             val path = request.url.encodedPath
             when {
-                path == "/spaces" ->
-                    json(codec.encodeToString(ListSerializer(Space.serializer()), Home.spaces))
+                path == "/projects" ->
+                    json(codec.encodeToString(ListSerializer(Project.serializer()), Home.projects))
 
-                path.startsWith("/spaces/") && path.endsWith("/pages") -> {
-                    val slug = path.removePrefix("/spaces/").removeSuffix("/pages")
-                    val cards = Home.cards.filter { it.space == slug }
+                path.startsWith("/projects/") && path.endsWith("/pages") -> {
+                    val id = path.removePrefix("/projects/").removeSuffix("/pages")
+                    val cards = Home.cards.filter { it.project == id }
                     json(codec.encodeToString(ListSerializer(PageCard.serializer()), cards))
                 }
 
@@ -207,7 +207,7 @@ class CenterTabsTest {
         viewModel.openTab(BlockTab.Block("b02"))
 
         events.send(
-            """{"type":"page.deleted","ts":"t","space":"jobs","page":"resume","data":{"id":"resume"}}"""
+            """{"type":"page.deleted","ts":"t","project":"jobs","page":"resume","data":{"id":"resume"}}"""
         )
         runCurrent()
 
@@ -248,7 +248,7 @@ class CenterTabsTest {
     private companion object {
         const val PREVIEW_JSON =
             """{"kind":"small","tier":1,"runner":"codex","model":"gpt-6-luna",""" +
-                """"parts":{"system_est":1,"root":1,"space":1,"state":1,"contract":1,""" +
+                """"parts":{"system_est":1,"root":1,"project":1,"state":1,"contract":1,""" +
                 """"target":1,"request":1},"total_est":7}"""
     }
 }

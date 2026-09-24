@@ -10,165 +10,142 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import madang.shared.MockCore
-import madang.shared.RUNNERS_JSON
 import madang.shared.core.CoreClient
 import madang.shared.json
-import madang.shared.settings.InMemorySettingsStore
 
 class OnboardingViewModelTest {
 
-    private val installed =
-        ToolProbe { ToolStatus(path = "/usr/local/bin/$it", version = "$it 1.0") }
+    private val loggedIn = ClaudeProbe {
+        ClaudeStatus(installed = true, loggedIn = true, authMethod = "claude.ai")
+    }
 
     private fun TestScope.viewModel(
         mock: MockCore,
-        store: InMemorySettingsStore = InMemorySettingsStore(),
+        probe: ClaudeProbe = loggedIn,
         onDone: () -> Unit = {}
-    ) = OnboardingViewModel(CoreClient(engine = mock.engine), installed, store, this, onDone)
+    ) = OnboardingViewModel(CoreClient(engine = mock.engine), probe, HOME, this, onDone)
 
     private fun TestScope.okCore() = MockCore(this) { request ->
         when (request.url.encodedPath) {
-            "/runners" -> json(RUNNERS_JSON)
-            "/home" -> json("""{"path":"~/work/madang","initialized":true}""")
+            "/home" -> json("""{"path":"$HOME","initialized":true}""")
+
+            "/projects" -> json(
+                """{"id":"madang","title":"madang","path":"/work/madang"}""",
+                HttpStatusCode.Created
+            )
+
             else -> json("{}", HttpStatusCode.NotFound)
         }
     }
 
     @Test
-    fun walksThroughStepsAndInitializesHome() = runTest {
+    fun initializesHomeRegistersProjectThenChecksClaude() = runTest {
         val mock = okCore()
-        val store = InMemorySettingsStore()
         var done = false
-        val vm = viewModel(mock, store) { done = true }
+        val vm = viewModel(mock) { done = true }
 
-        vm.setHomePath("~/work/madang")
-        vm.next()
-        assertEquals(OnboardingStep.REMOTE, vm.state.value.step)
-
-        vm.setRemote("git@github.com:me/madang-home.git")
-        vm.next()
+        vm.start()
         advanceUntilIdle()
-        val tools = vm.state.value
-        assertEquals(OnboardingStep.TOOLS, tools.step)
-        assertTrue(tools.tools.all { it.status?.installed == true })
-        assertEquals(listOf("claude", "codex"), tools.runners.map { it.name })
+        assertEquals(OnboardingStep.PROJECT, vm.state.value.step)
+        assertEquals("POST /home" to """{"path":"$HOME"}""", mock.requests.single())
 
-        vm.next()
-        assertEquals(OnboardingStep.PERMISSIONS, vm.state.value.step)
-        vm.later()
+        vm.setProjectPath("/work/madang")
+        vm.registerProject()
         advanceUntilIdle()
+        val claude = vm.state.value
+        assertEquals(OnboardingStep.CLAUDE, claude.step)
+        assertEquals("POST /projects" to """{"path":"/work/madang"}""", mock.requests.last())
+        assertEquals(ClaudeStatus(true, true, "claude.ai"), claude.claude)
 
+        vm.finish()
         assertTrue(done)
         assertTrue(vm.state.value.done)
-        assertEquals(
-            "POST /home" to
-                """{"path":"~/work/madang","remote":"git@github.com:me/madang-home.git"}""",
-            mock.requests.last()
-        )
-        assertEquals("~/work/madang", store.load().homePath)
     }
 
     @Test
-    fun defaultHomeIsNotStoredAndRemoteIsOptional() = runTest {
+    fun blankFolderCannotBeRegistered() = runTest {
         val mock = okCore()
-        val store = InMemorySettingsStore()
-        val vm = viewModel(mock, store)
-
-        repeat(3) { vm.next() }
-        vm.later()
+        val vm = viewModel(mock)
+        vm.start()
         advanceUntilIdle()
 
-        assertEquals("POST /home" to """{"path":"~/.madang"}""", mock.requests.last())
-        assertNull(store.load().homePath)
+        vm.setProjectPath("  ")
+        vm.registerProject()
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.canRegisterProject)
+        assertEquals(OnboardingStep.PROJECT, vm.state.value.step)
+        assertEquals(1, mock.requests.size)
     }
 
     @Test
-    fun blankHomeBlocksNext() = runTest {
-        val vm = viewModel(okCore())
-        vm.setHomePath("  ")
+    fun homeFailureCanBeRetried() = runTest {
+        var fail = true
+        val mock = MockCore(this) {
+            if (fail) {
+                json("""{"error":"conflict","message":"old layout"}""", HttpStatusCode.Conflict)
+            } else {
+                json("""{"path":"$HOME","initialized":true}""")
+            }
+        }
+        val vm = viewModel(mock)
 
-        vm.next()
-
-        assertFalse(vm.state.value.canGoNext)
+        vm.start()
+        advanceUntilIdle()
         assertEquals(OnboardingStep.HOME, vm.state.value.step)
+        assertEquals("conflict: old layout", vm.state.value.error)
+        assertFalse(vm.state.value.submitting)
+
+        fail = false
+        vm.start()
+        advanceUntilIdle()
+        assertEquals(OnboardingStep.PROJECT, vm.state.value.step)
+        assertNull(vm.state.value.error)
     }
 
     @Test
-    fun invalidRemoteStaysOnStep() = runTest {
-        val vm = viewModel(okCore())
-        vm.next()
-
-        vm.setRemote("not a url")
-        vm.next()
-
-        assertEquals(OnboardingStep.REMOTE, vm.state.value.step)
-        assertTrue(vm.state.value.remoteInvalid)
-        vm.setRemote("https://example.com/me/home.git")
-        assertFalse(vm.state.value.remoteInvalid)
-    }
-
-    @Test
-    fun backReturnsToPreviousStep() = runTest {
-        val vm = viewModel(okCore())
-        vm.back()
-        assertEquals(OnboardingStep.HOME, vm.state.value.step)
-
-        vm.next()
-        vm.back()
-        assertEquals(OnboardingStep.HOME, vm.state.value.step)
-    }
-
-    @Test
-    fun initFailureKeepsUserOnLastStep() = runTest {
+    fun rejectedFolderStaysOnProjectStep() = runTest {
         val mock = MockCore(this) { request ->
             when (request.url.encodedPath) {
-                "/runners" -> json(RUNNERS_JSON)
+                "/home" -> json("""{"path":"$HOME","initialized":true}""")
 
                 else -> json(
-                    """{"error":"conflict","message":"home exists"}""",
-                    HttpStatusCode.Conflict
+                    """{"error":"not_found","message":"folder not found"}""",
+                    HttpStatusCode.NotFound
                 )
             }
         }
-        var done = false
-        val vm = viewModel(mock) { done = true }
-        repeat(3) { vm.next() }
+        val vm = viewModel(mock)
+        vm.start()
         advanceUntilIdle()
 
-        vm.later()
+        vm.setProjectPath("/nowhere")
+        vm.registerProject()
         advanceUntilIdle()
 
-        val state = vm.state.value
-        assertEquals(OnboardingStep.PERMISSIONS, state.step)
-        assertEquals("conflict: home exists", state.error)
-        assertFalse(state.submitting)
-        assertFalse(done)
+        assertEquals(OnboardingStep.PROJECT, vm.state.value.step)
+        assertEquals("not_found: folder not found", vm.state.value.error)
     }
 
     @Test
-    fun missingToolIsReported() = runTest {
-        val probe = ToolProbe {
-            if (it == "codex") ToolStatus(null, null) else ToolStatus("/bin/claude", "2.1")
-        }
-        val vm = OnboardingViewModel(
-            CoreClient(engine = okCore().engine),
-            probe,
-            InMemorySettingsStore(),
-            this
-        ) {}
-        repeat(2) { vm.next() }
+    fun missingClaudeIsReportedAndCanBeRechecked() = runTest {
+        var installed = false
+        val probe = ClaudeProbe { ClaudeStatus(installed = installed, loggedIn = false) }
+        val vm = viewModel(okCore(), probe)
+        vm.start()
         advanceUntilIdle()
+        vm.setProjectPath("/work/madang")
+        vm.registerProject()
+        advanceUntilIdle()
+        assertEquals(ClaudeStatus(installed = false, loggedIn = false), vm.state.value.claude)
 
-        val byName = vm.state.value.tools.associate { it.name to it.status?.installed }
-        assertEquals(mapOf("claude" to true, "codex" to false), byName)
+        installed = true
+        vm.checkClaude()
+        advanceUntilIdle()
+        assertEquals(ClaudeStatus(installed = true, loggedIn = false), vm.state.value.claude)
     }
 
-    @Test
-    fun remoteAddressShapes() {
-        assertTrue(isRemoteAddress("git@github.com:me/home.git"))
-        assertTrue(isRemoteAddress("ssh://git@host/home.git"))
-        assertTrue(isRemoteAddress("https://github.com/me/home.git"))
-        assertFalse(isRemoteAddress("github.com/me/home"))
-        assertFalse(isRemoteAddress("git@github.com"))
+    private companion object {
+        const val HOME = "/home/me/.madang"
     }
 }

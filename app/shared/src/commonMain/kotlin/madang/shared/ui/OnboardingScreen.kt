@@ -8,35 +8,27 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import madang.shared.LocalFolderPicker
+import madang.shared.onboarding.ClaudeStatus
 import madang.shared.onboarding.OnboardingState
 import madang.shared.onboarding.OnboardingStep
 import madang.shared.onboarding.OnboardingViewModel
 
-/** 권한 규칙 제안 문구. 파일은 바꾸지 않고 보여 주기만 한다. */
-private val PermissionSuggestions = """
-    Claude — ~/.claude/settings.json
-      permissions.allow: ["Bash(madang *)"]
-      permissions.deny:  ["Bash(git push *)", "Bash(rm -rf *)"]
-
-    Codex — ~/.codex/rules/madang.rules
-      prefix_rule(["madang"], "allow")
-""".trimIndent()
-
+/** 첫 실행: 전역 설정 초기화 → 첫 프로젝트 폴더 → claude 확인. */
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel) {
     val state by viewModel.state.collectAsState()
@@ -52,106 +44,76 @@ fun OnboardingScreen(viewModel: OnboardingViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             when (state.step) {
-                OnboardingStep.HOME -> HomeStep(state, viewModel::setHomePath)
-                OnboardingStep.REMOTE -> RemoteStep(state, viewModel::setRemote)
-                OnboardingStep.TOOLS -> ToolsStep(state)
-                OnboardingStep.PERMISSIONS -> PermissionsStep()
+                OnboardingStep.HOME -> HomeStep(state, viewModel)
+                OnboardingStep.PROJECT -> ProjectStep(state, viewModel)
+                OnboardingStep.CLAUDE -> ClaudeStep(state, viewModel)
             }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Navigation(state, viewModel)
         }
     }
 }
 
 @Composable
-private fun HomeStep(state: OnboardingState, onChange: (String) -> Unit) {
+private fun HomeStep(state: OnboardingState, viewModel: OnboardingViewModel) {
     val strings = LocalStrings.current
     StepHeader(strings.homeStepTitle, strings.homeStepBody)
-    OutlinedTextField(
-        value = state.homePath,
-        onValueChange = onChange,
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth()
-    )
-}
-
-@Composable
-private fun RemoteStep(state: OnboardingState, onChange: (String) -> Unit) {
-    val strings = LocalStrings.current
-    StepHeader(strings.remoteStepTitle, strings.remoteStepBody)
-    OutlinedTextField(
-        value = state.remote,
-        onValueChange = onChange,
-        singleLine = true,
-        isError = state.remoteInvalid,
-        placeholder = { Text("git@github.com:me/madang-home.git") },
-        supportingText = if (state.remoteInvalid) {
-            { Text(strings.remoteInvalid) }
-        } else {
-            null
-        },
-        modifier = Modifier.fillMaxWidth()
-    )
-}
-
-@Composable
-private fun ToolsStep(state: OnboardingState) {
-    val strings = LocalStrings.current
-    StepHeader(strings.toolsStepTitle, strings.toolsStepBody)
-    for (tool in state.tools) {
-        val status = tool.status
-        val detail = when {
-            status == null -> strings.checking
-            status.installed -> listOfNotNull(status.version, status.path).joinToString(" · ")
-            else -> strings.notInstalled + (status.error?.let { " ($it)" } ?: "")
-        }
-        LabeledValue(tool.name, detail)
-    }
-    if (state.runners.isNotEmpty()) {
-        Text(strings.coreRunners, style = MaterialTheme.typography.titleSmall)
-        for (runner in state.runners) {
-            val availability = if (runner.available) strings.available else strings.unavailable
-            LabeledValue(runner.name, availability + (runner.reason?.let { " — $it" } ?: ""))
-        }
+    LabeledValue(strings.homeLabel, state.homePath)
+    if (state.submitting) {
+        CircularProgressIndicator()
+    } else if (state.error != null) {
+        Button(onClick = viewModel::start) { Text(strings.retry) }
     }
 }
 
 @Composable
-private fun PermissionsStep() {
+private fun ProjectStep(state: OnboardingState, viewModel: OnboardingViewModel) {
     val strings = LocalStrings.current
-    StepHeader(strings.permissionsStepTitle, strings.permissionsStepBody)
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.small,
-        modifier = Modifier.fillMaxWidth()
+    val picker = LocalFolderPicker.current
+    val scope = rememberCoroutineScope()
+    StepHeader(strings.projectStepTitle, strings.projectStepBody)
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        SelectionContainer {
-            Text(
-                PermissionSuggestions,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(12.dp)
-            )
-        }
+        OutlinedTextField(
+            value = state.projectPath,
+            onValueChange = viewModel::setProjectPath,
+            singleLine = true,
+            placeholder = { Text("~/src/my-project") },
+            modifier = Modifier.weight(1f)
+        )
+        OutlinedButton(onClick = {
+            scope.launch {
+                picker.pick(strings.navigator.chooseProjectFolder)?.let(viewModel::setProjectPath)
+            }
+        }) { Text(strings.chooseFolder) }
     }
-    Text(strings.permissionsNote, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Button(onClick = viewModel::registerProject, enabled = state.canRegisterProject) {
+        Text(strings.next)
+    }
 }
 
 @Composable
-private fun Navigation(state: OnboardingState, viewModel: OnboardingViewModel) {
+private fun ClaudeStep(state: OnboardingState, viewModel: OnboardingViewModel) {
     val strings = LocalStrings.current
+    StepHeader(strings.claudeStepTitle, strings.claudeStepBody)
+    LabeledValue("claude", claudeText(state.claude))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (state.step != OnboardingStep.HOME) {
-            OutlinedButton(onClick = viewModel::back, enabled = !state.submitting) {
-                Text(strings.back)
-            }
+        OutlinedButton(onClick = viewModel::checkClaude, enabled = state.claude != null) {
+            Text(strings.recheck)
         }
-        if (state.step == OnboardingStep.PERMISSIONS) {
-            TextButton(onClick = viewModel::later, enabled = !state.submitting) {
-                Text(strings.later)
-            }
-        } else {
-            Button(onClick = viewModel::next, enabled = state.canGoNext) { Text(strings.next) }
-        }
+        Button(onClick = viewModel::finish, enabled = !state.done) { Text(strings.begin) }
+    }
+}
+
+@Composable
+private fun claudeText(status: ClaudeStatus?): String {
+    val strings = LocalStrings.current
+    return when {
+        status == null -> strings.checking
+        !status.installed -> strings.notInstalled + (status.error?.let { " ($it)" } ?: "")
+        status.loggedIn -> strings.claudeLoggedIn(status.authMethod)
+        else -> strings.claudeLoggedOut
     }
 }
 

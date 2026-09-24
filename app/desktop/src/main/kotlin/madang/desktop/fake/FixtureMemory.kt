@@ -4,9 +4,11 @@ import madang.api.model.Issue
 import madang.api.model.MemoryFile
 import madang.api.model.MemoryLayer
 import madang.api.model.PageDetail
+import madang.api.model.Project
 
 /**
- * 픽스처 앱 홈의 메모리 3층(root.md, space.md, state.md). 처음 내용은 공간·페이지에서 만든다.
+ * 픽스처의 메모리 3층(앱 홈 root.md, 프로젝트 `.madang/project.md`, 페이지 state.md). 처음
+ * 내용은 프로젝트·페이지에서 만든다. 경로는 core처럼 절대 경로다.
  *
  * state.md 저장은 core 검사기처럼 머리부 필수 키·열거형, 필수 절, 토큰 상한을 확인하고 문제를
  * 줄 번호와 함께 돌려준다. 토큰 수는 네 글자를 한 토큰으로 어림한다.
@@ -14,20 +16,20 @@ import madang.api.model.PageDetail
 class FixtureMemory {
 
     private var root = DEFAULT_ROOT
-    private val spaces = mutableMapOf<String, String>()
+    private val projects = mutableMapOf<String, String>()
     private val states = mutableMapOf<String, String>()
 
-    fun root(): MemoryFile = file(MemoryLayer.ROOT, "root.md", root)
+    fun root(): MemoryFile = file(MemoryLayer.ROOT, ROOT_PATH, root)
 
-    fun space(slug: String, title: String): MemoryFile = file(
-        MemoryLayer.SPACE,
-        "spaces/$slug/space.md",
-        spaces.getOrPut(slug) { "---\nslug: $slug\ntitle: $title\n---\n$title 공간의 메모.\n" }
+    fun project(project: Project): MemoryFile = file(
+        MemoryLayer.PROJECT,
+        "${project.path}/.madang/project.md",
+        projects.getOrPut(project.id) { "# ${project.title}\n${project.title} 프로젝트의 메모.\n" }
     )
 
-    fun state(page: PageDetail): MemoryFile = file(
+    fun state(page: PageDetail, project: Project): MemoryFile = file(
         MemoryLayer.STATE,
-        "spaces/${page.space}/pages/${page.id}/state.md",
+        "${project.path}/.madang/pages/${page.id}/state.md",
         states.getOrPut(page.id) { initialState(page) }
     )
 
@@ -39,7 +41,7 @@ class FixtureMemory {
         }
         when (layer) {
             MemoryLayer.ROOT -> root = content
-            MemoryLayer.SPACE -> spaces[page.space] = content
+            MemoryLayer.PROJECT -> projects[page.project] = content
             MemoryLayer.STATE -> states[page.id] = content
         }
         return emptyList()
@@ -73,6 +75,7 @@ class FixtureMemory {
         private val REQUIRED_KEYS = listOf("status", "kind", "tier", "attempts")
         private val STATUSES = setOf("planning", "doing", "blocked", "review", "done")
         private val REQUIRED_SECTIONS = listOf("목표", "다음 할 일")
+        private const val ROOT_PATH = "/Users/me/.madang/root.md"
         private const val DEFAULT_ROOT = "# 나에 대해\n한국어로 답한다. 확인 질문 없이 진행한다.\n"
 
         fun tokens(text: String): Int = (text.length + 3) / 4

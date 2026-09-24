@@ -8,12 +8,12 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 import madang.api.model.PageCard
 import madang.api.model.PageStatus
-import madang.api.model.Space
-import madang.api.model.SpaceSort
+import madang.api.model.Project
+import madang.api.model.ProjectSort
 
-/** 2열이 보여 주는 대상. 1열에서 고른 공간 또는 태그. */
+/** 2열이 보여 주는 대상. 1열에서 고른 프로젝트 또는 태그. */
 sealed interface ListSource {
-    data class InSpace(val slug: String) : ListSource
+    data class InProject(val id: String) : ListSource
 
     data class WithTag(val path: String) : ListSource
 }
@@ -36,44 +36,44 @@ data class PageFilter(
 /**
  * 2열에 보일 카드를 순서대로 돌려준다.
  *
- * 공간이면 그 공간과 하위 공간의 페이지를 공간의 정렬로, 태그면 그 태그(하위 포함)를 가진
+ * 프로젝트가면 그 프로젝트와 하위 프로젝트의 페이지를 프로젝트의 정렬로, 태그면 그 태그(하위 포함)를 가진
  * 페이지를 갱신순으로 보인다. 고정된 페이지가 먼저다.
  */
 fun visibleCards(
     cards: List<PageCard>,
-    spaces: List<Space>,
+    projects: List<Project>,
     source: ListSource?,
     filter: PageFilter
 ): List<PageCard> {
     val picked = when (source) {
         null -> return emptyList()
 
-        is ListSource.InSpace -> {
-            val slugs = spaceWithDescendants(source.slug, spaces)
-            cards.filter { it.space in slugs }
+        is ListSource.InProject -> {
+            val ids = projectWithDescendants(source.id, projects)
+            cards.filter { it.project in ids }
         }
 
         is ListSource.WithTag -> cards.filter { card ->
             card.tags.any { tagMatches(it, source.path) }
         }
     }
-    return sortCards(picked.filter(filter::matches), sortOf(source, spaces))
+    return sortCards(picked.filter(filter::matches), sortOf(source, projects))
 }
 
-/** [source]의 정렬. 공간은 공간 설정(기본 갱신순), 태그는 갱신순. */
-fun sortOf(source: ListSource?, spaces: List<Space>): SpaceSort = when (source) {
-    is ListSource.InSpace -> spaces.firstOrNull { it.slug == source.slug }?.sort
-        ?: SpaceSort.UPDATED
+/** [source]의 정렬. 프로젝트는 프로젝트 설정(기본 갱신순), 태그는 갱신순. */
+fun sortOf(source: ListSource?, projects: List<Project>): ProjectSort = when (source) {
+    is ListSource.InProject -> projects.firstOrNull { it.id == source.id }?.sort
+        ?: ProjectSort.UPDATED
 
-    else -> SpaceSort.UPDATED
+    else -> ProjectSort.UPDATED
 }
 
 /** 고정 먼저, 그다음 [sort]. 갱신·생성은 최신이 위, 제목은 가나다·abc순. */
-fun sortCards(cards: List<PageCard>, sort: SpaceSort): List<PageCard> {
+fun sortCards(cards: List<PageCard>, sort: ProjectSort): List<PageCard> {
     val byKey: Comparator<PageCard> = when (sort) {
-        SpaceSort.UPDATED -> compareByDescending { instantOrNull(it.updated) }
-        SpaceSort.CREATED -> compareByDescending { instantOrNull(it.created) }
-        SpaceSort.TITLE -> compareBy { it.title.lowercase() }
+        ProjectSort.UPDATED -> compareByDescending { instantOrNull(it.updated) }
+        ProjectSort.CREATED -> compareByDescending { instantOrNull(it.created) }
+        ProjectSort.TITLE -> compareBy { it.title.lowercase() }
     }
     return cards.sortedWith(
         compareByDescending<PageCard> { it.pinned }
@@ -111,7 +111,7 @@ data class ListSection(val header: SectionHeader, val cards: List<PageCard>)
  */
 fun listSections(
     sorted: List<PageCard>,
-    sort: SpaceSort,
+    sort: ProjectSort,
     now: Instant,
     zone: TimeZone
 ): List<ListSection> {
@@ -120,7 +120,7 @@ fun listSections(
     for (card in sorted) {
         val header = when {
             card.pinned -> SectionHeader.Pinned
-            sort == SpaceSort.TITLE -> SectionHeader.Plain
+            sort == ProjectSort.TITLE -> SectionHeader.Plain
             else -> dateHeader(dateOf(card, sort, zone), today)
         }
         val last = sections.lastOrNull()
@@ -133,8 +133,8 @@ fun listSections(
     return sections
 }
 
-private fun dateOf(card: PageCard, sort: SpaceSort, zone: TimeZone): LocalDate? {
-    val stamp = if (sort == SpaceSort.CREATED) card.created else card.updated
+private fun dateOf(card: PageCard, sort: ProjectSort, zone: TimeZone): LocalDate? {
+    val stamp = if (sort == ProjectSort.CREATED) card.created else card.updated
     return instantOrNull(stamp)?.toLocalDateTime(zone)?.date
 }
 

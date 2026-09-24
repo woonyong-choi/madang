@@ -1,39 +1,43 @@
 [
   {
-    "slug": "root",
-    "title": "루트",
+    "id": "notes",
+    "title": "notes",
+    "path": "/Users/me/notes",
     "parent": null,
-    "icon": "home",
+    "icon": null,
     "sort": "updated"
   },
   {
-    "slug": "jobs",
+    "id": "jobs",
     "title": "지원",
+    "path": "/Users/me/Documents/jobs",
     "parent": null,
     "icon": "briefcase",
     "color": "#3a5bd9",
     "sort": "updated"
   },
   {
-    "slug": "jobs-2026",
+    "id": "jobs-2026",
     "title": "2026 하반기",
+    "path": "/Users/me/Documents/jobs-2026",
     "parent": "jobs",
     "icon": "calendar",
     "color": "#b8322a",
     "sort": "created"
   },
   {
-    "slug": "auth-svc",
+    "id": "auth-svc",
     "title": "auth-svc",
-    "repo": "../auth-svc",
+    "path": "/Users/me/src/auth-svc",
     "parent": null,
     "icon": "code",
     "color": "#15803d",
     "sort": "updated"
   },
   {
-    "slug": "blog",
+    "id": "blog",
     "title": "블로그",
+    "path": "/Users/me/Documents/blog",
     "parent": null,
     "icon": "book",
     "sort": "title"

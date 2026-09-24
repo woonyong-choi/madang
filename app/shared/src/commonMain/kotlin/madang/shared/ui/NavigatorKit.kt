@@ -38,7 +38,7 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import madang.api.model.PageStatus
-import madang.api.model.SpaceSort
+import madang.api.model.ProjectSort
 
 /** 목록의 날짜 묶음과 카드 시각에 쓰는 지금과 시간대. 스크린샷 테스트는 고정한다. */
 data class ListClock(val now: () -> Instant, val zone: TimeZone)
@@ -123,8 +123,8 @@ fun statusColor(status: PageStatus): Color = when (status) {
     PageStatus.DONE -> Color(0xFF15803D)
 }
 
-/** 공간 아이콘 이름을 그림으로. 모르는 이름은 폴더. */
-fun spaceIcon(name: String?, root: Boolean): ImageVector = when (name) {
+/** 프로젝트 아이콘 이름을 그림으로. 모르는 이름은 폴더. */
+fun projectIcon(name: String?): ImageVector = when (name) {
     "briefcase", "work" -> Icons.Outlined.Work
     "calendar" -> Icons.Outlined.CalendarMonth
     "code" -> Icons.Outlined.Code
@@ -133,7 +133,7 @@ fun spaceIcon(name: String?, root: Boolean): ImageVector = when (name) {
     "idea" -> Icons.Outlined.Lightbulb
     "star" -> Icons.Outlined.Star
     "home" -> Icons.Outlined.Home
-    else -> if (root) Icons.Outlined.Home else Icons.Outlined.Folder
+    else -> Icons.Outlined.Folder
 }
 
 /** `#rrggbb`. 형식이 틀리면 null. */
@@ -142,4 +142,4 @@ fun parseColor(hex: String?): Color? {
     return digits.toLongOrNull(16)?.let { Color(0xFF000000 or it) }
 }
 
-val SORTS = listOf(SpaceSort.UPDATED, SpaceSort.CREATED, SpaceSort.TITLE)
+val SORTS = listOf(ProjectSort.UPDATED, ProjectSort.CREATED, ProjectSort.TITLE)

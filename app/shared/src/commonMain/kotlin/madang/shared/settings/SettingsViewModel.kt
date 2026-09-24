@@ -8,9 +8,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import madang.api.model.Issue
+import madang.api.model.RoutesDocument
 import madang.api.model.RunnerStatus
+import madang.shared.core.CoreApiException
 import madang.shared.core.CoreClient
-import madang.shared.core.RoutesSaveResult
 import madang.shared.core.bodyOrThrow
 
 /** routes.yaml 편집기 상태. */
@@ -92,10 +93,8 @@ class SettingsViewModel(
         _state.update { it.copy(routesStatus = RoutesStatus.Saving) }
         scope.launch {
             val status = attempt {
-                when (val result = core.setup.saveRoutes(text)) {
-                    RoutesSaveResult.Saved -> RoutesStatus.Saved
-                    is RoutesSaveResult.Invalid -> RoutesStatus.Invalid(result.failure.issues)
-                }
+                core.setup.saveRoutes(RoutesDocument(text)).bodyOrThrow()
+                RoutesStatus.Saved
             }
             _state.update { it.copy(routesStatus = status) }
         }
@@ -106,7 +105,7 @@ class SettingsViewModel(
         scope.launch {
             var text: String? = null
             val status = attempt {
-                text = core.setup.routes().text
+                text = core.setup.getRoutes().bodyOrThrow().text
                 RoutesStatus.Editing
             }
             _state.update { it.copy(routesText = text ?: it.routesText, routesStatus = status) }
@@ -136,11 +135,22 @@ class SettingsViewModel(
         )
     }
 
+    /** 검사 실패(400)는 [RoutesStatus.Invalid], 그 밖의 실패는 [RoutesStatus.Error]로 바꾼다. */
     private suspend fun attempt(block: suspend () -> RoutesStatus): RoutesStatus = try {
         block()
     } catch (e: CancellationException) {
         throw e
+    } catch (e: CoreApiException) {
+        if (e.status ==
+            BAD_REQUEST
+        ) {
+            RoutesStatus.Invalid(e.issues)
+        } else {
+            RoutesStatus.Error(e.message.orEmpty())
+        }
     } catch (e: Exception) {
         RoutesStatus.Error(e.message ?: "error")
     }
 }
+
+private const val BAD_REQUEST = 400

@@ -2,15 +2,19 @@ package madang.shared.main
 
 import madang.api.model.PageCard
 import madang.api.model.PageStatus
-import madang.api.model.Space
-import madang.api.model.SpaceSort
+import madang.api.model.Project
+import madang.api.model.ProjectSort
 
-fun space(slug: String, title: String = slug, parent: String? = null, sort: SpaceSort? = null) =
-    Space(slug = slug, title = title, parent = parent, sort = sort)
+/** 테스트 프로젝트. 폴더 경로는 `/work/<id>`. */
+fun project(id: String, title: String = id, parent: String? = null, sort: ProjectSort? = null) =
+    Project(id = id, title = title, path = "/work/$id", parent = parent, sort = sort)
+
+/** 하위 프로젝트가 없고 제목순으로 맨 앞에 오는 테스트 프로젝트. */
+const val NOTES = "notes"
 
 fun card(
     id: String,
-    space: String = ROOT_SPACE,
+    project: String = NOTES,
     title: String = id,
     status: PageStatus = PageStatus.PLANNING,
     pinned: Boolean = false,
@@ -19,7 +23,7 @@ fun card(
     created: String? = null
 ) = PageCard(
     id = id,
-    space = space,
+    project = project,
     title = title,
     status = status,
     pinned = pinned,
@@ -29,13 +33,13 @@ fun card(
     created = created
 )
 
-/** 루트, 지원(하위: 2026 하반기), 블로그 공간과 그 페이지들. */
+/** 노트, 지원(하위: 2026 하반기), 블로그 프로젝트와 그 페이지들. */
 object Home {
-    val spaces = listOf(
-        space(ROOT_SPACE, "루트"),
-        space("jobs", "지원"),
-        space("jobs-2026", "2026 하반기", parent = "jobs", sort = SpaceSort.TITLE),
-        space("blog", "블로그", sort = SpaceSort.CREATED)
+    val projects = listOf(
+        project(NOTES, "노트"),
+        project("jobs", "지원"),
+        project("jobs-2026", "2026 하반기", parent = "jobs", sort = ProjectSort.TITLE),
+        project("blog", "블로그", sort = ProjectSort.CREATED)
     )
 
     val resume = card(
@@ -77,7 +81,7 @@ object Home {
 
     val cards = listOf(resume, posting, cover, draft)
 
-    fun state(pane: Pane = Pane.SPACES) = MainState(baseUrl = "http://core")
-        .withLoaded(spaces, cards)
+    fun state(pane: Pane = Pane.PROJECTS) = MainState(baseUrl = "http://core")
+        .withLoaded(projects, cards)
         .copy(pane = pane)
 }

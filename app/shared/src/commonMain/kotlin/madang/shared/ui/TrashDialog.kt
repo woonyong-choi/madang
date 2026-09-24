@@ -48,8 +48,8 @@ fun TrashDialog(viewModel: TrashViewModel, onDismiss: () -> Unit) {
                     entries.isEmpty() -> Text(strings.trashEmpty)
 
                     else -> LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
-                        items(entries, key = { it.commit }) { entry ->
-                            TrashRow(entry, state.restoring) { viewModel.restore(entry.commit) }
+                        items(entries, key = { it.id }) { entry ->
+                            TrashRow(entry, state.restoring) { viewModel.restore(entry.id) }
                         }
                     }
                 }
@@ -75,14 +75,14 @@ private fun TrashRow(entry: TrashEntry, restoring: String?, onRestore: () -> Uni
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                "${entry.deleted.take(DATE_TIME_CHARS).replace('T', ' ')} · ${entry.message}",
+                "${entry.deleted.take(DATE_TIME_CHARS).replace('T', ' ')} · ${entry.project}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        if (restoring == entry.commit) {
+        if (restoring == entry.id) {
             CircularProgressIndicator(modifier = Modifier.padding(8.dp))
         } else {
             TextButton(onClick = onRestore, enabled = restoring == null) {

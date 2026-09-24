@@ -22,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import madang.shared.LocalFolderPicker
 import madang.shared.main.EventLink
 import madang.shared.main.MainState
 import madang.shared.main.MainViewModel
@@ -50,7 +53,7 @@ import madang.shared.main.TabKey
 import madang.shared.main.visiblePanes
 
 /**
- * 메인 화면: 3열(공간 / 페이지 목록 / 탭이 있는 가운데 열)과 아래 상태 줄.
+ * 메인 화면: 3열(프로젝트 / 페이지 목록 / 탭이 있는 가운데 열)과 아래 상태 줄.
  *
  * 입력창이나 메모리 편집기에 포커스가 있으면 글자·화살표 키는 그쪽이 받고, Cmd/Ctrl 단축키와
  * Esc만 화면이 받는다. 탭 단축키: Cmd/Ctrl+W 탭 닫기, Cmd/Ctrl+Shift+]/[ 다음/이전 탭,
@@ -62,6 +65,8 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
     val composer by viewModel.composer.state.collectAsState()
     val memory by viewModel.memory.state.collectAsState()
     val strings = LocalStrings.current.navigator
+    val folderPicker = LocalFolderPicker.current
+    val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
     var dialog by remember { mutableStateOf<MainDialog?>(null) }
     var editing by remember { mutableStateOf(false) }
@@ -70,7 +75,7 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
     val drag = remember(viewModel) {
         DragDropState { card, target ->
             when (target) {
-                is DropTarget.ToSpace -> viewModel.movePage(card.id, target.slug)
+                is DropTarget.ToProject -> viewModel.movePage(card.id, target.id)
                 is DropTarget.ToTag -> viewModel.addTag(card.id, target.path)
             }
         }
@@ -118,11 +123,20 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
                         if (index > 0) VerticalDivider()
                         val width = paneModifier(pane, panes.size)
                         when (pane) {
-                            Pane.SPACES -> SpacesColumn(
+                            Pane.PROJECTS -> ProjectsColumn(
                                 state,
-                                spacesActions(viewModel, state, panes, onOpenSettings) {
-                                    dialog = it
-                                },
+                                projectsActions(
+                                    viewModel,
+                                    state,
+                                    panes,
+                                    onOpenSettings,
+                                    addProject = {
+                                        scope.launch {
+                                            folderPicker.pick(strings.chooseProjectFolder)
+                                                ?.let(viewModel::addProject)
+                                        }
+                                    }
+                                ) { dialog = it },
                                 width
                             )
 
@@ -158,8 +172,8 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
             }
             DragGhost(drag, origin) { target ->
                 when (target) {
-                    is DropTarget.ToSpace -> strings.dropToMove(
-                        state.spaces.firstOrNull { it.slug == target.slug }?.title ?: target.slug
+                    is DropTarget.ToProject -> strings.dropToMove(
+                        state.projects.firstOrNull { it.id == target.id }?.title ?: target.id
                     )
 
                     is DropTarget.ToTag -> strings.dropToTag(target.path)
@@ -178,27 +192,27 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
 
 private fun paneModifier(pane: Pane, count: Int): Modifier = when {
     count == 1 -> Modifier.fillMaxSize()
-    pane == Pane.SPACES && count == 3 -> Modifier.width(240.dp).fillMaxHeight()
+    pane == Pane.PROJECTS && count == 3 -> Modifier.width(240.dp).fillMaxHeight()
     pane == Pane.PAGE -> Modifier.fillMaxHeight().fillMaxWidth()
     else -> Modifier.width(340.dp).fillMaxHeight()
 }
 
-private fun spacesActions(
+private fun projectsActions(
     viewModel: MainViewModel,
     state: MainState,
     panes: List<Pane>,
     onOpenSettings: () -> Unit,
+    addProject: () -> Unit,
     show: (MainDialog) -> Unit
-) = SpacesActions(
+) = ProjectsActions(
     select = { viewModel.select(it, advance = Pane.LIST !in panes) },
-    toggleSpace = viewModel::toggleSpace,
+    toggleProject = viewModel::toggleProject,
     toggleTag = viewModel::toggleTag,
-    collapseAll = { state.expandedSpaces.forEach(viewModel::toggleSpace) },
+    collapseAll = { state.expandedProjects.forEach(viewModel::toggleProject) },
     focusOn = viewModel::focusOn,
-    newSpace = { show(MainDialog.NewSpace) },
-    rename = { show(MainDialog.RenameSpace(it.space.slug, it.space.title)) },
-    linkRepo = { show(MainDialog.LinkRepo(it.space.slug, it.space.repo.orEmpty())) },
-    delete = { show(MainDialog.DeleteSpace(it.space.slug, it.space.title)) },
+    addProject = addProject,
+    rename = { show(MainDialog.RenameProject(it.project.id, it.project.title)) },
+    remove = { show(MainDialog.RemoveProject(it.project.id, it.project.title)) },
     openTrash = { show(MainDialog.Trash) },
     openSettings = onOpenSettings
 )
@@ -243,9 +257,9 @@ private fun listActions(viewModel: MainViewModel, panes: List<Pane>, show: (Main
         setFilter = viewModel::setFilter,
         setPinned = { card, pinned -> viewModel.setPinned(card.id, pinned) },
         editTags = { show(MainDialog.EditTags(it.id, it.tags)) },
-        move = { card, space -> viewModel.movePage(card.id, space) },
+        move = { card, project -> viewModel.movePage(card.id, project) },
         delete = { show(MainDialog.DeletePage(it.id, it.title)) },
-        back = { viewModel.focusPane(Pane.SPACES) }.takeIf { Pane.SPACES !in panes }
+        back = { viewModel.focusPane(Pane.PROJECTS) }.takeIf { Pane.PROJECTS !in panes }
     )
 
 /** 메인 화면이 가로채는 키. */
@@ -290,10 +304,14 @@ private fun tabKey(event: KeyEvent): Shortcut.Tab? = when {
     else -> null
 }
 
-/** 키 입력을 레이어 0 동작으로. 입력이 없는 키는 null. Cmd/Ctrl+1은 탭 단축키가 쓴다. */
+/**
+ * 키 입력을 레이어 0 동작으로. 입력이 없는 키는 null. Cmd/Ctrl+1은 탭 단축키가 쓰고,
+ * Cmd/Ctrl+0은 프로젝트 열로 간다.
+ */
 private fun navKey(event: KeyEvent): NavKey? {
     if (event.isMetaPressed || event.isCtrlPressed) {
         return when (event.key) {
+            Key.Zero -> NavKey.FOCUS_PROJECTS
             Key.Two -> NavKey.FOCUS_LIST
             Key.Three -> NavKey.FOCUS_PAGE
             Key.N -> NavKey.NEW_PAGE

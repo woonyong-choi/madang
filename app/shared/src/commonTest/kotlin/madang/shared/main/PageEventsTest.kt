@@ -26,7 +26,7 @@ import madang.api.model.BlockType
 import madang.api.model.MessageRole
 import madang.api.model.PageCard
 import madang.api.model.PageDetail
-import madang.api.model.Space
+import madang.api.model.Project
 import madang.api.model.UnknownFileAction
 import madang.shared.MockCore
 import madang.shared.core.CoreClient
@@ -49,7 +49,7 @@ class PageEventsTest {
     /** core가 가진 resume 페이지. 메시지를 받으면 블록이 늘어난다. */
     private var resume = PageDetail(
         id = "resume",
-        space = "jobs",
+        project = "jobs",
         title = "이력서",
         status = Home.resume.status,
         pinned = true,
@@ -85,7 +85,7 @@ class PageEventsTest {
             backgroundScope
         )
         runCurrent()
-        viewModel.select(ListSource.InSpace("jobs"))
+        viewModel.select(ListSource.InProject("jobs"))
         viewModel.openPage("resume")
         runCurrent()
         return viewModel to mock
@@ -94,12 +94,12 @@ class PageEventsTest {
     private fun MockRequestHandleScope.defaultResponse(request: HttpRequestData): HttpResponseData {
         val path = request.url.encodedPath
         return when {
-            path == "/spaces" ->
-                json(codec.encodeToString(ListSerializer(Space.serializer()), Home.spaces))
+            path == "/projects" ->
+                json(codec.encodeToString(ListSerializer(Project.serializer()), Home.projects))
 
-            path.startsWith("/spaces/") && path.endsWith("/pages") -> {
-                val slug = path.removePrefix("/spaces/").removeSuffix("/pages")
-                val cards = Home.cards.filter { it.space == slug }
+            path.startsWith("/projects/") && path.endsWith("/pages") -> {
+                val id = path.removePrefix("/projects/").removeSuffix("/pages")
+                val cards = Home.cards.filter { it.project == id }
                 json(codec.encodeToString(ListSerializer(PageCard.serializer()), cards))
             }
 
@@ -117,7 +117,7 @@ class PageEventsTest {
     private suspend fun event(type: String, data: String, run: Int? = null) {
         val runField = run?.let { ""","run":$it""" }.orEmpty()
         events.send(
-            """{"type":"$type","ts":"t","space":"jobs","page":"resume"$runField,"data":$data}"""
+            """{"type":"$type","ts":"t","project":"jobs","page":"resume"$runField,"data":$data}"""
         )
     }
 
@@ -245,7 +245,7 @@ class PageEventsTest {
         assertEquals("b02", viewModel.open().pending.single().messageId)
 
         events.send(
-            """{"type":"block.added","ts":"t","space":"jobs","page":"resume","block":"b02",""" +
+            """{"type":"block.added","ts":"t","project":"jobs","page":"resume","block":"b02",""" +
                 """"data":{"block":{"id":"b02","type":"message"}}}"""
         )
         runCurrent()
@@ -347,8 +347,8 @@ class PageEventsTest {
 
     @Test
     fun responseAndEventForTheSamePageKeepOneCard() = runTest {
-        val created = Home.draft.copy(id = "new", space = "jobs", title = "새 페이지")
-        routes["POST /spaces/jobs/pages"] = {
+        val created = Home.draft.copy(id = "new", project = "jobs", title = "새 페이지")
+        routes["POST /projects/jobs/pages"] = {
             json(
                 codec.encodeToString(
                     PageDetail.serializer(),
@@ -363,10 +363,10 @@ class PageEventsTest {
         runCurrent()
         val card = codec.encodeToString(PageCard.serializer(), created)
         events.send(
-            """{"type":"page.created","ts":"t","space":"jobs","page":"new","data":{"page":$card}}"""
+            """{"type":"page.created","ts":"t","project":"jobs","page":"new","data":{"page":$card}}"""
         )
         events.send(
-            """{"type":"page.created","ts":"t","space":"jobs","page":"new","data":{"page":$card}}"""
+            """{"type":"page.created","ts":"t","project":"jobs","page":"new","data":{"page":$card}}"""
         )
         runCurrent()
 
@@ -375,7 +375,7 @@ class PageEventsTest {
 
     private companion object {
         const val PARTS_JSON =
-            """{"system_est":24600,"root":110,"space":1840,"state":1320,"contract":420,"target":900,"request":40}"""
+            """{"system_est":24600,"root":110,"project":1840,"state":1320,"contract":420,"target":900,"request":40}"""
 
         const val PREVIEW_JSON =
             """{"kind":"small","tier":1,"runner":"codex","model":"gpt-6-luna","parts":$PARTS_JSON,"total_est":29230}"""
@@ -388,7 +388,7 @@ class PageEventsTest {
 
         const val MEMORY_JSON = """{
             "root":{"layer":"root","path":"root.md","content":"# 나\n","tokens":3},
-            "space":{"layer":"space","path":"spaces/jobs/space.md","content":"지원\n","tokens":2},
+            "project":{"layer":"project","path":"projects/jobs/project.md","content":"지원\n","tokens":2},
             "state":{"layer":"state","path":"state.md","content":"---\nstatus: review\n---\n","tokens":9,"token_limit":2000}}"""
     }
 }

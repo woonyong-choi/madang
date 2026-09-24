@@ -3,8 +3,8 @@ package madang.shared.main
 import kotlin.time.Duration
 import madang.api.model.PageCard
 import madang.api.model.PageDetail
+import madang.api.model.Project
 import madang.api.model.RunStreamEvent
-import madang.api.model.Space
 
 /** 이벤트 연결 상태. */
 sealed interface EventLink {
@@ -61,8 +61,8 @@ data class OpenPage(
 /**
  * 메인 화면 상태(3열과 가운데 열의 탭).
  *
- * @property source 1열에서 고른 공간 또는 태그. 2열이 이것을 보여 준다.
- * @property focusSpace 공간 포커스. 있으면 1열에 그 공간과 하위만 보인다.
+ * @property source 1열에서 고른 프로젝트 또는 태그. 2열이 이것을 보여 준다.
+ * @property focusProject 프로젝트 포커스. 있으면 1열에 그 프로젝트와 하위만 보인다.
  * @property selectedPage 2열에서 고른 페이지. [page]는 그 페이지를 불러온 결과다.
  * @property pane 키보드 포커스가 있는 열.
  * @property tabs 열린 페이지의 가운데 열 탭 세트.
@@ -75,54 +75,62 @@ data class MainState(
     val link: EventLink = EventLink.Connecting,
     val loadError: String? = null,
     val loaded: Boolean = false,
-    val spaces: List<Space> = emptyList(),
+    val projects: List<Project> = emptyList(),
     val cards: List<PageCard> = emptyList(),
     val source: ListSource? = null,
-    val expandedSpaces: Set<String> = emptySet(),
+    val expandedProjects: Set<String> = emptySet(),
     val expandedTags: Set<String> = emptySet(),
-    val focusSpace: String? = null,
+    val focusProject: String? = null,
     val filter: PageFilter = PageFilter(),
     val selectedPage: String? = null,
     val page: OpenPage? = null,
     val tabs: TabSet = TabSet(),
-    val pane: Pane = Pane.SPACES,
+    val pane: Pane = Pane.PROJECTS,
     val expandAll: Boolean = false,
     val toggled: Set<String> = emptySet(),
     val activeRuns: Map<String, ActiveRun> = emptyMap(),
     val unknownFilesOpen: Boolean = false
 ) {
-    val spaceRows: List<SpaceRow> get() = spaceRows(spaces, expandedSpaces, focusSpace)
+    val projectRows: List<ProjectRow> get() = projectRows(projects, expandedProjects, focusProject)
 
     val tagRows: List<TagRow> get() = tagRows(cards, expandedTags)
 
-    val listCards: List<PageCard> get() = visibleCards(cards, spaces, source, filter)
+    val listCards: List<PageCard> get() = visibleCards(cards, projects, source, filter)
 
     /** 입력창이 보낼 곳. 활성 탭을 따른다. */
     val sendTarget: SendTarget? get() = page?.let { sendTarget(it.detail, tabs) }
 
-    /** 1열에서 위아래로 오가는 순서. 공간 다음에 태그. */
+    /** 1열에서 위아래로 오가는 순서. 프로젝트 다음에 태그. */
     val navItems: List<ListSource>
-        get() = spaceRows.map { ListSource.InSpace(it.space.slug) } +
+        get() = projectRows.map { ListSource.InProject(it.project.id) } +
             tagRows.map { ListSource.WithTag(it.path) }
 
-    /** 새 페이지가 들어갈 공간. 고른 공간, 없으면 열린 페이지의 공간, 없으면 루트. */
-    val targetSpace: String
-        get() = (source as? ListSource.InSpace)?.slug ?: page?.detail?.space ?: ROOT_SPACE
+    /**
+     * 새 페이지가 들어갈 프로젝트. 고른 프로젝트, 없으면 열린 페이지의 프로젝트, 없으면 첫
+     * 프로젝트. 등록한 프로젝트가 없으면 null.
+     */
+    val targetProject: String?
+        get() = (source as? ListSource.InProject)?.id
+            ?: page?.detail?.project
+            ?: projectRows.firstOrNull()?.project?.id
 
-    /** 목록을 새로 받았을 때 고른 공간·태그와 펼침을 맞춘다. 처음이면 하위가 있는 공간을 펼친다. */
-    fun withLoaded(spaces: List<Space>, cards: List<PageCard>): MainState {
-        val next = copy(spaces = spaces, cards = cards, loadError = null, loaded = true)
+    /**
+     * 목록을 새로 받았을 때 고른 프로젝트·태그와 펼침을 맞춘다. 처음이면 하위가 있는 프로젝트를
+     * 펼친다.
+     */
+    fun withLoaded(projects: List<Project>, cards: List<PageCard>): MainState {
+        val next = copy(projects = projects, cards = cards, loadError = null, loaded = true)
         val expanded = if (loaded) {
-            expandedSpaces
+            expandedProjects
         } else {
-            spaces.mapNotNullTo(mutableSetOf()) { it.parent }
+            projects.mapNotNullTo(mutableSetOf()) { it.parent }
         }
-        val keep = source?.takeIf { it in next.copy(expandedSpaces = expanded).navItems }
-        val fallback = spaces.firstOrNull { it.slug == ROOT_SPACE } ?: spaces.firstOrNull()
+        val keep = source?.takeIf { it in next.copy(expandedProjects = expanded).navItems }
+        val fallback = next.copy(expandedProjects = expanded).projectRows.firstOrNull()?.project
         return next.copy(
-            expandedSpaces = expanded,
-            source = keep ?: fallback?.let { ListSource.InSpace(it.slug) },
-            focusSpace = focusSpace?.takeIf { slug -> spaces.any { it.slug == slug } }
+            expandedProjects = expanded,
+            source = keep ?: fallback?.let { ListSource.InProject(it.id) },
+            focusProject = focusProject?.takeIf { id -> projects.any { it.id == id } }
         )
     }
 }

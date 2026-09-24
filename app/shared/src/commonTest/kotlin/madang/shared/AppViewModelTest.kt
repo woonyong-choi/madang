@@ -15,8 +15,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import madang.shared.core.CoreClient
 import madang.shared.core.EventTransport
-import madang.shared.onboarding.ToolProbe
-import madang.shared.onboarding.ToolStatus
+import madang.shared.onboarding.ClaudeProbe
+import madang.shared.onboarding.ClaudeStatus
 import madang.shared.settings.InMemorySettingsStore
 
 /** 화면 전환은 실제 디스패처에서 돈다. 탐침 제한 시간이 가상 시간으로 당겨지지 않게 한다. */
@@ -32,13 +32,13 @@ class AppViewModelTest {
             when (request.url.encodedPath) {
                 "/health" -> json(HEALTH_JSON)
                 "/home" -> json(homeJson)
-                "/spaces" -> json("[]")
+                "/projects" -> json("[]")
                 else -> json("{}", HttpStatusCode.NotFound)
             }
         }
         val deps = AppDependencies(
             settings = InMemorySettingsStore(),
-            toolProbe = ToolProbe { ToolStatus(null, null) },
+            claudeProbe = ClaudeProbe { ClaudeStatus(installed = false, loggedIn = false) },
             portFile = { { null } },
             launcher = null,
             connect = { CoreClient(it, mock.engine) },

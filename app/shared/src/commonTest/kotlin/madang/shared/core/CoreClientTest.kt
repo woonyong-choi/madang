@@ -4,11 +4,10 @@ import io.ktor.http.HttpStatusCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
-import madang.api.client.SpacesApi
+import madang.api.client.ProjectsApi
 import madang.api.model.Health
+import madang.api.model.RoutesDocument
 import madang.shared.HEALTH_JSON
 import madang.shared.MockCore
 import madang.shared.json
@@ -28,24 +27,15 @@ class CoreClientTest {
     @Test
     fun apiErrorBecomesException() = runTest {
         val mock = MockCore(this) {
-            json("""{"error":"not_found","message":"no spaces"}""", HttpStatusCode.NotFound)
+            json("""{"error":"not_found","message":"no projects"}""", HttpStatusCode.NotFound)
         }
         CoreClient(engine = mock.engine).use { client ->
             val error = assertFailsWith<CoreApiException> {
-                client.api(::SpacesApi).listSpaces().bodyOrThrow()
+                client.api(::ProjectsApi).listProjects().bodyOrThrow()
             }
             assertEquals(404, error.status)
             assertEquals("not_found", error.error?.error)
         }
-    }
-
-    @Test
-    fun homeIsNullWhenCoreDoesNotKnowEndpoint() = runTest {
-        val mock =
-            MockCore(this) {
-                json("""{"error":"not_found","message":"x"}""", HttpStatusCode.NotFound)
-            }
-        CoreClient(engine = mock.engine).use { assertNull(it.setup.home()) }
     }
 
     @Test
@@ -61,8 +51,11 @@ class CoreClientTest {
             )
         }
         CoreClient(engine = mock.engine).use { client ->
-            val result = assertIs<RoutesSaveResult.Invalid>(client.setup.saveRoutes("kinds: []"))
-            assertEquals("invalid-value", result.failure.issues.single().code)
+            val error = assertFailsWith<CoreApiException> {
+                client.setup.saveRoutes(RoutesDocument("kinds: []")).bodyOrThrow()
+            }
+            assertEquals(400, error.status)
+            assertEquals("invalid-value", error.issues.single().code)
             assertEquals("PUT /config/routes" to """{"text":"kinds: []"}""", mock.requests.single())
         }
     }

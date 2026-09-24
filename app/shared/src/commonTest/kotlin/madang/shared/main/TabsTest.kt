@@ -19,7 +19,7 @@ class TabsTest {
 
     private val page = PageDetail(
         id = "resume",
-        space = "jobs",
+        project = "jobs",
         title = "이력서",
         status = PageStatus.DOING,
         pinned = false,
