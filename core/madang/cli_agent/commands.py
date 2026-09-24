@@ -1,6 +1,6 @@
 """에이전트 명령의 Typer 연결.
 
-명령은 task, decide, artifact, commit, push, view, help이다.
+명령은 task, decide, artifact, commit, push, view, runs, help이다.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from madang.cli_agent import client
 from madang.cli_agent.artifacts import REPO_PREFIX
 from madang.cli_agent.client import CoreClient
 from madang.cli_agent.context import BY_ENV, AgentError
+from madang.cli_agent.runs import runs_app
 from madang.runners.base import PAGE_ENV
 
 PageOption = Annotated[
@@ -50,6 +51,8 @@ madang 에이전트 명령($MADANG_PAGE 또는 --page <id>의 페이지에 작�
       프로젝트 저장소의 현재 브랜치를 푸시한다. 강제 푸시는 하지 않는다.
   madang view create --template T --data bNN [--data slot=bNN]
       템플릿으로 데이터 블록을 보여 주는 뷰 블록을 만든다.
+  madang runs add --name N --command C [--cwd DIR] [--opens URL]
+      실행할 수 있는 것을 만들었으면 config.yaml의 runs:에 선언한다.
   madang help [command]
       이 목록 또는 명령 하나의 옵션을 보여 준다.
 
@@ -288,6 +291,7 @@ def register(root: typer.Typer) -> None:
     root.command()(commit)
     root.command()(push)
     root.add_typer(view_app, name="view")
+    root.add_typer(runs_app, name="runs")
 
     @root.command("help")
     def help_command(
