@@ -24,3 +24,5 @@ core.db
 core.port
 secrets.yaml
 scratch/
+ops/.availability
+ops/reports/logs/
