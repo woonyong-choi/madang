@@ -28,7 +28,11 @@ app/
 ./gradlew :shared:test          # 공용 모듈 테스트
 ./gradlew :desktop:run          # 앱 실행
 ./gradlew :desktop:compileKotlin
+./gradlew ktlintCheck           # 코드 스타일 검사
+./gradlew ktlintFormat          # 코드 스타일 자동 수정
 ```
+
+코드 스타일은 Android Kotlin 스타일 가이드(ktlint `android_studio`)를 따른다. 규칙은 `.editorconfig`에 있다.
 
 자동 확인용 실행: `MADANG_SMOKE=1`이면 첫 화면을 그린 뒤 3초 후 스스로 종료한다(exit 0).
 

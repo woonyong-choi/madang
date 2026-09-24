@@ -7,12 +7,12 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 class CoreClientTest {
 
@@ -23,7 +23,11 @@ class CoreClientTest {
         val engine = MockEngine { request ->
             assertEquals(HttpMethod.Get, request.method)
             assertEquals("http://127.0.0.1:7470/health", request.url.toString())
-            respond("""{"status":"ok","version":"0.1.0","extra":1}""", HttpStatusCode.OK, jsonHeaders)
+            respond(
+                """{"status":"ok","version":"0.1.0","extra":1}""",
+                HttpStatusCode.OK,
+                jsonHeaders
+            )
         }
         CoreClient(engine = engine).use { client ->
             val health = client.health()

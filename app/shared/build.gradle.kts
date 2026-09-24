@@ -68,8 +68,8 @@ openApiGenerate {
             "dateLibrary" to "string",
             "enumPropertyNaming" to "UPPERCASE",
             "omitGradleWrapper" to "true",
-            "omitGradlePluginVersions" to "true",
-        ),
+            "omitGradlePluginVersions" to "true"
+        )
     )
 }
 

@@ -17,7 +17,7 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "Madang",
-        state = rememberWindowState(size = DpSize(1280.dp, 800.dp)),
+        state = rememberWindowState(size = DpSize(1280.dp, 800.dp))
     ) {
         MadangApp()
 

@@ -15,10 +15,7 @@ import kotlinx.serialization.json.Json
 
 /** Response of `GET /health`. */
 @Serializable
-data class Health(
-    val status: String,
-    val version: String? = null,
-) {
+data class Health(val status: String, val version: String? = null) {
     val isOk: Boolean get() = status == "ok"
 }
 
@@ -28,10 +25,8 @@ data class Health(
  * Pass [engine] to swap the transport (tests use MockEngine); otherwise the
  * platform default engine is used.
  */
-class CoreClient(
-    val baseUrl: String = DEFAULT_BASE_URL,
-    engine: HttpClientEngine? = null,
-) : AutoCloseable {
+class CoreClient(val baseUrl: String = DEFAULT_BASE_URL, engine: HttpClientEngine? = null) :
+    AutoCloseable {
 
     private val http: HttpClient =
         if (engine != null) HttpClient(engine) { configure() } else HttpClient { configure() }

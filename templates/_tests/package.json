@@ -8,7 +8,12 @@
     "preview": "node preview.js"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "1.63.0",
-    "ajv": "^8.20.0"
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "ajv": "^8.20.0",
+    "eslint": "^10.11.0",
+    "eslint-plugin-jsdoc": "^64.5.4",
+    "globals": "^17.12.0"
   }
 }
