@@ -1,0 +1,39 @@
+{
+  "name": "이마당",
+  "title": "백엔드 엔지니어",
+  "contact": {
+    "email": "lee@example.com",
+    "location": "부산",
+    "links": [
+      {
+        "label": "github.com/lee-madang",
+        "url": "https://github.com/lee-madang"
+      }
+    ]
+  },
+  "summary": "결제와 정산 시스템을 만들어 온 6년 차 백엔드 엔지니어입니다.",
+  "work": [
+    {
+      "company": "바다페이",
+      "role": "백엔드 엔지니어",
+      "period": "2021.04 – 현재",
+      "highlights": [
+        "정산 배치 시간을 4시간에서 40분으로 단축",
+        "결제 실패 재시도 큐 설계"
+      ]
+    },
+    {
+      "company": "항구소프트",
+      "role": "서버 개발자",
+      "period": "2019.01 – 2021.03",
+      "highlights": [
+        "주문 API를 모놀리스에서 분리"
+      ]
+    }
+  ],
+  "skills": [
+    "Kotlin",
+    "PostgreSQL",
+    "Kafka"
+  ]
+}
