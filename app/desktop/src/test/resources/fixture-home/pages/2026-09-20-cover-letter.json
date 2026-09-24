@@ -1,0 +1,33 @@
+{
+  "id": "2026-09-20-cover-letter",
+  "space": "jobs-2026",
+  "title": "자기소개서 초안",
+  "kind": "build",
+  "status": "doing",
+  "created": "2026-09-20T10:00:00+09:00",
+  "updated": "2026-09-24T10:02:00+09:00",
+  "pinned": false,
+  "tags": [
+    "이력서"
+  ],
+  "overview": "",
+  "blocks": [
+    {
+      "id": "b01",
+      "type": "message",
+      "role": "user",
+      "ts": "2026-09-24T10:01:40+09:00",
+      "text": "지원 동기 문단을 더 짧게 다듬어줘"
+    },
+    {
+      "id": "b02",
+      "type": "message",
+      "role": "router",
+      "ts": "2026-09-24T10:01:41+09:00",
+      "text": "kind=small conf=0.97 → codex/gpt-6-luna high",
+      "run": 1
+    }
+  ],
+  "runs": [],
+  "unknown_files": []
+}

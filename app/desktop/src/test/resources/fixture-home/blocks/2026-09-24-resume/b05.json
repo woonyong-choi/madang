@@ -1,0 +1,27 @@
+{
+  "name": "김마당",
+  "title": "백엔드 엔지니어",
+  "contact": {
+    "email": "madang@example.com",
+    "location": "서울"
+  },
+  "summary": "대규모 트래픽 서비스의 인증·세션 계층을 설계하고 운영해 온 8년 차 백엔드 엔지니어입니다.",
+  "work": [
+    {
+      "company": "펄어비스",
+      "role": "게임 서버 엔지니어",
+      "period": "2019.01 – 2022.02"
+    },
+    {
+      "company": "한빛소프트",
+      "role": "시니어 백엔드 엔지니어",
+      "period": "2022.03 – 현재"
+    }
+  ],
+  "skills": [
+    "Kotlin",
+    "TypeScript",
+    "PostgreSQL",
+    "Redis"
+  ]
+}

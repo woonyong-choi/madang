@@ -1,0 +1,41 @@
+[
+  {
+    "slug": "root",
+    "title": "루트",
+    "parent": null,
+    "icon": "home",
+    "sort": "updated"
+  },
+  {
+    "slug": "jobs",
+    "title": "지원",
+    "parent": null,
+    "icon": "briefcase",
+    "color": "#3a5bd9",
+    "sort": "updated"
+  },
+  {
+    "slug": "jobs-2026",
+    "title": "2026 하반기",
+    "parent": "jobs",
+    "icon": "calendar",
+    "color": "#b8322a",
+    "sort": "created"
+  },
+  {
+    "slug": "auth-svc",
+    "title": "auth-svc",
+    "repo": "../auth-svc",
+    "parent": null,
+    "icon": "code",
+    "color": "#15803d",
+    "sort": "updated"
+  },
+  {
+    "slug": "blog",
+    "title": "블로그",
+    "parent": null,
+    "icon": "book",
+    "sort": "title"
+  }
+]

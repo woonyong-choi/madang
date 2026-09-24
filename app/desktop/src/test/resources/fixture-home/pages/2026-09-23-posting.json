@@ -1,0 +1,78 @@
+{
+  "id": "2026-09-23-posting",
+  "space": "jobs",
+  "title": "공고 분석",
+  "kind": "explore",
+  "status": "review",
+  "created": "2026-09-23T14:00:00+09:00",
+  "updated": "2026-09-23T14:20:00+09:00",
+  "pinned": false,
+  "tags": [
+    "이력서/공고"
+  ],
+  "overview": "",
+  "blocks": [
+    {
+      "id": "b01",
+      "type": "message",
+      "role": "user",
+      "ts": "2026-09-23T14:00:10+09:00",
+      "text": "펄어비스 서버 공고를 내 경력과 비교해줘"
+    },
+    {
+      "id": "b02",
+      "type": "message",
+      "role": "router",
+      "ts": "2026-09-23T14:00:11+09:00",
+      "text": "kind=explore conf=0.84 → codex/gpt-6-luna medium",
+      "run": 1
+    },
+    {
+      "id": "b03",
+      "type": "message",
+      "role": "agent",
+      "ts": "2026-09-23T14:05:02+09:00",
+      "text": "기술 일치 8/10입니다. 분석을 문서(b04)로 남겼습니다.",
+      "run": 1
+    },
+    {
+      "id": "b04",
+      "type": "doc",
+      "file": "blocks/b04-analysis.md",
+      "title": "공고 분석",
+      "created_by": "run 1"
+    }
+  ],
+  "runs": [
+    {
+      "n": 1,
+      "started": "2026-09-23T14:00:11+09:00",
+      "finished": "2026-09-23T14:05:02+09:00",
+      "trigger": {
+        "message": "b01"
+      },
+      "kind": "explore",
+      "tier": 1,
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high",
+      "usage": {
+        "input": 21000,
+        "cached": 18000,
+        "output": 900
+      },
+      "changed_files": [
+        "blocks/b04-analysis.md"
+      ],
+      "unknown_files": [],
+      "verify": {
+        "cmd": null,
+        "ok": null
+      },
+      "result_status": "review",
+      "commit": "9f8e7d6",
+      "events_log": "runs/1.events.jsonl"
+    }
+  ],
+  "unknown_files": []
+}

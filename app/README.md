@@ -24,6 +24,26 @@ app/
 - `EventStream`: `WS /events`를 `Flow`로 바꾼다. 끊기면 다시 붙고, 붙을 때마다 전체 재조회 신호
   (`Resync`)를 보낸다.
 - 화면: 시작 → (앱 홈이 없으면) 온보딩 → 메인 ↔ 설정. 화면마다 ViewModel + `StateFlow`.
+- 메인 화면은 3열이다: 공간·태그 트리 / 페이지 카드 목록 / 페이지 본문(블록 흐름). 창이 좁으면
+  (목록 또는 공간) + 본문 2열, 더 좁으면 한 열만 보인다.
+
+## 메인 화면 조작
+
+| 키·동작 | 결과 |
+|---|---|
+| 위·아래 | 공간 열: 공간·태그 고르기. 목록 열: 페이지 고르고 열기 |
+| 오른쪽 · Enter | 다음 열로(공간 열에서 오른쪽은 접힌 공간을 먼저 펼친다) |
+| 왼쪽 · Backspace | 이전 열로(공간 열에서 왼쪽은 펼친 공간을 접거나 상위로) |
+| Cmd/Ctrl+1/2/3 | 공간 / 목록 / 본문 열 포커스 |
+| Cmd/Ctrl+N | 고른 공간에 새 페이지 |
+| 카드에 마우스 | 고정·태그·이동·삭제 빠른 동작 |
+| 카드를 공간·태그로 끌기 | 그 공간으로 이동, 그 태그 추가 |
+| 오른쪽 클릭 | 공간: 포커스·이름 변경·저장소 연결·삭제. 카드: 고정·태그·이동·삭제 |
+
+목록은 고정된 페이지가 먼저이고, 공간별 정렬(갱신·생성·제목)을 따른다. 날짜순이면 오늘·어제·지난
+7일·지난 30일·월별로 묶는다. 필터는 상태와 태그로 건다. 본문의 router 메시지와 run 카드, 지난 대화의
+메시지는 한 줄로 접히며 클릭하거나 "모두 펼치기"로 펼친다. doc 블록은 Compose 마크다운으로 그리고,
+mermaid는 코드 블록으로 보인다.
 
 앱은 앱 홈 파일을 읽거나 쓰지 않는다(`core.port` 읽기만 예외). 앱이 쓰는 파일은 앱 설정
 `settings.json` 하나다(macOS `~/Library/Application Support/Madang`, Windows `%APPDATA%\Madang`,
@@ -63,6 +83,16 @@ core 없이 화면을 개발하려면 가짜 core를 쓴다. `../core/openapi.ya
 MADANG_FAKE_CORE=1 ./gradlew :desktop:run                      # 앱 홈 없음 → 온보딩
 MADANG_FAKE_CORE=1 MADANG_FAKE_HOME=1 ./gradlew :desktop:run   # 메인 화면부터
 ```
+
+페이지가 있는 화면을 보려면 픽스처 앱 홈을 쓴다. `desktop/src/test/resources/fixture-home/`의
+공간·페이지·블록 파일로 답하고, 고정·이동·삭제 같은 요청은 메모리에만 반영하며 이벤트를 보낸다.
+
+```sh
+MADANG_FAKE_CORE=1 MADANG_FAKE_FIXTURE=src/test/resources/fixture-home ./gradlew :desktop:run
+```
+
+`./gradlew :desktop:test`는 이 픽스처로 메인 화면을 화면 밖에서 그려
+`desktop/build/screenshots/`에 `wide.png`(3열), `narrow.png`(2열), `page.png`(1열)를 남긴다.
 
 앱 홈 상태(`GET/POST /home`)와 라우팅 표(`GET/PUT /config/routes`)는 아직 계약 파일에 없다.
 `CoreSetupApi`가 이 경로를 쓰며, core가 `/home`을 모르면 앱 홈이 있다고 보고 메인으로 간다.

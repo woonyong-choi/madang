@@ -21,6 +21,8 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.compose.material3)
+    testImplementation(libs.kotlinx.datetime)
 }
 
 // 창 아이콘에 쓰는 PNG만 jar에 넣는다. icns·ico는 패키징에서만 쓴다.
@@ -39,6 +41,11 @@ tasks.withType<JavaExec>().configureEach {
 
 tasks.test {
     systemProperty("madang.openapiSpec", openApiSpec.path)
+    // 레이어 0 스크린샷 테스트가 PNG를 쓰는 곳.
+    systemProperty(
+        "madang.screenshotDir",
+        layout.buildDirectory.dir("screenshots").get().asFile.path
+    )
 }
 
 compose.desktop {

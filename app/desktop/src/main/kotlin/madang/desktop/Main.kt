@@ -15,6 +15,7 @@ import java.io.File
 import kotlinx.coroutines.delay
 import madang.desktop.fake.ContractExamples
 import madang.desktop.fake.FakeCore
+import madang.desktop.fake.FixtureHome
 import madang.shared.AppDependencies
 import madang.shared.AppViewModel
 import madang.shared.MadangApp
@@ -62,12 +63,17 @@ private fun dependencies(): AppDependencies {
     )
 }
 
-/** 가짜 core는 떠 있는 core처럼 기본 주소에서 답한다. 앱 설정 파일은 건드리지 않는다. */
+/**
+ * 가짜 core는 떠 있는 core처럼 기본 주소에서 답한다. 앱 설정 파일은 건드리지 않는다.
+ * `MADANG_FAKE_FIXTURE=<폴더>`면 그 픽스처 앱 홈으로 공간·페이지에 답하고 메인부터 시작한다.
+ */
 private fun fakeDependencies(): AppDependencies {
     val spec = File(System.getProperty("madang.openapiSpec") ?: "../core/openapi.yaml")
+    val fixture = System.getenv("MADANG_FAKE_FIXTURE")?.let { FixtureHome(File(it)) }
     val fake = FakeCore(
         ContractExamples.load(spec),
-        homeReady = System.getenv("MADANG_FAKE_HOME") == "1"
+        homeReady = fixture != null || System.getenv("MADANG_FAKE_HOME") == "1",
+        fixture = fixture
     )
     println("madang: using fake core from ${spec.path}")
     return AppDependencies(

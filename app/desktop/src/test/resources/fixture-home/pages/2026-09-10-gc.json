@@ -1,0 +1,25 @@
+{
+  "id": "2026-09-10-gc",
+  "space": "blog",
+  "title": "가비지 컬렉터 정리",
+  "kind": "build",
+  "status": "planning",
+  "created": "2026-09-10T21:00:00+09:00",
+  "updated": "2026-09-21T22:30:00+09:00",
+  "pinned": false,
+  "tags": [
+    "글"
+  ],
+  "overview": "",
+  "blocks": [
+    {
+      "id": "b01",
+      "type": "message",
+      "role": "user",
+      "ts": "2026-09-21T22:30:00+09:00",
+      "text": "G1과 ZGC 비교 글 개요부터 잡자"
+    }
+  ],
+  "runs": [],
+  "unknown_files": []
+}

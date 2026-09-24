@@ -1,0 +1,71 @@
+{
+  "id": "2026-08-02-kmp",
+  "space": "blog",
+  "title": "Compose Multiplatform 후기",
+  "kind": "build",
+  "status": "done",
+  "created": "2026-08-02T20:00:00+09:00",
+  "updated": "2026-08-05T23:00:00+09:00",
+  "pinned": false,
+  "tags": [
+    "글"
+  ],
+  "overview": "",
+  "blocks": [
+    {
+      "id": "b01",
+      "type": "message",
+      "role": "user",
+      "ts": "2026-08-02T20:00:00+09:00",
+      "text": "데스크톱 앱 만든 후기 초안 써줘"
+    },
+    {
+      "id": "b02",
+      "type": "message",
+      "role": "router",
+      "ts": "2026-08-02T20:00:01+09:00",
+      "text": "kind=build conf=0.80 → codex/gpt-6-sol medium",
+      "run": 1
+    },
+    {
+      "id": "b03",
+      "type": "message",
+      "role": "agent",
+      "ts": "2026-08-05T23:00:00+09:00",
+      "text": "초안을 완성했습니다. 배포 크기 절을 추가했습니다.",
+      "run": 1
+    }
+  ],
+  "runs": [
+    {
+      "n": 1,
+      "started": "2026-08-02T20:00:01+09:00",
+      "finished": "2026-08-02T20:06:00+09:00",
+      "trigger": {
+        "message": "b01"
+      },
+      "kind": "build",
+      "tier": 1,
+      "runner": "codex",
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "usage": {
+        "input": 22000,
+        "cached": 20000,
+        "output": 5200
+      },
+      "changed_files": [
+        "blocks/b04-post.md"
+      ],
+      "unknown_files": [],
+      "verify": {
+        "cmd": null,
+        "ok": null
+      },
+      "result_status": "done",
+      "commit": "feed123",
+      "events_log": "runs/1.events.jsonl"
+    }
+  ],
+  "unknown_files": []
+}

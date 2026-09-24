@@ -1,0 +1,143 @@
+{
+  "id": "2026-09-24-session-bug",
+  "space": "auth-svc",
+  "title": "세션 갱신 경합",
+  "kind": "design",
+  "status": "blocked",
+  "created": "2026-09-24T07:30:00+09:00",
+  "updated": "2026-09-24T09:50:00+09:00",
+  "pinned": false,
+  "tags": [
+    "버그/인증"
+  ],
+  "overview": "",
+  "blocks": [
+    {
+      "id": "b01",
+      "type": "message",
+      "role": "user",
+      "ts": "2026-09-24T07:31:00+09:00",
+      "text": "새벽에 로그인 오류가 튀는 원인을 찾아줘"
+    },
+    {
+      "id": "b02",
+      "type": "message",
+      "role": "router",
+      "ts": "2026-09-24T07:31:01+09:00",
+      "text": "kind=design conf=0.88 → claude/claude-opus-5-5 high",
+      "run": 1
+    },
+    {
+      "id": "b03",
+      "type": "message",
+      "role": "agent",
+      "ts": "2026-09-24T07:40:12+09:00",
+      "text": "refresh 토큰 갱신이 두 요청에서 동시에 일어나 한쪽이 무효 토큰을 받습니다. 분석은 b04, 발생 기록은 b05에 있습니다.",
+      "run": 1
+    },
+    {
+      "id": "b04",
+      "type": "doc",
+      "file": "blocks/b04-cause.md",
+      "title": "원인 분석",
+      "created_by": "run 1"
+    },
+    {
+      "id": "b05",
+      "type": "data",
+      "file": "blocks/b05-incidents.json",
+      "title": "오류 발생 기록",
+      "created_by": "run 1",
+      "format": "json"
+    },
+    {
+      "id": "b06",
+      "type": "message",
+      "role": "user",
+      "ts": "2026-09-24T09:49:30+09:00",
+      "text": "갱신에 분산 락을 거는 수정안을 만들어줘"
+    },
+    {
+      "id": "b07",
+      "type": "message",
+      "role": "router",
+      "ts": "2026-09-24T09:49:31+09:00",
+      "text": "kind=build conf=0.93 → codex/gpt-6-sol medium",
+      "run": 2
+    },
+    {
+      "id": "b08",
+      "type": "message",
+      "role": "agent",
+      "ts": "2026-09-24T09:50:00+09:00",
+      "text": "락 만료 시간을 정해야 합니다. 5초와 30초 중 어느 쪽으로 할까요?",
+      "run": 2
+    }
+  ],
+  "runs": [
+    {
+      "n": 1,
+      "started": "2026-09-24T07:31:01+09:00",
+      "finished": "2026-09-24T07:40:12+09:00",
+      "trigger": {
+        "message": "b01"
+      },
+      "kind": "design",
+      "tier": 1,
+      "runner": "claude",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "usage": {
+        "input": 31200,
+        "cached": 0,
+        "output": 4210
+      },
+      "changed_files": [
+        "blocks/b04-cause.md",
+        "blocks/b05-incidents.json",
+        "state.md"
+      ],
+      "unknown_files": [],
+      "verify": {
+        "cmd": null,
+        "ok": null
+      },
+      "result_status": "review",
+      "commit": "c0ffee1",
+      "events_log": "runs/1.events.jsonl"
+    },
+    {
+      "n": 2,
+      "started": "2026-09-24T09:49:31+09:00",
+      "finished": "2026-09-24T09:50:00+09:00",
+      "trigger": {
+        "message": "b06"
+      },
+      "kind": "build",
+      "tier": 1,
+      "runner": "codex",
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "usage": {
+        "input": 28800,
+        "cached": 26000,
+        "output": 410
+      },
+      "changed_files": [],
+      "unknown_files": [],
+      "verify": {
+        "cmd": null,
+        "ok": null
+      },
+      "result_status": "blocked",
+      "commit": "d00d2e3",
+      "events_log": "runs/2.events.jsonl"
+    }
+  ],
+  "unknown_files": [
+    {
+      "path": "tmp/trace.log",
+      "run": 1
+    }
+  ]
+}

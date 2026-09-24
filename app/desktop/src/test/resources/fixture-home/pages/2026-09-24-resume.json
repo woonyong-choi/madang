@@ -1,0 +1,175 @@
+{
+  "id": "2026-09-24-resume",
+  "space": "jobs",
+  "title": "이력서",
+  "kind": "build",
+  "status": "review",
+  "created": "2026-09-24T08:10:00+09:00",
+  "updated": "2026-09-24T09:31:41+09:00",
+  "pinned": true,
+  "tags": [
+    "이력서"
+  ],
+  "overview": "",
+  "blocks": [
+    {
+      "id": "b01",
+      "type": "message",
+      "role": "user",
+      "ts": "2026-09-24T08:11:02+09:00",
+      "text": "이력서 템플릿 만들어줘"
+    },
+    {
+      "id": "b02",
+      "type": "message",
+      "role": "router",
+      "ts": "2026-09-24T08:11:03+09:00",
+      "text": "kind=design conf=0.91 → claude/claude-opus-5-5 high",
+      "run": 1
+    },
+    {
+      "id": "b03",
+      "type": "message",
+      "role": "agent",
+      "ts": "2026-09-24T08:14:40+09:00",
+      "text": "이력서 뷰(b04)와 기본 데이터(b05), 펄어비스용 덮어쓰기(b06)를 만들었습니다.",
+      "run": 1
+    },
+    {
+      "id": "b04",
+      "type": "view",
+      "file": "blocks/b04-resume.view.md",
+      "title": "이력서",
+      "created_by": "run 1",
+      "template": "resume@1",
+      "bindings": {
+        "base": "b05",
+        "overlay": "b06"
+      },
+      "presets": {
+        "기본": {
+          "base": "b05"
+        },
+        "펄어비스": {
+          "base": "b05",
+          "overlay": "b06"
+        }
+      },
+      "active_preset": "펄어비스",
+      "theme": {
+        "color.accent": "#3a5bd9"
+      }
+    },
+    {
+      "id": "b05",
+      "type": "data",
+      "file": "blocks/b05-base.json",
+      "title": "기본 데이터",
+      "created_by": "run 1",
+      "format": "json",
+      "schema": "resume#/base"
+    },
+    {
+      "id": "b06",
+      "type": "data",
+      "file": "blocks/b06-pearlabyss.json",
+      "title": "펄어비스 덮어쓰기",
+      "created_by": "run 1",
+      "format": "json"
+    },
+    {
+      "id": "b07",
+      "type": "message",
+      "role": "user",
+      "ts": "2026-09-24T09:30:58+09:00",
+      "text": "펄어비스 경력을 맨 위로",
+      "target": {
+        "block": "b04",
+        "elements": [
+          "work[1]"
+        ],
+        "mode": "edit"
+      }
+    },
+    {
+      "id": "b08",
+      "type": "message",
+      "role": "router",
+      "ts": "2026-09-24T09:31:00+09:00",
+      "text": "kind=small conf=1.00 → codex/gpt-6-luna high",
+      "run": 2
+    },
+    {
+      "id": "b09",
+      "type": "message",
+      "role": "agent",
+      "ts": "2026-09-24T09:31:41+09:00",
+      "text": "work 순서를 바꿨습니다. 펄어비스 경력이 맨 위입니다.",
+      "run": 2
+    }
+  ],
+  "runs": [
+    {
+      "n": 1,
+      "started": "2026-09-24T08:11:03+09:00",
+      "finished": "2026-09-24T08:14:40+09:00",
+      "trigger": {
+        "message": "b01"
+      },
+      "kind": "design",
+      "tier": 1,
+      "runner": "claude",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "usage": {
+        "input": 27410,
+        "cached": 0,
+        "output": 3120
+      },
+      "changed_files": [
+        "blocks/b04-resume.view.md",
+        "blocks/b05-base.json",
+        "blocks/b06-pearlabyss.json",
+        "state.md"
+      ],
+      "unknown_files": [],
+      "verify": {
+        "cmd": null,
+        "ok": null
+      },
+      "result_status": "review",
+      "commit": "5e6f7a8",
+      "events_log": "runs/1.events.jsonl"
+    },
+    {
+      "n": 2,
+      "started": "2026-09-24T09:31:00+09:00",
+      "finished": "2026-09-24T09:31:41+09:00",
+      "trigger": {
+        "message": "b07"
+      },
+      "kind": "small",
+      "tier": 1,
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high",
+      "usage": {
+        "input": 29104,
+        "cached": 24310,
+        "output": 612
+      },
+      "changed_files": [
+        "blocks/b05-base.json"
+      ],
+      "unknown_files": [],
+      "verify": {
+        "cmd": null,
+        "ok": null
+      },
+      "result_status": "review",
+      "commit": "a1b2c3d",
+      "events_log": "runs/2.events.jsonl"
+    }
+  ],
+  "unknown_files": []
+}

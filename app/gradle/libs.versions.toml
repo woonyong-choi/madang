@@ -9,6 +9,9 @@ openapi-generator = "7.14.0"
 ktlint-gradle = "14.2.0"
 ktlint-cli = "1.8.0"
 snakeyaml = "2.4"
+kotlinx-datetime = "0.8.0"
+markdown-renderer = "0.45.0"
+compose-material-icons = "1.7.3"
 
 [libraries]
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
@@ -25,6 +28,9 @@ ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negoti
 ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
+markdown-renderer-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdown-renderer" }
+compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "compose-material-icons" }
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 
 [plugins]

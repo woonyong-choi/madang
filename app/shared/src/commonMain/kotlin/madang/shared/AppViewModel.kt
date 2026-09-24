@@ -15,6 +15,7 @@ import madang.shared.onboarding.OnboardingViewModel
 import madang.shared.settings.Language
 import madang.shared.settings.SettingsViewModel
 import madang.shared.start.StartViewModel
+import madang.shared.ui.stringsFor
 
 /** 지금 보이는 화면. */
 sealed interface Screen {
@@ -83,7 +84,8 @@ class AppViewModel(private val deps: AppDependencies, private val scope: Corouti
     private fun showMain() {
         val core = client ?: return
         val events = EventStream(deps.eventTransport(core))
-        val viewModel = MainViewModel(core, events, sessionScope)
+        val newPageTitle = stringsFor(_language.value).navigator.untitledPage
+        val viewModel = MainViewModel(core, events, sessionScope, newPageTitle)
         main = viewModel
         _screen.value = Screen.Main(viewModel)
     }

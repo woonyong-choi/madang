@@ -30,22 +30,36 @@ import madang.shared.core.EventTransport
  *
  * 계약에 있는 경로는 계약 예시로 답한다. 계약에 아직 없는 설정 경로(`/home`,
  * `/config/routes`)는 메모리 상태로 흉내 낸다. 앱 홈은 처음에 없는 상태로 시작한다.
+ *
+ * [fixture]가 있으면 공간·페이지·블록 경로는 픽스처 앱 홈으로 답하고, 이벤트도 픽스처의
+ * 것을 보낸다.
  */
-class FakeCore(private val examples: ContractExamples, homeReady: Boolean = false) {
+class FakeCore(
+    private val examples: ContractExamples,
+    homeReady: Boolean = false,
+    private val fixture: FixtureHome? = null
+) {
 
     private var home = HomeState(path = "~/.madang", initialized = homeReady, remote = null)
     private var routes = SAMPLE_ROUTES
 
     val engine: HttpClientEngine = MockEngine { request -> handle(request) }
 
-    /** 연결되면 계약의 이벤트 예시를 차례로 보내고 연결을 유지한다. */
+    /**
+     * 연결되면 계약의 이벤트 예시를 차례로 보내고 연결을 유지한다. 픽스처가 있으면 픽스처의
+     * 처음 이벤트를 보내고, 이후 바꾸는 요청에서 난 이벤트를 보낸다.
+     */
     val events = EventTransport { onOpen, onFrame ->
         onOpen()
-        for (event in examples.events()) {
-            delay(EVENT_INTERVAL)
-            onFrame(event)
+        if (fixture == null) {
+            for (event in examples.events()) {
+                delay(EVENT_INTERVAL)
+                onFrame(event)
+            }
+            awaitCancellation()
         }
-        awaitCancellation()
+        fixture.initialEvents.forEach { onFrame(it) }
+        fixture.events.collect { onFrame(it) }
     }
 
     private fun MockRequestHandleScope.handle(request: HttpRequestData): HttpResponseData {
@@ -53,11 +67,25 @@ class FakeCore(private val examples: ContractExamples, homeReady: Boolean = fals
         val body = (request.body as? TextContent)?.text
         return when {
             path == "/home" && request.method == HttpMethod.Get -> json(home.toJson())
+
             path == "/home" && request.method == HttpMethod.Post -> initHome(body)
+
             path == "/config/routes" && request.method == HttpMethod.Get -> json(routesJson())
+
             path == "/config/routes" && request.method == HttpMethod.Put -> saveRoutes(body)
-            else -> contractResponse(request.method.value, path)
+
+            else -> fixture?.handle(request.method.value, path, body)?.let { fixtureResponse(it) }
+                ?: contractResponse(request.method.value, path)
         }
+    }
+
+    private fun MockRequestHandleScope.fixtureResponse(
+        response: FixtureResponse
+    ): HttpResponseData {
+        val status = HttpStatusCode.fromValue(response.status)
+        return response.body?.let {
+            respond(it, status, headersOf(HttpHeaders.ContentType, "application/json"))
+        } ?: respond("", status)
     }
 
     private fun MockRequestHandleScope.contractResponse(
