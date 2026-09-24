@@ -14,10 +14,10 @@ from typing import Any
 from madang import config
 from madang import runs as targets
 from madang.api import errors, events
-from madang.api.availability import Availability, Probe, probe_cli
 from madang.api.launch import relay_run_event
 from madang.graph.nodes import RunnerFactory
 from madang.runners import make_runner
+from madang.runners.availability import Availability, Probe, probe_cli
 from madang.store import blocks, pages, projects, runs, summary
 from madang.store.home import LegacyHomeError, check_layout, is_initialized
 

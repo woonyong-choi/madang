@@ -375,6 +375,14 @@ class RunVerify(_Out):
     ok: bool | None = None
 
 
+class RunFallbackData(_Out):
+    """러너 대체. 러너와 모델은 ``runner/model`` 형식이다."""
+
+    from_: str = Field(alias="from")
+    to: str
+    reason: str
+
+
 class RunRecord(_Out):
     """runs/N.json."""
 
@@ -394,6 +402,7 @@ class RunRecord(_Out):
     verify: RunVerify
     result_status: RunResultStatus | None = None
     events_log: str | None = None
+    fallback: RunFallbackData | None = None
 
 
 class RunStreamEvent(_Out):

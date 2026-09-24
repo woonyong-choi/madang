@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # 한 동작 체크리스트. samples/의 세 프로젝트를 임시 폴더에 복사해 임시 앱 홈에
-# 등록하고, madang serve와 실제 claude로 다섯 항목을 확인한 뒤 항목별
-# PASS/FAIL과 근거, 호출당 입력 수치를 보고서(md)에 쓴다. 실제 ~/.madang과
-# 사용자 폴더는 건드리지 않고 원격을 쓰지 않는다.
+# 등록하고, madang serve와 실제 에이전트 도구로 다섯 항목을 확인한 뒤 항목별
+# PASS/FAIL과 근거, 러너 가용성과 대체 횟수, 호출당 입력 수치를 보고서(md)에
+# 쓴다. 실제 ~/.madang과 사용자 폴더는 건드리지 않고 원격을 쓰지 않는다.
 #
 # 사용: bash scripts/checklist/run.sh
 # 앱 홈 설정은 madang init이 만든 기본 config.yaml 그대로 쓴다(러너 인자·routes를
-# 덧대지 않는다). 바꾸는 것은 라우팅 단계의 모델뿐이다.
+# 덧대지 않는다). CHECKLIST_MODEL을 주지 않으면 기본 라우팅 표 그대로 돌고,
+# 쓸 수 없는 도구(예: 로그인하지 않은 codex)는 core가 대체표로 바꾼다.
 #
 # 환경: CHECKLIST_REPORT  보고서 경로 (기본: 작업 폴더/checklist.md)
 #       CHECKLIST_WORK    작업 폴더 (기본: 새 임시 폴더)
-#       CHECKLIST_MODEL   라우팅 단계마다 쓸 claude 모델 (기본: claude-sonnet-5)
+#       CHECKLIST_MODEL   라우팅 단계마다 쓸 claude 모델 (기본: 없음, 기본 라우팅)
 #       MADANG_CORE_BIN   core 실행 파일. 주면 uv 대신 이것으로 madang을 돌린다
 #                         (예: Madang.app/Contents/app/resources/madang-core/madang)
 # 종료 코드: 모든 항목 PASS면 0, FAIL이 있으면 1, 중간에 멈추면 그 밖의 값.
@@ -32,4 +33,4 @@ echo "report: $report"
 echo "core:   ${MADANG_CORE_BIN:-uv run --project $repo/core madang}"
 uv run --quiet --project "$repo/core" python "$here/checklist.py" \
   --repo "$repo" --work "$work" --report "$report" \
-  --model "${CHECKLIST_MODEL:-claude-sonnet-5}"
+  --model "${CHECKLIST_MODEL:-}"

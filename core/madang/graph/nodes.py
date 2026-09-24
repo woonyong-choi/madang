@@ -21,7 +21,9 @@ from madang.deciders import Question, build_chain, target_kind
 from madang.graph import events, steps
 from madang.graph import settle as policy_step
 from madang.graph.state import FlowState
+from madang.runners.availability import Availability
 from madang.runners.base import CliRunner, RunEvent
+from madang.runners.fallback import UNAVAILABLE, Fallbacks, Route
 from madang.runners.record import RecordedRun
 from madang.store import pages, projects, runs
 from madang.store.page import LEDGER_FILE
@@ -37,6 +39,9 @@ REVIEW_KIND = "review"
 ANSWER_KINDS = ("explore",)
 # validate가 보정하지 않고 judge가 review로 강등해 처리하는 문제.
 JUDGED_ISSUES = ("done-without-verify",)
+# 반대 도구로 리뷰하지 못했을 때 ledger.md 머리부에 남기는 표시.
+CROSS_REVIEW_KEY = "cross_review"
+CROSS_REVIEW_PENDING = "pending"
 
 # 사람에게 묻는 이유와 답.
 WAIT_KIND = "kind"
@@ -45,6 +50,7 @@ WAIT_RUN_LIMIT = "run_limit"
 WAIT_REPAIR = "repair_failed"
 WAIT_REVIEW = "review_failed"
 WAIT_POLICY = "policy"
+WAIT_NO_RUNNER = "no_runner"
 RETRY = "retry"
 STOP = "stop"
 # 정책 단계에서 멈췄을 때만 쓰는 답.
@@ -89,6 +95,9 @@ class FlowNodes:
         on_event: 이벤트를 받는 콜백.
         cancelled: 설정되면 다음 실행을 시작하지 않고 진행 중인 실행을
             멈춘다.
+        availability: 러너 사용 가능 여부. None이면 확인하지 않고 모든
+            러너를 쓸 수 있다고 본다.
+        fallbacks: 대체표와 조기 실패 규칙.
     """
 
     def __init__(
@@ -97,11 +106,14 @@ class FlowNodes:
         make_runner: RunnerFactory,
         on_event: events.EventHook,
         cancelled: threading.Event,
+        availability: Availability | None = None,
     ) -> None:
         self.cfg = cfg
         self.make_runner = make_runner
         self.on_event = on_event
         self.cancelled = cancelled
+        self.availability = availability
+        self.fallbacks = Fallbacks.from_routes(cfg.routes)
         self.chain = build_chain(cfg.routes)
         self._lock = threading.Lock()
         self._active: CliRunner | None = None
@@ -128,23 +140,35 @@ class FlowNodes:
             kind = str(decision.choice)
         return Command(goto="pick", update={"kind": kind})
 
-    def pick(self, state: FlowState) -> dict[str, Any]:
-        """``routes.tiers[kind][tier]``에서 러너, 모델, 추론 강도를 고른다."""
-        page_dir = self._page_dir(state)
-        runner, model, effort = resolve_route(
-            self.cfg,
-            self._tiers(state["kind"])[state["tier"] - 1],
-            self._implementer(state, page_dir),
-        )
+    def pick(self, state: FlowState, config: RunnableConfig) -> Command:
+        """``routes.tiers[kind][tier]``에서 러너, 모델, 추론 강도를 고른다.
 
+        고른 러너를 쓸 수 없으면 대체표의 러너로 바꾸고 ``run.fallback``을
+        알린다. 대체할 러너도 쓸 수 없으면 사람을 기다린다(``no_runner``).
+        """
+        page_dir = self._page_dir(state)
+        entry = self._tiers(state["kind"])[state["tier"] - 1]
+        if state["kind"] == REVIEW_KIND:
+            chosen = self._review_route(state, page_dir, entry)
+        else:
+            implementer = self._implementer(state, page_dir)
+            chosen = self._usable(
+                Route(*resolve_route(self.cfg, entry, implementer))
+            )
+        if chosen is None:
+            return self._wait(state, config, WAIT_NO_RUNNER)
+        route, fallback = chosen
+        self._announce_fallback(state, fallback)
         recorder.mark_route(
             page_dir,
             tier=state["tier"],
             attempts=state["attempts"],
-            owner=None if state["kind"] == REVIEW_KIND else f"{runner}/{model}",
+            owner=None if state["kind"] == REVIEW_KIND else route.key,
             n=state["run_n"] if state["runs_this_message"] else None,
         )
-        return {"runner": runner, "model": model, "effort": effort}
+        return Command(
+            goto="assemble", update={**_route(route), "fallback": fallback}
+        )
 
     def assemble(self, state: FlowState) -> dict[str, Any]:
         """메시지 본문으로 프롬프트를 조립해 저장한다.
@@ -164,9 +188,10 @@ class FlowNodes:
         """저장된 프롬프트로 러너를 새 세션에서 실행한다."""
         if self.cancelled.is_set():
             return Command(goto=END, update={"result_status": "cancelled"})
-        recorded = self._execute(state, state["kind"], state["tier"])
-        update = {**_counted(state, recorded), "last_run_kind": state["kind"]}
-        return Command(goto="validate", update=update)
+        update = self._attempt(state, state["kind"], state["tier"])
+        return Command(
+            goto="validate", update={**update, "last_run_kind": state["kind"]}
+        )
 
     def validate(self, state: FlowState, config: RunnableConfig) -> Command:
         """실행 뒤 페이지를 검사한다."""
@@ -218,31 +243,31 @@ class FlowNodes:
         update = {"result_status": "doing"}
         return self._next(state, config, "pick", update)
 
-    def review_run(self, state: FlowState) -> Command:
-        """구현한 쪽의 반대편 러너로 review 종류를 실행한다."""
+    def review_run(self, state: FlowState, config: RunnableConfig) -> Command:
+        """구현한 쪽의 반대편 러너로 review 종류를 실행한다.
+
+        반대편을 쓸 수 없으면 같은 러너의 다른 모델로 리뷰하고 ledger.md에
+        ``cross_review: pending``을 남긴다. 둘 다 쓸 수 없으면 사람을
+        기다린다(``no_runner``).
+        """
         if self.cancelled.is_set():
             return Command(goto=END, update={"result_status": "cancelled"})
         page_dir = self._page_dir(state)
         entries = self._tiers(REVIEW_KIND, required=False)
         entry = entries[0] if entries else Tier(runner=OPPOSITE, model=PRIMARY)
-        runner, model, effort = resolve_route(
-            self.cfg, entry, self._implementer(state, page_dir)
-        )
-        reviewer: FlowState = {
-            **state,
-            "runner": runner,
-            "model": model,
-            "effort": effort,
-        }
+        chosen = self._review_route(state, page_dir, entry)
+        if chosen is None:
+            return self._wait(state, config, WAIT_NO_RUNNER, retry="review_run")
+        route, fallback = chosen
+        self._announce_fallback(state, fallback)
+        reviewer: FlowState = {**state, **_route(route), "fallback": fallback}
         request = steps.message_text(page_dir, state["message"])
         self._prepare(reviewer, REVIEW_REQUEST.format(request=request), 1)
-        recorded = self._execute(reviewer, REVIEW_KIND, 1)
         update = {
-            "runner": runner,
-            "model": model,
-            "effort": effort,
+            **_route(route),
+            "fallback": fallback,
             "last_run_kind": REVIEW_KIND,
-            **_counted(state, recorded),
+            **self._attempt(reviewer, REVIEW_KIND, 1),
         }
         return Command(goto="validate", update=update)
 
@@ -313,6 +338,9 @@ class FlowNodes:
             return Command(goto="pick", update={**cleared, "kind": choice})
         if choice == STOP:
             return Command(goto=END, update=cleared)
+        if decision.get("reason") == WAIT_NO_RUNNER and self.availability:
+            # 사람이 로그인한 뒤 다시 하라고 답한 것이므로 캐시를 버린다.
+            self.availability.get(self.cfg.runners, fresh=True)
         update = {**cleared, "attempts": 0, "runs_this_message": 0}
         return Command(goto=decision["retry"], update=update)
 
@@ -459,6 +487,9 @@ class FlowNodes:
         finally:
             with self._lock:
                 self._active = None
+        if state.get("fallback"):
+            recorded.record.fallback = state["fallback"]
+            recorder.save_run(page_dir, recorded.record)
         steps.reply(page_dir, recorded)
         self._announce(state, recorded)
         return recorded
@@ -509,6 +540,123 @@ class FlowNodes:
             self.on_event(events.PAGE_UNKNOWN_FILES, payload)
         return issues
 
+    def _attempt(
+        self, state: FlowState, kind: str, tier: int
+    ) -> dict[str, Any]:
+        """저장된 프롬프트로 실행한다. 조기 실패면 대체 러너로 한 번 더.
+
+        다시 실행해도 승격 단계와 시도 횟수는 그대로다.
+
+        Returns:
+            흐름 상태에 더할 값: 실행 번호와 실행 수, 대체했으면 새 경로.
+        """
+        recorded = self._execute(state, kind, tier)
+        update = _counted(state, recorded)
+        reason = self.fallbacks.early_failure_reason(recorded.result)
+        if reason is None or self.cancelled.is_set():
+            return update
+        route = Route(state["runner"], state["model"], state["effort"])
+        other = self.fallbacks.replacement(route)
+        if other is None or self._unavailable(other.runner) is not None:
+            return update
+        fallback = _fallback(route, other, reason)
+        self._announce_fallback(state, fallback)
+        retried: FlowState = {
+            **state,
+            **update,
+            **_route(other),
+            "fallback": fallback,
+        }
+        page_dir = self._page_dir(state)
+        if kind != REVIEW_KIND:
+            recorder.mark_route(
+                page_dir,
+                tier=state["tier"],
+                attempts=state["attempts"],
+                owner=other.key,
+                n=recorded.n,
+            )
+        elif other.runner == self._implementer(state, page_dir):
+            self._mark_cross_review(retried, page_dir, pending=True)
+        recorded = self._execute(retried, kind, tier)
+        return {
+            **_counted(retried, recorded),
+            **_route(other),
+            "fallback": fallback,
+        }
+
+    def _announce_fallback(
+        self, state: FlowState, fallback: dict[str, str] | None
+    ) -> None:
+        if fallback is not None:
+            self.on_event(events.RUN_FALLBACK, {**_base(state), **fallback})
+
+    # 가용성과 대체
+
+    def _unavailable(self, runner: str) -> str | None:
+        """러너를 쓸 수 없는 이유. 쓸 수 있거나 확인하지 않으면 None."""
+        if self.availability is None or runner not in self.cfg.runners:
+            return None
+        return self.availability.reason(runner, self.cfg.runners)
+
+    def _usable(
+        self, route: Route
+    ) -> tuple[Route, dict[str, str] | None] | None:
+        """쓸 수 있으면 그대로, 아니면 대체표의 경로. 둘 다 안 되면 None.
+
+        Returns:
+            ``(경로, 대체 기록)``. 대체하지 않았으면 기록은 None이다.
+        """
+        if self._unavailable(route.runner) is None:
+            return route, None
+        other = self.fallbacks.replacement(route)
+        if other is None or self._unavailable(other.runner) is not None:
+            return None
+        return other, _fallback(route, other, UNAVAILABLE)
+
+    def _review_route(
+        self, state: FlowState, page_dir: Path, entry: Tier
+    ) -> tuple[Route, dict[str, str] | None] | None:
+        """리뷰할 경로를 고르고 교차 리뷰 여부를 ledger.md에 남긴다.
+
+        ``opposite`` 러너를 쓸 수 없으면 구현한 러너의 다른 모델로 리뷰하고
+        ``cross_review: pending``을 남긴다. 반대편으로 리뷰하면 그 표시를
+        지운다.
+
+        Returns:
+            ``(경로, 대체 기록)``. 쓸 러너가 없으면 None.
+        """
+        implementer = self._implementer(state, page_dir)
+        route = Route(*resolve_route(self.cfg, entry, implementer))
+        cross = entry.runner == OPPOSITE and implementer
+        if not cross or route.runner == implementer:
+            return self._usable(route)
+        if self._unavailable(route.runner) is None:
+            self._mark_cross_review(state, page_dir, pending=False)
+            return route, None
+        model = _other_model(self.cfg, implementer, self._owner_model(page_dir))
+        if model is None or self._unavailable(implementer) is not None:
+            return None
+        same = Route(implementer, model, route.effort)
+        self._mark_cross_review(state, page_dir, pending=True)
+        return same, _fallback(route, same, UNAVAILABLE)
+
+    def _mark_cross_review(
+        self, state: FlowState, page_dir: Path, *, pending: bool
+    ) -> None:
+        header = pages.read_header(page_dir / LEDGER_FILE)
+        if (header.get(CROSS_REVIEW_KEY) == CROSS_REVIEW_PENDING) == pending:
+            return
+
+        def mark(ledger: dict[str, Any]) -> None:
+            if pending:
+                ledger[CROSS_REVIEW_KEY] = CROSS_REVIEW_PENDING
+            else:
+                ledger.pop(CROSS_REVIEW_KEY, None)
+
+        n = state["run_n"] if state["runs_this_message"] else None
+        recorder.update_ledger(page_dir, mark, n)
+
     # 라우팅 표
 
     def _page_dir(self, state: FlowState) -> Path:
@@ -529,6 +677,12 @@ class FlowNodes:
         """
         owner = pages.read_header(page_dir / LEDGER_FILE).get("owner")
         return str(owner).split("/", 1)[0] if owner else state["runner"]
+
+    def _owner_model(self, page_dir: Path) -> str | None:
+        """ledger.md owner의 모델. 없으면 None."""
+        owner = pages.read_header(page_dir / LEDGER_FILE).get("owner")
+        parts = str(owner).split("/", 1) if owner else []
+        return parts[1] if len(parts) == 2 else None
 
 
 def resolve_route(
@@ -558,6 +712,15 @@ def resolve_route(
     return runner, model, effort or DEFAULT_EFFORT
 
 
+def _other_model(cfg: Config, runner: str, model: str | None) -> str | None:
+    """라우팅 표에서 ``runner``가 맡는 모델 중 ``model``이 아닌 첫 모델."""
+    for tiers in cfg.routes.tiers.values():
+        for tier in tiers:
+            if tier.runner == runner and tier.model not in (model, PRIMARY):
+                return tier.model
+    return None
+
+
 def _primary(cfg: Config, runner: str) -> tuple[str, str | None]:
     """라우팅 표에서 ``runner``가 처음 맡는 모델과 추론 강도."""
     for tiers in cfg.routes.tiers.values():
@@ -565,6 +728,19 @@ def _primary(cfg: Config, runner: str) -> tuple[str, str | None]:
             if tier.runner == runner and tier.model != PRIMARY:
                 return tier.model, tier.effort
     raise ValueError(f"routes has no model for runner '{runner}'")
+
+
+def _route(route: Route) -> dict[str, str]:
+    return {
+        "runner": route.runner,
+        "model": route.model,
+        "effort": route.effort,
+    }
+
+
+def _fallback(source: Route, target: Route, reason: str) -> dict[str, str]:
+    """``run.fallback`` 이벤트와 실행 기록의 ``fallback`` 값."""
+    return {"from": source.key, "to": target.key, "reason": reason}
 
 
 def _base(state: FlowState) -> dict[str, Any]:

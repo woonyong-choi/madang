@@ -2952,6 +2952,11 @@ components:
         events_log:
           type: [string, "null"]
           description: 원본 이벤트 스트림의 페이지 기준 경로.
+        fallback:
+          $ref: "#/components/schemas/RunFallbackData"
+          description: >-
+            러너를 쓸 수 없거나 조기 실패해 대체표의 러너로 바꿔 실행했으면
+            그 대체. 바꾸지 않았으면 없다.
       examples:
         - n: 2
           started: "2026-09-24T09:31:00+09:00"

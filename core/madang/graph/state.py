@@ -16,6 +16,8 @@ class FlowState(TypedDict):
     ``pending_decision``은 사람에게 묻는 동안만 채워진다. ``approved``는
     사람이 묻는 블록에서 테스트 조건 없이 머지하라고 답했을 때만 참이고,
     ``feedback``은 정책이 거부한 이유를 다음 실행 요청에 붙일 때만 채워진다.
+    ``fallback``은 지금 러너가 대체표로 바뀐 것이면 ``{from, to, reason}``,
+    아니면 None이다.
     """
 
     project: str
@@ -35,6 +37,7 @@ class FlowState(TypedDict):
     pending_decision: dict[str, Any] | None
     approved: bool
     feedback: str
+    fallback: dict[str, str] | None
 
 
 def initial_state(
@@ -69,4 +72,5 @@ def initial_state(
         pending_decision=None,
         approved=False,
         feedback="",
+        fallback=None,
     )

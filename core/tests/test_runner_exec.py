@@ -98,6 +98,7 @@ def test_default_commands_come_from_runners_yaml(tmp_path: Path) -> None:
         "codex",
         "exec",
         "--json",
+        "--skip-git-repo-check",
         "-m",
         "gpt-6-luna",
         "-c",

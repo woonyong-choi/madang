@@ -15,7 +15,6 @@ from fastapi.openapi.utils import get_openapi
 
 from madang import __version__
 from madang.api import errors
-from madang.api.availability import Probe, probe_cli
 from madang.api.contract import contract_document
 from madang.api.core import Core
 from madang.api.guard import LocalOnly
@@ -33,6 +32,7 @@ from madang.api.routes import (
     viewers,
 )
 from madang.graph.nodes import RunnerFactory
+from madang.runners.availability import Probe, probe_cli
 
 ROUTERS = (
     system.router,

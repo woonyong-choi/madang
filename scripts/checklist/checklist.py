@@ -1,9 +1,11 @@
-"""한 동작 체크리스트: 샘플 세 프로젝트로 core API와 실제 claude를 돌린다.
+"""한 동작 체크리스트: 샘플 세 프로젝트로 core API와 실제 도구를 돌린다.
 
 샘플(``samples/``)을 임시 폴더에 복사해 임시 앱 홈(``MADANG_HOME``)에
 등록하고, ``madang serve``를 띄워 API로만 다음을 확인한다. 앱 홈 설정은
-``madang init``이 만든 기본 config.yaml 그대로이며, 라우팅 단계의 모델만
-체크리스트 모델로 바꾼다. 러너 인자·종류·규칙·한도는 덧대지 않는다.
+``madang init``이 만든 기본 config.yaml 그대로다. 체크리스트 모델을 주면
+라우팅 단계의 모델만 그 claude 모델로 바꾸고, 주지 않으면 기본 라우팅 표
+그대로 돈다. 쓸 수 없는 도구는 core가 대체표로 바꾸며, 보고서에 러너
+가용성과 대체 횟수를 남긴다. 러너 인자·종류·규칙·한도는 덧대지 않는다.
 
 1. 위키 노트에 요청 → 폴더 대상 게시 HTML에 새 내용.
 2. 코드 프로젝트에 버그 수정 요청 → 선언된 테스트 통과 → 자동 머지 →
@@ -268,6 +270,7 @@ class Run:
     notes: list[str] = field(default_factory=list)
     code: dict[str, Any] = field(default_factory=dict)
     snapshot: dict[str, Any] = field(default_factory=dict)
+    runners: dict[str, Any] = field(default_factory=dict)
 
 
 # 준비
@@ -294,6 +297,7 @@ def prepare(run: Run) -> None:
         core.call("POST", "/projects", {"path": str(root), "id": name})
         run.roots[name] = root
     configure_model(run)
+    run.runners = core.get("/runners")
     core.call("POST", "/projects/code/git/init")
     core.call("POST", "/projects/code/git/stage", {})
     core.call("POST", "/projects/code/git/commit", {"message": "init sample"})
@@ -707,14 +711,25 @@ def _diff(a: Any, b: Any, path: str) -> list[str]:
 
 
 def input_rows(run: Run) -> list[str]:
-    """페이지의 모든 실행에서 호출당 입력 추정과 사용량을 표 줄로 만든다."""
+    """페이지의 모든 실행에서 호출당 입력 추정과 사용량을 표 줄로 만든다.
+
+    대체한 실행은 대체를, 교차 리뷰를 미룬 페이지는 그 표시를 관찰에
+    남긴다.
+    """
     rows = []
+    fallbacks = []
     for project, page in run.pages.items():
         detail = run.core.get(f"/pages/{page}")
         for ref in detail["runs"]:
             record = run.core.get(f"/pages/{page}/runs/{ref['n']}")
             parts = (record.get("input") or {}).get("parts") or {}
             usage = record.get("usage") or {}
+            fallback = record.get("fallback")
+            if fallback:
+                fallbacks.append(
+                    f"{project} run {ref['n']}: {fallback['from']} -> "
+                    f"{fallback['to']} ({fallback['reason']})"
+                )
             rows.append(
                 f"| {project} | {ref['n']} | {record.get('kind')} | "
                 f"{record.get('runner')}/{record.get('model')}/"
@@ -722,9 +737,24 @@ def input_rows(run: Run) -> list[str]:
                 + " ".join(f"{k}={v}" for k, v in parts.items())
                 + f" | {(record.get('input') or {}).get('total_est')} | "
                 f"{usage.get('input')}/{usage.get('cached')}/"
-                f"{usage.get('output')} | {record.get('result_status')} |"
+                f"{usage.get('output')} | {record.get('result_status')} | "
+                f"{fallback['from'] if fallback else '-'} |"
             )
+        pending = ledger_header(run.core, page).get("cross_review")
+        if pending:
+            run.notes.append(f"{project}: ledger cross_review={pending}")
+    run.notes.insert(0, f"대체 횟수: {len(fallbacks)}")
+    run.notes[1:1] = [f"대체 {line}" for line in fallbacks]
     return rows
+
+
+def runner_lines(run: Run) -> list[str]:
+    """준비 때 ``GET /runners``로 본 러너 가용성."""
+    return [
+        f"- 러너 {r['name']}: "
+        + ("사용 가능" if r["available"] else f"불가({r.get('reason')})")
+        for r in (run.runners or {}).get("runners", [])
+    ]
 
 
 def write_report(
@@ -736,7 +766,9 @@ def write_report(
         "# 한 동작 체크리스트 결과",
         "",
         f"- 시각: {datetime.now().astimezone().isoformat(timespec='seconds')}",
-        f"- 코드: {head} · 모델: claude/{run.model}",
+        f"- 코드: {head} · 모델: "
+        + (f"claude/{run.model}" if run.model else "기본 라우팅 표"),
+        *runner_lines(run),
         f"- 작업 폴더: {run.work} (앱 홈 {run.core.home})",
         f"- 픽셀 기준: 문서 영역(#madang-page) 다른 픽셀 비율 <= "
         f"{PIXEL_RATIO_LIMIT:.1%}, pixelmatch 색 허용 0.1, 창 1000x1400",
@@ -755,11 +787,11 @@ def write_report(
         "## 호출당 입력",
         "",
         "input.parts는 core가 조립 때 센 부분별 추정, 사용량은 러너가 알린 "
-        "input/cached/output이다.",
+        "input/cached/output이다. 대체는 대체표로 바꾸기 전의 러너/모델이다.",
         "",
         "| 프로젝트 | run | 종류 | 러너/모델/강도 | input.parts | total_est "
-        "| 사용량 | 결과 |",
-        "|---|---|---|---|---|---|---|---|",
+        "| 사용량 | 결과 | 대체 |",
+        "|---|---|---|---|---|---|---|---|---|",
         *rows,
         "",
         "## 관찰",
@@ -832,7 +864,11 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
-    parser.add_argument("--model", default="claude-sonnet-5")
+    parser.add_argument(
+        "--model",
+        default="",
+        help="라우팅 단계마다 쓸 claude 모델. 비우면 기본 라우팅 표.",
+    )
     parser.add_argument("--flow-timeout", type=float, default=1800.0)
     args = parser.parse_args()
 

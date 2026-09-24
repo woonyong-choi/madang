@@ -29,6 +29,7 @@ from madang.graph import events
 from madang.graph.nodes import FlowNodes, RunnerFactory
 from madang.graph.state import FlowState, initial_state
 from madang.runners import make_runner
+from madang.runners.availability import Availability
 from madang.store import pages, projects, worktrees
 
 DB_FILE = "core.db"
@@ -60,7 +61,7 @@ def build_graph(nodes: FlowNodes) -> StateGraph:
     """
     graph = StateGraph(FlowState)
     graph.add_node("classify", nodes.classify, destinations=("pick",))
-    graph.add_node("pick", nodes.pick)
+    graph.add_node("pick", nodes.pick, destinations=("assemble", "ask_human"))
     graph.add_node("assemble", nodes.assemble)
     graph.add_node("run", nodes.run, destinations=("validate", END))
     graph.add_node(
@@ -74,7 +75,9 @@ def build_graph(nodes: FlowNodes) -> StateGraph:
         nodes.judge,
         destinations=("settle", "review_run", "pick", "ask_human", END),
     )
-    graph.add_node("review_run", nodes.review_run, destinations=("validate",))
+    graph.add_node(
+        "review_run", nodes.review_run, destinations=("validate", "ask_human")
+    )
     graph.add_node("settle", nodes.settle, destinations=("finish", "ask_human"))
     graph.add_node("finish", nodes.finish)
     graph.add_node(
@@ -83,7 +86,6 @@ def build_graph(nodes: FlowNodes) -> StateGraph:
         destinations=("pick", "repair", "review_run", "settle", END),
     )
     graph.add_edge(START, "classify")
-    graph.add_edge("pick", "assemble")
     graph.add_edge("assemble", "run")
     graph.add_edge("finish", END)
     return graph
@@ -107,6 +109,9 @@ def checkpointer(home: Path) -> Iterator[SqliteSaver]:
 class Flow:
     """앱 홈 하나에서 흐름을 시작하고, 재개하고, 취소한다.
 
+    ``availability``를 주면 실행 전에 러너를 쓸 수 있는지 보고 대체표로
+    바꾼다. 주지 않으면 확인하지 않는다.
+
     Attributes:
         cfg: 앱 홈 설정.
     """
@@ -117,9 +122,12 @@ class Flow:
         *,
         runners: RunnerFactory = make_runner,
         on_event: events.EventHook = events.ignore,
+        availability: Availability | None = None,
     ) -> None:
         self.cfg = cfg
-        self._nodes = FlowNodes(cfg, runners, on_event, threading.Event())
+        self._nodes = FlowNodes(
+            cfg, runners, on_event, threading.Event(), availability
+        )
 
     def start(
         self,

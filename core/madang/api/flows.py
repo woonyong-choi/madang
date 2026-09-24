@@ -20,6 +20,7 @@ from madang.graph import events as flow_events
 from madang.graph.nodes import (
     WAIT_BLOCKED,
     WAIT_KIND,
+    WAIT_NO_RUNNER,
     WAIT_POLICY,
     WAIT_REPAIR,
     WAIT_REVIEW,
@@ -38,6 +39,10 @@ PROMPTS = {
     WAIT_RUN_LIMIT: "메시지 하나의 실행 한도에 닿았습니다. 계속할까요?",
     WAIT_REPAIR: "ledger.md 보정에 실패했습니다. 어떻게 할까요?",
     WAIT_REVIEW: "리뷰 실행이 실패했습니다. 다시 시도할까요?",
+    WAIT_NO_RUNNER: (
+        "쓸 수 있는 도구가 없습니다(대체 도구 포함). 로그인한 뒤 다시 "
+        "시도할까요?"
+    ),
     WAIT_POLICY: (
         "정책(테스트·충돌·금지 명령)이 머지나 게시를 멈췄습니다. "
         "묻는 블록의 이유를 보고 답해 주세요."
@@ -185,7 +190,7 @@ class Flows:
                 f"a flow is already running on page '{page_dir.name}'",
                 errors.BUSY,
             )
-        flow = Flow(self._core.config(), runners=self._core.make_runner)
+        flow = self._flow()
         for thread_id, decision in flow.waiting_on(page_dir.name):
             if decision.get("block") == block:
                 message = thread_id.rsplit("/", 1)[-1]
@@ -218,7 +223,7 @@ class Flows:
         """페이지에서 가장 최근에 멈춘 흐름의 질문. 없으면 None."""
         if self.busy(page_dir.name):
             return None
-        flow = Flow(self._core.config(), runners=self._core.make_runner)
+        flow = self._flow()
         found = flow.waiting_on(page_dir.name)
         if not found:
             return None
@@ -260,10 +265,18 @@ class Flows:
             self._active.pop(page_id, None)
 
     def _new_flow(self, page_id: str) -> Flow:
+        return self._flow(
+            lambda name, payload: self._relay(page_id, name, payload)
+        )
+
+    def _flow(
+        self, on_event: flow_events.EventHook = flow_events.ignore
+    ) -> Flow:
         return Flow(
             self._core.config(),
             runners=self._core.make_runner,
-            on_event=lambda name, payload: self._relay(page_id, name, payload),
+            on_event=on_event,
+            availability=self._core.availability,
         )
 
     def _launch(
@@ -315,6 +328,10 @@ class Flows:
                     active.runner = payload.get("runner")
             keys = ("runner", "model", "effort", "kind", "tier")
             data = {k: payload[k] for k in keys if payload.get(k) is not None}
+            hub.emit(name, data, run=_next_run(page_dir), **where)
+        elif name == flow_events.RUN_FALLBACK:
+            keys = ("from", "to", "reason")
+            data = {k: payload[k] for k in keys}
             hub.emit(name, data, run=_next_run(page_dir), **where)
         elif name == flow_events.RUN_ASSEMBLED:
             data = summary.run_input(payload["input"]) or {}

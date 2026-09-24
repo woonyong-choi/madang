@@ -24,6 +24,7 @@ NOT_LOGGED_IN = "not logged in"
 TIMED_OUT = "status check timed out"
 UNSUPPORTED = "no status check for this runner"
 API_UNSUPPORTED = "api runners are not supported yet"
+NOT_AVAILABLE = "not available"
 
 Probe = Callable[[str, RunnerSpec], str | None]
 """``(러너 이름, 스펙)``을 받아 쓸 수 없는 이유를, 쓸 수 있으면 None을 준다."""
@@ -105,6 +106,21 @@ class Availability:
         if before is None or before["runners"] != result["runners"]:
             self._on_change(result)
         return result
+
+    def reason(self, name: str, runners: dict[str, RunnerSpec]) -> str | None:
+        """러너 ``name``을 쓸 수 없는 이유. 쓸 수 있으면 None.
+
+        Args:
+            name: 러너 이름.
+            runners: runners 절의 러너.
+
+        Returns:
+            최근 확인 결과의 이유. runners 절에 없는 러너는 None이다.
+        """
+        for status in self.get(runners)["runners"]:
+            if status["name"] == name and not status["available"]:
+                return status["reason"] or NOT_AVAILABLE
+        return None
 
     def _check(self, runners: dict[str, RunnerSpec]) -> dict[str, Any]:
         statuses = []
