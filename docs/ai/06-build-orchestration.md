@@ -43,6 +43,30 @@
 | fixer | codex / gpt-6-luna / high | codex / gpt-6-sol | 리뷰 지적 반영, 오타·소규모 |
 | consultant | claude / fable-5-1 / high | 사람 | 오너가 2회 승격 후에도 막힐 때 1회 |
 
+### 2.1 가용성과 대체 (양방향)
+
+도구가 로그인되어 있지 않거나, 요청한 모델을 플랜에서 쓸 수 없거나, 한도에 걸리면 **같은 작업을 반대 도구의 대응 모델로** 돌린다. 판단과 전환은 오너가 아니라 `ops/bin/run-agent.sh`가 기계적으로 한다.
+
+1. 실행 전: `ops/bin/preflight.sh`가 `claude auth status`, `codex login status`로 가용성을 확인해 `ops/.availability`에 쓴다. 불가면 바로 대체.
+2. 실행 후: 90초 안에 끝났고 보고 파일이 없으며 로그에 인증·모델·한도 오류가 있으면 대체 도구로 1회 재시도.
+3. 결과: `ops/reports/logs/<TAG>.meta`에 `used=`, `fallback=` 사유. 오너는 보드 비고에 옮긴다.
+
+대체표 (`ops/bin/fallback.tsv`, effort는 유지):
+
+| 원래 | 대체 |
+|---|---|
+| codex / gpt-6-astra | claude / claude-fable-5-1 |
+| codex / gpt-6-sol | claude / claude-opus-5-5 |
+| codex / gpt-6-luna | claude / claude-sonnet-5 |
+| claude / claude-fable-5-1 | codex / gpt-6-astra |
+| claude / claude-opus-5-5 | codex / gpt-6-sol |
+| claude / claude-sonnet-5 | codex / gpt-6-sol |
+| claude / claude-haiku-4-5 | codex / gpt-6-luna |
+
+**교차 리뷰 보류.** 리뷰는 구현한 쪽의 반대 도구가 원칙이다. 반대 도구를 쓸 수 없어 같은 도구로 리뷰했으면 보드 비고에 `cross-review pending`을 단다. 병합은 진행하되, 반대 도구가 가용해지면(preflight가 1로 바뀌면) 오너는 새 과업을 받기 전에 `cross-review pending` 과업들을 반대 도구로 **재검증 리뷰**한다. 재검증에서 fail이면 픽서 과업을 만들어 main에 후속 수정한다.
+
+**진행 표시.** claude는 `--output-format stream-json`을 `ops/bin/fmt-stream.py`로 한 줄 로그(`[  42s] tool  Bash uv run pytest -q`)로 바꿔 pane에 흘린다. codex는 기본 출력이 진행형이다. 원본은 `ops/reports/logs/<TAG>.log(.jsonl)`.
+
 ## 3. 파일 규약 (`ops/`)
 
 ```

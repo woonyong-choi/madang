@@ -223,6 +223,32 @@ codex:
   auth: subscription
 ```
 
+### 3.8 가용성과 대체 (제품)
+
+core는 시작 시와 매 실행 전(캐시 5분)에 각 Runner의 가용성을 확인한다: `claude auth status`, `codex login status`, API 실행기는 키 유무. 결과는 `GET /runners`와 이벤트 `runner.availability`로 앱에 보이고, 앱은 입력창 옆에 도구 상태 점을 표시한다.
+
+`config/routes.yaml`에 대체표를 둔다.
+
+```yaml
+fallbacks:                      # 가용하지 않거나 모델 오류일 때. effort 유지
+  codex/gpt-6-astra:  claude/claude-fable-5-1
+  codex/gpt-6-sol:    claude/claude-opus-5-5
+  codex/gpt-6-luna:   claude/claude-sonnet-5
+  claude/claude-fable-5-1: codex/gpt-6-astra
+  claude/claude-opus-5-5:  codex/gpt-6-sol
+  claude/claude-sonnet-5:  codex/gpt-6-sol
+  claude/claude-haiku-4-5: codex/gpt-6-luna
+early_failure:
+  within_seconds: 90
+  patterns: [not logged in, unauthorized, authentication, model not found, not available, invalid model, usage limit, rate limit, quota]
+```
+
+규칙:
+- `pick` 노드가 선택 후 가용성을 보고, 불가면 대체로 바꾸고 `run.fallback {from, to, reason}` 이벤트를 낸다.
+- `run` 노드가 조기 실패(위 패턴)를 감지하면 대체로 1회 재실행한다. 이 재실행은 승격(tier)으로 세지 않는다.
+- `review` 종류의 "반대 도구"를 쓸 수 없으면 같은 도구의 다른 모델로 리뷰하고 state.md에 `cross_review: pending`을 남긴다. 반대 도구가 가용해지면 core가 해당 페이지에 재검증 리뷰를 제안한다(사람 결정 카드).
+- 둘 다 불가면 흐름을 멈추고 `flow.waiting {reason: no_runner}`.
+
 ## 4. 흐름 엔진 (LangGraph)
 
 ### 4.1 상태
