@@ -1,7 +1,9 @@
 """메시지 하나를 처리하는 흐름 그래프와 그 시작·재개·취소.
 
 흐름: classify → pick → assemble → run → validate → (repair) → judge →
-(review_run | 승격 | ask_human) → finish. 체크포인트는 앱 홈의
+(review_run | 승격 | ask_human) → settle → finish. settle은 정책대로
+머지·게시하고, 거부되면 page.md에 묻는 블록을 쓰고 ask_human에서
+멈춘다. 체크포인트는 앱 홈의
 ``core.db``(SQLite)에 남아, 사람의 답을 기다리는 흐름은 core가 다시
 시작해도 이어 갈 수 있다.
 """
@@ -21,13 +23,13 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from madang import recorder
+from madang import git, recorder
 from madang.config import Config
 from madang.graph import events
 from madang.graph.nodes import FlowNodes, RunnerFactory
 from madang.graph.state import FlowState, initial_state
 from madang.runners import make_runner
-from madang.store import pages, projects
+from madang.store import pages, projects, worktrees
 
 DB_FILE = "core.db"
 
@@ -70,14 +72,15 @@ def build_graph(nodes: FlowNodes) -> StateGraph:
     graph.add_node(
         "judge",
         nodes.judge,
-        destinations=("finish", "review_run", "pick", "ask_human", END),
+        destinations=("settle", "review_run", "pick", "ask_human", END),
     )
     graph.add_node("review_run", nodes.review_run, destinations=("validate",))
+    graph.add_node("settle", nodes.settle, destinations=("finish", "ask_human"))
     graph.add_node("finish", nodes.finish)
     graph.add_node(
         "ask_human",
         nodes.ask_human,
-        destinations=("pick", "repair", "review_run", END),
+        destinations=("pick", "repair", "review_run", "settle", END),
     )
     graph.add_edge(START, "classify")
     graph.add_edge("pick", "assemble")
@@ -149,7 +152,8 @@ class Flow:
     ) -> tuple[str, FlowState]:
         """메시지를 page.md에 요청 블록으로 남기고 흐름의 첫 상태를 만든다.
 
-        그래프는 실행하지 않는다. 호출자가 ``advance``로 이어 간다.
+        git 프로젝트의 코딩 페이지면 워크트리를 먼저 연다. 그래프는
+        실행하지 않는다. 호출자가 ``advance``로 이어 간다.
 
         Args:
             page_id: 페이지 id.
@@ -161,13 +165,18 @@ class Flow:
 
         Raises:
             PageNotFoundError: 페이지가 없는 경우.
-            ValueError: 대상 블록에 파일이 없는 경우.
+            ValueError: 대상 블록에 파일이 없거나 워크트리를 열 수 없는
+                경우.
         """
         page_dir = pages.find_page(self.cfg.home, page_id)
         target = _normalize(target)
         block = target["block"]
         if block is not None and not pages.block_files(page_dir, block):
             raise ValueError(f"block '{block}' has no file in blocks/")
+        try:
+            worktrees.open_page(page_dir)
+        except git.GitError as exc:
+            raise ValueError(f"cannot open the page worktree: {exc}") from exc
         message = recorder.request(page_dir, request, block)
         project = projects.owner(self.cfg.home, page_dir).id
         state = initial_state(project, page_dir.name, message, target)
@@ -271,8 +280,9 @@ def resume(
 
     Args:
         thread_id: 흐름 id.
-        choice: 질문의 선택지 중 하나. 종류 질문이면 종류 이름, 아니면
-            ``retry`` 또는 ``stop``.
+        choice: 질문의 선택지 중 하나. 종류 질문이면 종류 이름, 정책
+            질문이면 ``merge``·``retry``·``again``·``stop`` 중 제시된 것,
+            아니면 ``retry`` 또는 ``stop``.
         cfg: 앱 홈 설정.
         runners: 러너 이름으로 러너를 만든다.
         on_event: 이벤트를 받는 콜백.

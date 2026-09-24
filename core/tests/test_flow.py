@@ -141,6 +141,7 @@ def test_graph_has_every_node(home: Path) -> None:
         "repair",
         "judge",
         "review_run",
+        "settle",
         "finish",
         "ask_human",
     }

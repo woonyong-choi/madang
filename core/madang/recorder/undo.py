@@ -6,11 +6,11 @@
 ``effects``를 다시 적는다. 되돌리기는 ``effects``를 거꾸로 적용한다.
 
 부작용 종류:
-    file: 페이지 폴더 파일. 스냅샷으로 되감는다.
+    file: 페이지 폴더 파일. 실행 전 해시의 사본으로 되감는다.
     repo: 프로젝트 작업 트리 파일. 커밋·머지 기록이 되감는다.
     commit: git 커밋. 되돌림 커밋으로 되감는다.
     merge: git 머지 커밋. 첫 부모를 남기는 되돌림 커밋으로 되감는다.
-    publish: 게시. ``publish``를 채우는 게시 모듈이 되감는다.
+    publish: 게시. 게시 모듈이 게시 기록으로 되감는다.
 
 git 부작용은 머지 전 해시를 되돌림 기준으로 ``reset``하지 않고 되돌림
 커밋(``revert``)으로 되감는다. 그 뒤에 쌓인 커밋과 이미 보낸 이력을 지우지
@@ -29,6 +29,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from madang import git
+from madang.recorder import published
 from madang.store import pages, runs
 from madang.store.files import atomic_write
 
@@ -39,9 +40,12 @@ REPO = "repo"
 REPO_PREFIX = "repo:"
 COMMIT = "commit"
 MERGE = "merge"
+PUBLISH = "publish"
 GIT_KINDS = (COMMIT, MERGE)
+# 폴더 비교로 다시 찾을 수 없어 기록한 그대로 두는 부작용. 나중 것부터 되감는다.
+RECORDED_KINDS = (*GIT_KINDS, PUBLISH)
 # 이 모듈이 되감지 않는 부작용.
-SKIPPED_KINDS = (REPO, "publish")
+SKIPPED_KINDS = (REPO,)
 # 되돌리기 대상이 아닌 페이지 폴더: 실행 기록 자체와 조립한 프롬프트.
 _SKIPPED_DIRS = (runs.RUNS_DIR, pages.SCRATCH_DIR)
 # 블록 번호는 되감지 않는다. 한 번 내준 id를 다시 쓰지 않기 위해서다.
@@ -69,25 +73,26 @@ class Effect(BaseModel):
 
     Attributes:
         kind: ``file``, ``repo``, ``commit``, ``merge``, ``publish`` 중 하나.
-        path: 바뀐 파일. ``file``은 페이지 기준, ``repo``는 ``repo:`` 접두,
-            git 부작용은 저장소 작업 트리의 절대 경로.
-        before: ``file``은 실행 전 내용의 sha256(없던 파일이면 None), git
-            부작용은 커밋·머지 전 HEAD 해시.
+        path: 바뀐 것. ``file``은 페이지 기준, ``repo``는 ``repo:`` 접두,
+            git 부작용은 저장소 작업 트리, 게시는 프로젝트 폴더의 절대 경로.
+        before: ``file``은 실행 전 내용의 sha256(없던 파일이면 None)이며
+            되감을 때 ``runs/objects/<before>`` 사본을 쓴다. git 부작용은
+            커밋·머지 전 HEAD 해시.
         after: 기록 시점 내용의 sha256. 파일이 지워졌으면 None.
-        snapshot: 실행 전 내용의 사본(페이지 기준). 없던 파일이면 None.
         commit: 되감을 커밋 해시.
-        publish: 되감을 게시 해시. 게시 모듈이 채운다.
+        publish: 되감을 게시 번호(``.madang/published/<n>.json``).
         reverted: 되감은 되돌림 커밋 해시. 아직이면 None.
+        undone: 게시를 되감았으면 참.
     """
 
     kind: str
     path: str | None = None
     before: str | None = None
     after: str | None = None
-    snapshot: str | None = None
     commit: str | None = None
-    publish: str | None = None
+    publish: int | None = None
     reverted: str | None = None
+    undone: bool = False
 
 
 class UndoLog(BaseModel):
@@ -114,11 +119,13 @@ class UndoResult:
         restored: 되감은 페이지 파일.
         skipped: 이 모듈이 되감지 않는 부작용의 경로(``repo:`` 등).
         reverted: git 부작용을 되감은 되돌림 커밋 해시.
+        unpublished: 되감은 게시 번호.
     """
 
     restored: list[str]
     skipped: list[str]
     reverted: list[str] = field(default_factory=list)
+    unpublished: list[int] = field(default_factory=list)
 
 
 def undo_path(page_dir: Path, n: int) -> Path:
@@ -165,14 +172,12 @@ def track(page_dir: Path, n: int) -> UndoLog | None:
             path=rel,
             before=log.base.get(rel),
             after=now.get(rel),
-            snapshot=_object_rel(log.base[rel]) if rel in log.base else None,
         )
         for rel in sorted(log.base.keys() | now.keys())
         if log.base.get(rel) != now.get(rel)
     ]
     effects += [Effect(kind=REPO, path=p) for p in _repo_changes(page_dir, n)]
-    # git 부작용은 폴더 비교로 다시 찾을 수 없으므로 기록한 것을 그대로 둔다.
-    effects += [e for e in log.effects if e.kind in GIT_KINDS]
+    effects += [e for e in log.effects if e.kind in RECORDED_KINDS]
     log.effects = effects
     _write(page_dir, log)
     return log
@@ -204,11 +209,11 @@ def record_git(
     """
     if kind not in GIT_KINDS:
         raise UndoError(f"unknown git effect: {kind}")
-    log = read_log(page_dir, n)
-    if log is None:
-        raise UndoError(f"run {n} has no undo record")
-    if log.undone is not None:
-        raise UndoError(f"run {n} is already undone")
+    log = _open_log(page_dir, n)
+    if kind == MERGE:
+        # 머지를 되돌리면 합친 브랜치의 커밋도 함께 되감긴다. 머지가 지운
+        # 워크트리의 커밋은 따로 되감을 수 없으므로 기록에서 뺀다.
+        log.effects = [e for e in log.effects if not _gone_commit(e)]
     log.effects.append(
         Effect(kind=kind, path=str(repo), before=before, commit=commit)
     )
@@ -216,12 +221,34 @@ def record_git(
     return log
 
 
+def record_publish(page_dir: Path, n: int, root: Path, number: int) -> UndoLog:
+    """실행 ``n`` 뒤에 한 게시를 되돌리기 기록에 더한다.
+
+    Args:
+        page_dir: 페이지 폴더.
+        n: 실행 번호.
+        root: 게시한 프로젝트 폴더.
+        number: 게시 번호(``.madang/published/<n>.json``).
+
+    Returns:
+        갱신한 기록.
+
+    Raises:
+        UndoError: 기록이 없거나 이미 되돌린 실행이다.
+    """
+    log = _open_log(page_dir, n)
+    log.effects.append(Effect(kind=PUBLISH, path=str(root), publish=number))
+    _write(page_dir, log)
+    return log
+
+
 def undo(page_dir: Path, n: int) -> UndoResult:
     """실행 ``n``의 부작용을 되감는다.
 
-    git 커밋·머지는 나중 것부터 되돌림 커밋으로, 페이지 파일은 실행 전
-    내용으로 되감는다. 기록 뒤에 다시 바뀐 페이지 파일이 있거나 되감을
-    커밋이 이력에서 사라졌으면 아무것도 바꾸지 않는다.
+    게시·git 커밋·머지는 나중 것부터(게시는 게시 모듈로, git은 되돌림
+    커밋으로), 그다음 페이지 파일을 실행 전 내용으로 되감는다. 기록 뒤에
+    다시 바뀐 페이지 파일이 있거나, 되감을 커밋이 이력에서 사라졌거나, 그
+    게시 뒤에 다른 게시가 있으면 아무것도 바꾸지 않는다.
 
     Args:
         page_dir: 페이지 폴더.
@@ -233,25 +260,17 @@ def undo(page_dir: Path, n: int) -> UndoResult:
     Raises:
         UndoError: 기록이 없거나 이미 되돌린 실행이다.
         UndoConflictError: 실행 뒤에 다시 바뀐 파일이 있거나, 커밋이 이력에
-            없거나, 되돌림이 충돌했다.
+            없거나, 더 나중 게시가 있거나, 되돌림이 충돌했다.
     """
-    log = read_log(page_dir, n)
-    if log is None:
-        raise UndoError(f"run {n} has no undo record")
-    if log.undone is not None:
-        raise UndoError(f"run {n} is already undone")
+    log = _open_log(page_dir, n)
     files = [e for e in log.effects if e.kind == FILE and e.path]
     conflicts = [e.path for e in files if _digest(page_dir / e.path) != e.after]
-    commits = [
-        e
-        for e in reversed(log.effects)
-        if e.kind in GIT_KINDS and not e.reverted
-    ]
-    conflicts += [_git_label(e) for e in commits if not _in_history(e)]
+    recorded = [e for e in reversed(log.effects) if _pending(e)]
+    conflicts += [_label(e) for e in recorded if not _reversible(e)]
     if conflicts:
         raise UndoConflictError(conflicts)
-    for effect in commits:
-        _revert(page_dir, log, effect)
+    for effect in recorded:
+        _rewind(page_dir, log, effect)
     for effect in files:
         _restore(page_dir, effect)
     log.undone = pages.now()
@@ -262,6 +281,11 @@ def undo(page_dir: Path, n: int) -> UndoResult:
             e.path or e.kind for e in log.effects if e.kind in SKIPPED_KINDS
         ],
         reverted=[e.reverted for e in log.effects if e.reverted],
+        unpublished=[
+            e.publish
+            for e in log.effects
+            if e.kind == PUBLISH and e.undone and e.publish is not None
+        ],
     )
 
 
@@ -279,6 +303,20 @@ def read_log(page_dir: Path, n: int) -> UndoLog | None:
     except json.JSONDecodeError as exc:
         raise ValueError(f"{path.name}: invalid JSON: {exc}") from exc
     return UndoLog.model_validate(data)
+
+
+def _open_log(page_dir: Path, n: int) -> UndoLog:
+    """아직 되돌리지 않은 실행 ``n``의 기록을 읽는다.
+
+    Raises:
+        UndoError: 기록이 없거나 이미 되돌린 실행이다.
+    """
+    log = read_log(page_dir, n)
+    if log is None:
+        raise UndoError(f"run {n} has no undo record")
+    if log.undone is not None:
+        raise UndoError(f"run {n} is already undone")
+    return log
 
 
 def _write(page_dir: Path, log: UndoLog) -> None:
@@ -330,40 +368,94 @@ def _store(page_dir: Path, path: Path) -> str:
     return digest
 
 
-def _git_label(effect: Effect) -> str:
+def _pending(effect: Effect) -> bool:
+    """기록한 부작용 중 아직 되감지 않은 것인지 여부."""
+    if effect.kind in GIT_KINDS:
+        return not effect.reverted
+    return effect.kind == PUBLISH and not effect.undone
+
+
+def _gone_commit(effect: Effect) -> bool:
+    """작업 트리가 사라져 되돌림 커밋을 만들 수 없는 커밋인지 여부."""
+    return (
+        effect.kind == COMMIT
+        and effect.path is not None
+        and not Path(effect.path).is_dir()
+    )
+
+
+def _label(effect: Effect) -> str:
+    if effect.kind == PUBLISH:
+        return f"{effect.path}#publish-{effect.publish}"
     return f"{effect.path}@{(effect.commit or '')[:12]}"
 
 
-def _in_history(effect: Effect) -> bool:
-    assert effect.path is not None and effect.commit is not None
+def _reversible(effect: Effect) -> bool:
+    """되감기 전에, 부작용이 아직 그 자리에 있는지 확인한다."""
+    if effect.path is None:
+        return False
+    if effect.kind == PUBLISH:
+        return _latest_publish(Path(effect.path)) == effect.publish
+    if effect.commit is None:
+        return False
     try:
         return git.is_ancestor(Path(effect.path), effect.commit)
     except git.GitError:
         return False
 
 
-def _revert(page_dir: Path, log: UndoLog, effect: Effect) -> None:
-    """부작용 하나(git)를 되돌림 커밋으로 되감고 진행을 기록에 남긴다.
+def _latest_publish(root: Path) -> int | None:
+    try:
+        record = published.latest(root)
+    except published.PublishRecordError:
+        return None
+    return None if record is None else record.n
 
-    되돌림이 충돌하면 그 되돌림은 취소되고, 앞서 되감은 것은 기록에 남아
-    다시 시도할 때 건너뛴다.
+
+def _rewind(page_dir: Path, log: UndoLog, effect: Effect) -> None:
+    """기록한 부작용 하나를 되감고 진행을 기록에 남긴다.
+
+    git 되돌림이 충돌하면 그 되돌림은 취소되고, 앞서 되감은 것은 기록에
+    남아 다시 시도할 때 건너뛴다.
     """
-    assert effect.path is not None and effect.commit is not None
+    if effect.kind == PUBLISH:
+        _unpublish(effect)
+    else:
+        _revert(effect)
+    _write(page_dir, log)
+
+
+def _revert(effect: Effect) -> None:
+    if effect.path is None or effect.commit is None:
+        raise UndoError(f"{effect.kind} effect has no repository or commit")
     parent = 1 if effect.kind == MERGE else None
     try:
         effect.reverted = git.revert(
             Path(effect.path), effect.commit, merge_parent=parent
         )
     except git.GitError as exc:
-        raise UndoConflictError([_git_label(effect)]) from exc
-    _write(page_dir, log)
+        raise UndoConflictError([_label(effect)]) from exc
+
+
+def _unpublish(effect: Effect) -> None:
+    # 게시 모듈이 recorder의 게시 기록을 쓰므로 여기서 늦게 부른다.
+    from madang import publish
+
+    if effect.path is None:
+        raise UndoError("publish effect has no project folder")
+    try:
+        publish.undo(Path(effect.path))
+    except (publish.PublishError, git.GitError) as exc:
+        raise UndoConflictError([_label(effect)]) from exc
+    effect.undone = True
 
 
 def _restore(page_dir: Path, effect: Effect) -> None:
-    assert effect.path is not None
+    if effect.path is None:
+        raise UndoError("file effect has no path")
     path = page_dir / effect.path
-    if effect.snapshot is None:
+    if effect.before is None:
         path.unlink(missing_ok=True)
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(path, (page_dir / effect.snapshot).read_bytes())
+    atomic_write(path, (page_dir / _object_rel(effect.before)).read_bytes())

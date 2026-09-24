@@ -11,6 +11,7 @@ RUN_PROGRESS = "run.progress"
 RUN_FINISHED = "run.finished"
 RUN_FAILED = "run.failed"
 FLOW_WAITING = "flow.waiting"
+FLOW_SETTLED = "flow.settled"
 PAGE_UNKNOWN_FILES = "page.unknown_files"
 
 EventHook = Callable[[str, dict[str, Any]], None]

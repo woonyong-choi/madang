@@ -19,6 +19,7 @@ from madang import recorder
 from madang.config import Config, Tier
 from madang.deciders import Question, build_chain, target_kind
 from madang.graph import events, steps
+from madang.graph import settle as policy_step
 from madang.graph.state import FlowState
 from madang.runners.base import CliRunner, RunEvent
 from madang.runners.record import RecordedRun
@@ -43,8 +44,18 @@ WAIT_BLOCKED = "blocked"
 WAIT_RUN_LIMIT = "run_limit"
 WAIT_REPAIR = "repair_failed"
 WAIT_REVIEW = "review_failed"
+WAIT_POLICY = "policy"
 RETRY = "retry"
 STOP = "stop"
+# 정책 단계에서 멈췄을 때만 쓰는 답.
+MERGE = "merge"
+AGAIN = "again"
+
+POLICY_QUESTIONS = {
+    policy_step.STEP_CONFIG: "설정을 읽지 못해 머지·게시를 멈췄습니다.",
+    policy_step.STEP_MERGE: "정책이 머지를 멈췄습니다. 어떻게 할까요?",
+    policy_step.STEP_PUBLISH: "게시하지 못했습니다. 어떻게 할까요?",
+}
 
 REVIEW_REQUEST = """\
 이번 실행은 리뷰다. 구현하지 말고 검토만 한다.
@@ -55,6 +66,12 @@ REVIEW_REQUEST = """\
 
 요청:
 {request}"""
+
+POLICY_RETRY_REQUEST = """\
+{request}
+
+지난 실행 뒤 정책이 머지·게시를 멈췄다. 아래 이유를 해결한다.
+{reasons}"""
 
 REPAIR_REQUEST = """\
 ledger.md 검사에서 아래 문제가 나왔다. 다른 작업은 하지 말고 이 문제만 \
@@ -122,11 +139,18 @@ class FlowNodes:
         return {"runner": runner, "model": model, "effort": effort}
 
     def assemble(self, state: FlowState) -> dict[str, Any]:
-        """메시지 본문으로 프롬프트를 조립해 저장한다."""
+        """메시지 본문으로 프롬프트를 조립해 저장한다.
+
+        정책이 멈춘 뒤 다시 실행하는 것이면 그 이유를 요청에 붙인다.
+        """
         page_dir = self._page_dir(state)
         request = steps.message_text(page_dir, state["message"])
+        if state.get("feedback"):
+            request = POLICY_RETRY_REQUEST.format(
+                request=request, reasons=state["feedback"]
+            )
         self._prepare(state, request, state["tier"])
-        return {}
+        return {"feedback": ""}
 
     def run(self, state: FlowState) -> Command:
         """저장된 프롬프트로 러너를 새 세션에서 실행한다."""
@@ -175,7 +199,7 @@ class FlowNodes:
         if status == "blocked":
             return self._promote(state, config)
         if status == "done" and record.verify.ok:
-            return Command(goto="finish", update={"result_status": "done"})
+            return Command(goto="settle", update={"result_status": "done"})
         if status in ("done", "review"):
             if status == "done":
                 _set_status(page_dir, "review", state["run_n"])
@@ -214,6 +238,47 @@ class FlowNodes:
         }
         return Command(goto="validate", update=update)
 
+    def settle(self, state: FlowState, config: RunnableConfig) -> Command:
+        """정책대로 머지·게시한다. 거부되면 페이지에 묻는 블록을 쓴다."""
+        page_dir = self._page_dir(state)
+        n = state["run_n"]
+        settled = policy_step.settle(
+            page_dir,
+            n,
+            state["message"],
+            home=self.cfg.home,
+            approved=bool(state.get("approved")),
+        )
+        cleared = {"approved": False}
+        refusal = settled.refusal
+        if refusal is None:
+            payload = {
+                **_base(state),
+                "n": n,
+                "merged": settled.merged,
+                "published": settled.published,
+                "push_error": settled.push_error,
+            }
+            self.on_event(events.FLOW_SETTLED, payload)
+            return Command(goto="finish", update=cleared)
+        options = _policy_options(refusal)
+        block = recorder.ask(
+            page_dir,
+            n,
+            POLICY_QUESTIONS[refusal.step],
+            refusal.reasons,
+            options,
+            output=refusal.output,
+        )
+        detail = {
+            "step": refusal.step,
+            "reasons": refusal.reasons,
+            "block": block,
+        }
+        return self._wait(
+            state, config, WAIT_POLICY, options, update=cleared, detail=detail
+        )
+
     def finish(self, state: FlowState) -> dict[str, Any]:
         """페이지를 done으로 표시한다.
 
@@ -234,6 +299,8 @@ class FlowNodes:
         decision = state["pending_decision"] or {}
         choice = interrupt(decision)
         cleared: dict[str, Any] = {"pending_decision": None}
+        if decision.get("reason") == WAIT_POLICY:
+            return self._answer_policy(state, decision, choice)
         if decision.get("reason") == WAIT_KIND:
             return Command(goto="pick", update={**cleared, "kind": choice})
         if choice == STOP:
@@ -251,6 +318,28 @@ class FlowNodes:
 
     # 분기
 
+    def _answer_policy(
+        self, state: FlowState, decision: dict[str, Any], choice: str
+    ) -> Command:
+        """묻는 블록의 답을 페이지에 남기고 그 답대로 이어 간다."""
+        recorder.answer(
+            self._page_dir(state), state["run_n"], decision["block"], choice
+        )
+        cleared: dict[str, Any] = {"pending_decision": None}
+        if choice == STOP:
+            return Command(goto=END, update=cleared)
+        if choice == RETRY:
+            reasons = decision.get("reasons") or []
+            update = {
+                **cleared,
+                "feedback": "\n".join(f"- {reason}" for reason in reasons),
+                "attempts": 0,
+                "runs_this_message": 0,
+            }
+            return Command(goto="pick", update=update)
+        update = {**cleared, "approved": choice == MERGE}
+        return Command(goto="settle", update=update)
+
     def _judge_review(
         self, state: FlowState, config: RunnableConfig, status: str
     ) -> Command:
@@ -258,7 +347,7 @@ class FlowNodes:
             again = "pick" if state["kind"] == REVIEW_KIND else "review_run"
             return self._wait(state, config, WAIT_REVIEW, retry=again)
         if status in ("review", "done"):
-            return Command(goto="finish", update={"result_status": "done"})
+            return Command(goto="settle", update={"result_status": "done"})
         _set_status(self._page_dir(state), "doing", state["run_n"])
         update = {"result_status": "doing"}
         if state["kind"] == REVIEW_KIND:
@@ -296,12 +385,17 @@ class FlowNodes:
         *,
         retry: str = "pick",
         update: dict[str, Any] | None = None,
+        detail: dict[str, Any] | None = None,
     ) -> Command:
-        """``flow.waiting``을 알리고 ask_human으로 간다."""
+        """``flow.waiting``을 알리고 ask_human으로 간다.
+
+        ``detail``은 답을 처리할 때 쓸 값(묻는 블록 id 등)이다.
+        """
         decision = {
             "reason": reason,
             "options": options or [RETRY, STOP],
             "retry": retry,
+            **(detail or {}),
         }
         payload = {
             **_base(state),
@@ -496,6 +590,20 @@ def _reviewing(state: FlowState) -> bool:
     아니라고 본다.
     """
     return state.get("last_run_kind") == REVIEW_KIND
+
+
+def _policy_options(refusal: policy_step.Refusal) -> list[str]:
+    """정책 단계가 멈춘 이유에 맞는 답.
+
+    테스트 조건만 걸렸으면 사람이 승인해 머지할 수 있고, 머지가 막히면
+    에이전트에게 다시 맡기거나(retry) 사람이 고친 뒤 정책 단계만 다시 할
+    수 있다(again).
+    """
+    if refusal.step != policy_step.STEP_MERGE:
+        return [AGAIN, STOP]
+    if refusal.approvable:
+        return [MERGE, RETRY, STOP]
+    return [RETRY, AGAIN, STOP]
 
 
 def _blocking(issues: list[Issue]) -> bool:

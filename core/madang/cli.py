@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
-from madang import __version__, cli_agent, config
+from madang import __version__, cli_agent, config, recorder
 from madang.git import GitError
 from madang.graph import Flow, FlowResult, events, steps
 from madang.runners import make_runner
@@ -382,6 +382,7 @@ _ECHOED = (
     events.RUN_FINISHED,
     events.RUN_FAILED,
     events.FLOW_WAITING,
+    events.FLOW_SETTLED,
     events.PAGE_UNKNOWN_FILES,
 )
 
@@ -392,6 +393,39 @@ def _echo_event(name: str, payload: dict[str, Any]) -> None:
         return
     shown = {k: v for k, v in payload.items() if k not in ("page", "message")}
     typer.echo(f"{name} {json.dumps(shown, ensure_ascii=False)}", err=True)
+
+
+@app.command("undo")
+def undo_command(
+    page_id: Annotated[str, typer.Argument(help="페이지 id.")],
+    run: Annotated[int, typer.Argument(help="되돌릴 실행 번호.")],
+    home: HomeOption = None,
+) -> None:
+    """실행 하나의 부작용(게시, 머지·커밋, 페이지 파일)을 역순으로 되감는다.
+
+    그 실행 뒤에 파일이 다시 바뀌었거나, 커밋이 이력에서 사라졌거나, 더
+    나중 게시가 있으면 아무것도 바꾸지 않고 거부한다.
+    """
+    cfg = _load(home)
+    try:
+        page_dir = pages.find_page(cfg.home, page_id)
+        result = recorder.undo(page_dir, run)
+    except (pages.PageNotFoundError, recorder.UndoError, OSError) as exc:
+        raise _fail(str(exc)) from exc
+    typer.echo(format_undo(run, result))
+
+
+def format_undo(run: int, result: recorder.UndoResult) -> str:
+    """되돌리기 뒤 출력하는 한 줄 요약을 반환한다."""
+    parts = [
+        f"undid run {run}",
+        f"files {len(result.restored)}",
+        f"reverted {len(result.reverted)}",
+        f"unpublished {len(result.unpublished)}",
+    ]
+    if result.skipped:
+        parts.append(f"skipped {', '.join(result.skipped)}")
+    return " · ".join(parts)
 
 
 # core API

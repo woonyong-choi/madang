@@ -157,7 +157,7 @@ def test_undo_record_keeps_hashes_and_slots(home: Path, page: Path) -> None:
     ledger = effects["ledger.md"]
     assert ledger.kind == "file"
     assert ledger.commit is None and ledger.publish is None
-    saved = (page / ledger.snapshot).read_bytes()
+    saved = (page / "runs/objects" / ledger.before).read_bytes()
     assert hashlib.sha256(saved).hexdigest() == ledger.before
     current = (page / "ledger.md").read_bytes()
     assert hashlib.sha256(current).hexdigest() == ledger.after

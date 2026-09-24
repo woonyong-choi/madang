@@ -17,6 +17,7 @@ from typing import Any
 from madang import config, recorder
 from madang.assemble import Assembled, assemble
 from madang.cli_agent.context import BY_ENV
+from madang.policy import with_rules
 from madang.recorder.undo import REPO_PREFIX
 from madang.runners.base import CliRunner, RunEvent
 from madang.runners.record import RecordedRun, run_page
@@ -57,6 +58,8 @@ def prepare(
 ) -> Assembled:
     """프롬프트를 조립해 ``scratch/``에 저장한다.
 
+    요청 끝에는 모든 실행 공통의 부작용 규칙이 붙는다.
+
     Args:
         page_dir: 페이지 폴더.
         cfg: 앱 홈 설정.
@@ -74,7 +77,7 @@ def prepare(
         ValueError: 대상 블록에 파일이 없는 경우.
     """
     assembled = assemble(
-        page_dir, target, request, tier, cfg=cfg, runner=runner
+        page_dir, target, with_rules(request), tier, cfg=cfg, runner=runner
     )
     path = prompt_path(page_dir, message)
     path.parent.mkdir(exist_ok=True)
@@ -278,7 +281,13 @@ def _artifacts(page_dir: Path) -> set[str]:
     except (OSError, frontmatter.FrontmatterError):
         return set()
     items = header.get("artifacts")
-    return {str(a) for a in items} if isinstance(items, list) else set()
+    if not isinstance(items, list):
+        return set()
+    # 실행물은 {path, run, name, command} 매핑으로 등록된다.
+    return {
+        str(item.get("path") if isinstance(item, dict) else item)
+        for item in items
+    }
 
 
 # 환경

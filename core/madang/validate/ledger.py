@@ -215,6 +215,12 @@ def _inside(base: Path, rel: str) -> Path | None:
 def _check_artifacts(
     artifacts: Any, lines: Lines, page_dir: Path, repo: Path | None, add: Any
 ) -> None:
+    """산출물 경로를 확인한다.
+
+    항목은 경로 문자열이거나 ``{path, run, name, command}`` 매핑이다.
+    ``run: true``는 에이전트가 실행물이라고 선언한 것이며, 프로젝트
+    ``runs:``에 같은 이름·명령이 있어야 한다.
+    """
     if artifacts is None:
         return
     if not isinstance(artifacts, list):
@@ -222,35 +228,82 @@ def _check_artifacts(
         return
     for i, item in enumerate(artifacts):
         line = lines.key("artifacts", i)
-        if not isinstance(item, str) or not item.strip():
+        path = item.get("path") if isinstance(item, dict) else item
+        if not isinstance(path, str) or not path.strip():
             add("invalid-value", f"artifacts[{i}] must be a path string", line)
             continue
-        if item.startswith(REPO_PREFIX):
-            rel = item[len(REPO_PREFIX) :]
-            if repo is None:
-                add(
-                    "repo-unset",
-                    f"artifact '{item}' needs a project folder "
-                    "but the page is not in a project",
-                    line,
-                )
-                continue
-            base, where = repo, "project folder"
-        else:
-            rel, base, where = item, page_dir, "page folder"
-        target = _inside(base, rel)
-        if target is None:
+        _check_artifact_path(path, line, page_dir, repo, add)
+        if isinstance(item, dict) and item.get("run") is True:
+            _check_declared(item, path, line, repo, add)
+
+
+def _check_artifact_path(
+    item: str, line: int | None, page_dir: Path, repo: Path | None, add: Any
+) -> None:
+    if item.startswith(REPO_PREFIX):
+        rel = item[len(REPO_PREFIX) :]
+        if repo is None:
             add(
-                "invalid-artifact",
-                f"artifact '{item}' must be a relative path inside the {where}",
+                "repo-unset",
+                f"artifact '{item}' needs a project folder "
+                "but the page is not in a project",
                 line,
             )
-        elif not target.exists():
-            add(
-                "artifact-missing",
-                f"artifact '{item}' does not exist in the {where}",
-                line,
-            )
+            return
+        base, where = repo, "project folder"
+    else:
+        rel, base, where = item, page_dir, "page folder"
+    target = _inside(base, rel)
+    if target is None:
+        add(
+            "invalid-artifact",
+            f"artifact '{item}' must be a relative path inside the {where}",
+            line,
+        )
+    elif not target.exists():
+        add(
+            "artifact-missing",
+            f"artifact '{item}' does not exist in the {where}",
+            line,
+        )
+
+
+def _check_declared(
+    item: dict[str, Any],
+    path: str,
+    line: int | None,
+    repo: Path | None,
+    add: Any,
+) -> None:
+    """실행물 산출물이 프로젝트 ``runs:`` 선언과 같은지 대조한다."""
+    name, command = item.get("name"), item.get("command")
+    if not isinstance(name, str) or not isinstance(command, str):
+        add(
+            "invalid-value",
+            f"runnable artifact '{path}' needs name and command strings",
+            line,
+        )
+        return
+    if repo is None:
+        add(
+            "repo-unset",
+            f"runnable artifact '{path}' needs a project folder "
+            "but the page is not in a project",
+            line,
+        )
+        return
+    try:
+        declared = config.load_project_config(repo).runs
+    except (OSError, config.ConfigError) as exc:
+        add("run-undeclared", f"cannot read project runs: {exc}", line)
+        return
+    if not any(t.name == name and t.command == command for t in declared):
+        add(
+            "run-undeclared",
+            f"runnable artifact '{path}' has no run '{name}' with command "
+            f"'{command}' in runs:; declare it with madang runs add",
+            line,
+        )
 
 
 def _check_sections(body: str, first_line: int, add: Any) -> None:

@@ -3,6 +3,7 @@
 판단은 사실과 선언만 쓴다. 자동 머지는 선언된 ``test`` 명령의 결과와
 충돌 여부, 자동 게시는 ``auto_publish``와 선언된 게시 대상, 금지 명령은
 ``deny`` 목록으로 정한다. 거부하면 사람이 읽을 사유를 함께 돌려준다.
+에이전트가 받는 공통 부작용 규칙(``AGENT_RULES``)도 여기 둔다.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from madang import config
+from madang.policy.agent import AGENT_RULES, with_rules
 from madang.policy.deny import denied, runner_args
 
 NO_TEST_COMMAND = "테스트 명령 없음"
@@ -45,10 +47,18 @@ class MergeCheck:
     Attributes:
         test_exit: 선언된 ``test`` 명령의 종료 코드. 실행하지 않았으면 None.
         conflicts: 머지하면 충돌할 파일.
+        approved: 사람이 묻는 블록에서 테스트 조건 없이 머지하라고 답했으면
+            참. 충돌 조건은 넘기지 못한다.
     """
 
     test_exit: int | None = None
     conflicts: Sequence[str] = ()
+    approved: bool = False
+
+
+def conflict_reason(paths: Sequence[str]) -> str:
+    """머지 충돌 파일을 사람이 읽을 거부 사유로 바꾼다."""
+    return "충돌: " + ", ".join(paths)
 
 
 class Policy:
@@ -91,11 +101,12 @@ class Policy:
 
         Returns:
             판단. ``require_tests``인데 ``test`` 선언이 없으면
-            "테스트 명령 없음"으로 거부한다.
+            "테스트 명령 없음"으로 거부한다. 사람이 승인했으면 테스트
+            조건은 보지 않는다.
         """
         rules = self.settings.auto_merge
         reasons = []
-        if rules.require_tests:
+        if rules.require_tests and not result.approved:
             if not self.test_command:
                 reasons.append(NO_TEST_COMMAND)
             elif result.test_exit is None:
@@ -103,7 +114,7 @@ class Policy:
             elif result.test_exit != 0:
                 reasons.append(f"테스트 실패(종료 코드 {result.test_exit})")
         if rules.require_no_conflict and result.conflicts:
-            reasons.append("충돌: " + ", ".join(result.conflicts))
+            reasons.append(conflict_reason(result.conflicts))
         return Decision.of(reasons)
 
     def can_auto_publish(self) -> Decision:
@@ -133,6 +144,7 @@ class Policy:
 
 
 __all__ = [
+    "AGENT_RULES",
     "AUTO_PUBLISH_OFF",
     "NO_PUBLISH_TARGET",
     "NO_TEST_COMMAND",
@@ -140,6 +152,8 @@ __all__ = [
     "Decision",
     "MergeCheck",
     "Policy",
+    "conflict_reason",
     "denied",
     "runner_args",
+    "with_rules",
 ]
