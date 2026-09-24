@@ -1,4 +1,4 @@
-"""page.md checks and the page folder entry point."""
+"""page.md 검사와 페이지 폴더 진입점."""
 
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ from madang.validate.state import DEFAULT_TOKEN_LIMIT, validate_state
 
 
 def validate_page(path: Path) -> list[Issue]:
-    """Checks the page.md header against the page model.
+    """page.md 머리부를 페이지 모델에 비추어 검사한다.
 
     Args:
-        path: The page.md file.
+        path: page.md 파일.
 
     Returns:
-        The issues found; empty when the header is valid.
+        찾은 문제. 머리부가 올바르면 빈 목록.
     """
     path = Path(path)
     try:
@@ -51,13 +51,13 @@ def validate_page(path: Path) -> list[Issue]:
 
 
 def resolve_target(target: Path) -> tuple[Path, Path]:
-    """Returns the page folder and state.md path for a validation target.
+    """검사 대상의 페이지 폴더와 state.md 경로를 반환한다.
 
     Args:
-        target: A page folder or a state.md path.
+        target: 페이지 폴더 또는 state.md 경로.
 
     Returns:
-        A ``(page folder, state.md path)`` tuple.
+        ``(페이지 폴더, state.md 경로)`` 튜플.
     """
     target = Path(target)
     if target.is_dir():
@@ -72,17 +72,17 @@ def validate_target(
     token_limit: int = DEFAULT_TOKEN_LIMIT,
     kinds: Sequence[str] | None = None,
 ) -> list[Issue]:
-    """Validates state.md, and page.md when present, of a page.
+    """페이지의 state.md와, 있으면 page.md를 검사한다.
 
     Args:
-        target: A page folder or a state.md path.
-        repo: The code repository for ``repo:`` artifacts. Without it the
-            space repository is taken from ``space.md``.
-        token_limit: The maximum state.md size in tokens.
-        kinds: The allowed page kinds. Defaults to the bundled routes.yaml.
+        target: 페이지 폴더 또는 state.md 경로.
+        repo: ``repo:`` 산출물의 코드 저장소. 없으면 ``space.md``의 공간
+            저장소를 쓴다.
+        token_limit: state.md의 최대 토큰 수.
+        kinds: 허용하는 페이지 종류. 기본값은 내장 routes.yaml.
 
     Returns:
-        The issues found; empty when the page is valid.
+        찾은 문제. 페이지가 올바르면 빈 목록.
     """
     page_dir, state_path = resolve_target(target)
     if repo is None:

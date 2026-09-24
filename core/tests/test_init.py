@@ -22,7 +22,7 @@ def git(home: Path, *args: str) -> str:
 
 @pytest.fixture(autouse=True)
 def isolated_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keeps user and system git config (signing, hooks, ...) out of tests."""
+    """사용자·시스템 git 설정(서명, 훅 등)이 테스트에 섞이지 않게 한다."""
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 

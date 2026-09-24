@@ -1,4 +1,4 @@
-"""madang command line entry point."""
+"""madang 명령줄 진입점."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from madang.validate import Issue, validate_target
 
 app = typer.Typer(
     name="madang",
-    help="Madang core command line.",
+    help="Madang 코어 명령줄.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -42,7 +42,7 @@ HomeOption = Annotated[
     Path | None,
     typer.Option(
         "--home",
-        help="App home directory. Defaults to $MADANG_HOME or ~/.madang.",
+        help="앱 홈 폴더. 기본값은 $MADANG_HOME 또는 ~/.madang.",
     ),
 ]
 
@@ -61,16 +61,16 @@ def root(
             "--version",
             callback=_version,
             is_eager=True,
-            help="Show version and exit.",
+            help="버전을 출력하고 종료한다.",
         ),
     ] = False,
 ) -> None:
-    """Madang core command line."""
+    """Madang 코어 명령줄."""
 
 
 @app.command()
 def init(home: HomeOption = None) -> None:
-    """Create the app home (config, root memory, root space, git repository)."""
+    """앱 홈(설정, 루트 메모리, 루트 스페이스, git 저장소)을 만든다."""
     path = config.resolve_home(home)
     try:
         result = init_home(path)
@@ -88,24 +88,21 @@ def init(home: HomeOption = None) -> None:
 @app.command()
 def validate(
     target: Annotated[
-        Path, typer.Argument(help="state.md path or page folder.")
+        Path, typer.Argument(help="state.md 경로 또는 페이지 폴더.")
     ],
     repo: Annotated[
         Path | None,
         typer.Option(
             "--repo",
-            help=(
-                "Code repository for repo: artifacts. "
-                "Defaults to repo in space.md."
-            ),
+            help=("repo: 산출물의 코드 저장소. 기본값은 space.md의 repo."),
         ),
     ] = None,
     home: HomeOption = None,
     as_json: Annotated[
-        bool, typer.Option("--json", help="Print issues as JSON.")
+        bool, typer.Option("--json", help="문제 목록을 JSON으로 출력한다.")
     ] = False,
 ) -> None:
-    """Check state.md (and page.md) of a page. Exit 1 when issues are found."""
+    """페이지의 state.md(와 page.md)를 검사한다. 문제가 있으면 1로 종료한다."""
     if not target.exists():
         typer.echo(f"error: {target} does not exist", err=True)
         raise typer.Exit(2)
@@ -133,11 +130,11 @@ def validate(
         raise typer.Exit(1)
 
 
-# single run
+# 단일 실행
 
 SCRATCH_DIR = "scratch"
 REPO_PREFIX = "repo:"
-# Page files that core writes itself; never reported as run output.
+# 코어가 직접 쓰는 페이지 파일. 실행 산출물로 보고하지 않는다.
 _BOOKKEEPING = (pages.LOG_FILE, f"{pages.BLOCKS_DIR}/{pages.LAST_BLOCK_FILE}")
 _BOOKKEEPING_DIRS = (f"{runs.RUNS_DIR}/", f"{SCRATCH_DIR}/")
 _SUMMARY_FILES = 3
@@ -145,12 +142,12 @@ _SUMMARY_FILES = 3
 
 @dataclass
 class RunOutcome:
-    """A finished single run of a page.
+    """페이지의 끝난 단일 실행.
 
     Attributes:
-        recorded: The run and its record.
-        issues: What the state check found after the run.
-        commit: The short hash of the app home commit.
+        recorded: 실행과 그 기록.
+        issues: 실행 뒤 상태 검사에서 찾은 문제.
+        commit: 앱 홈 커밋의 짧은 해시.
     """
 
     recorded: RecordedRun
@@ -159,7 +156,7 @@ class RunOutcome:
 
     @property
     def ok(self) -> bool:
-        """Whether the runner finished and the page passed its checks."""
+        """러너가 끝났고 페이지가 검사를 통과했는지 여부."""
         return self.recorded.result.status == "done" and not self.issues
 
 
@@ -173,29 +170,28 @@ def execute_run(
     request: str,
     target: str | None = None,
 ) -> RunOutcome:
-    """Runs one step of a page in a fresh session and commits the result.
+    """새 세션에서 페이지의 한 단계를 실행하고 결과를 커밋한다.
 
-    The request is logged, the prompt is assembled and saved to
-    ``scratch/``, the runner works in the space's code repository (else the
-    page folder), and then the page is checked, the run is recorded, the
-    answer is logged, and the app home is committed.
+    요청을 기록하고, 프롬프트를 조립해 ``scratch/``에 저장한다. 러너는
+    스페이스의 코드 저장소(없으면 페이지 폴더)에서 작업한다. 이후 페이지를
+    검사하고, 실행을 기록하고, 답을 기록한 뒤 앱 홈을 커밋한다.
 
     Args:
-        page_dir: The page folder.
-        runner: The runner to use.
-        cfg: The app home configuration.
-        model: The model name.
-        effort: The reasoning effort.
-        request: The message text.
-        target: The block the request is about, or None for the page.
+        page_dir: 페이지 폴더.
+        runner: 사용할 러너.
+        cfg: 앱 홈 설정.
+        model: 모델 이름.
+        effort: 추론 강도.
+        request: 메시지 본문.
+        target: 요청 대상 블록. 페이지 전체면 None.
 
     Returns:
-        The finished run.
+        끝난 실행.
 
     Raises:
-        GitError: The app home commit fails.
-        OSError: A page file cannot be read or written.
-        ValueError: The target block has no file.
+        GitError: 앱 홈 커밋이 실패한 경우.
+        OSError: 페이지 파일을 읽거나 쓸 수 없는 경우.
+        ValueError: 대상 블록에 파일이 없는 경우.
     """
     state = pages.read_header(page_dir / STATE_FILE)
     tier = int(state.get("tier") or 1)
@@ -256,14 +252,14 @@ def execute_run(
 def run_commit_message(
     page_id: str, n: int, runner: str, model: str, changed: list[str]
 ) -> str:
-    """Returns the app home commit message of a run.
+    """실행의 앱 홈 커밋 메시지를 반환한다.
 
     Args:
-        page_id: The page id.
-        n: The run number.
-        runner: The runner name.
-        model: The model name.
-        changed: The files the run changed.
+        page_id: 페이지 id.
+        n: 실행 번호.
+        runner: 러너 이름.
+        model: 모델 이름.
+        changed: 실행이 바꾼 파일.
 
     Returns:
         ``[<page-id>] run <n> · <runner>/<model> · <changed files>``.
@@ -272,7 +268,7 @@ def run_commit_message(
 
 
 def format_outcome(outcome: RunOutcome) -> str:
-    """Returns the one-line summary printed after a run."""
+    """실행 뒤 출력하는 한 줄 요약을 반환한다."""
     record = outcome.recorded.record
     estimate = (record.input or {}).get("total_est", 0)
     usage = record.usage
@@ -303,7 +299,7 @@ def _summary(changed: list[str]) -> str:
 
 @contextmanager
 def _environment(name: str, value: str) -> Iterator[None]:
-    """Sets an environment variable for the agent process, then restores it."""
+    """에이전트 프로세스용 환경 변수를 설정하고 끝나면 되돌린다."""
     old = os.environ.get(name)
     os.environ[name] = value
     try:
@@ -327,9 +323,10 @@ def _run_output(
     cwd: Path,
     before: tuple[changes.Snapshot, changes.Snapshot | None],
 ) -> tuple[list[str], list[str]]:
-    """Returns the files a run changed and the new files it did not register.
+    """실행이 바꾼 파일과 등록하지 않은 새 파일을 반환한다.
 
-    Page files are page-relative; code repository files carry ``repo:``.
+    페이지 파일은 페이지 기준 상대 경로이고, 코드 저장소 파일에는
+    ``repo:`` 접두가 붙는다.
     """
     page_before, repo_before = before
     page_after, repo_after = _snapshots(page_dir, cwd)
@@ -370,7 +367,7 @@ def _finish_record(
     output: tuple[list[str], list[str]],
     issues: list[Issue],
 ) -> None:
-    """Adds what core learned after the run to ``runs/N.json``."""
+    """실행 뒤 코어가 알게 된 내용을 ``runs/N.json``에 더한다."""
     record, result = recorded.record, recorded.result
     record.changed_files, record.unknown_files = output
     record.contract = contract_version
@@ -430,22 +427,20 @@ def _load(home: Path | None) -> config.Config:
 
 @app.command("run")
 def run_command(
-    page_id: Annotated[str, typer.Argument(help="Page id.")],
-    request: Annotated[str, typer.Argument(help="What to do in this step.")],
-    tool: Annotated[
-        str, typer.Option("--tool", help="Runner: claude | codex.")
-    ],
-    model: Annotated[str, typer.Option("--model", help="Model name.")],
+    page_id: Annotated[str, typer.Argument(help="페이지 id.")],
+    request: Annotated[str, typer.Argument(help="이 단계에서 할 일.")],
+    tool: Annotated[str, typer.Option("--tool", help="러너: claude | codex.")],
+    model: Annotated[str, typer.Option("--model", help="모델 이름.")],
     effort: Annotated[
-        str, typer.Option("--effort", help="Reasoning effort.")
+        str, typer.Option("--effort", help="추론 강도.")
     ] = "medium",
     target: Annotated[
         str | None,
-        typer.Option("--target", help="Block the request is about, e.g. b05."),
+        typer.Option("--target", help="요청 대상 블록. 예: b05."),
     ] = None,
     home: HomeOption = None,
 ) -> None:
-    """Run one step of a page in a fresh session, then check and commit it."""
+    """새 세션에서 페이지의 한 단계를 실행한 뒤 검사하고 커밋한다."""
     cfg = _load(home)
     try:
         page_dir = pages.find_page(cfg.home, page_id)
@@ -476,13 +471,13 @@ def run_command(
         raise typer.Exit(1)
 
 
-# page and space creation
+# 페이지와 스페이스 생성
 
 page_app = typer.Typer(
-    help="Create pages.", no_args_is_help=True, add_completion=False
+    help="페이지를 만든다.", no_args_is_help=True, add_completion=False
 )
 space_app = typer.Typer(
-    help="Create spaces.", no_args_is_help=True, add_completion=False
+    help="스페이스를 만든다.", no_args_is_help=True, add_completion=False
 )
 app.add_typer(page_app, name="page")
 app.add_typer(space_app, name="space")
@@ -490,19 +485,21 @@ app.add_typer(space_app, name="space")
 
 @page_app.command("new")
 def page_new(
-    title: Annotated[str, typer.Option("--title", help="Page title.")],
-    space: Annotated[str, typer.Option("--space", help="Space slug.")] = "root",
+    title: Annotated[str, typer.Option("--title", help="페이지 제목.")],
+    space: Annotated[
+        str, typer.Option("--space", help="스페이스 슬러그.")
+    ] = "root",
     kind: Annotated[
         str | None,
-        typer.Option("--kind", help="Page kind. Defaults to routes.yaml."),
+        typer.Option("--kind", help="페이지 종류. 기본값은 routes.yaml."),
     ] = None,
     slug: Annotated[
         str | None,
-        typer.Option("--slug", help="Page slug. Defaults to the title."),
+        typer.Option("--slug", help="페이지 슬러그. 기본값은 제목."),
     ] = None,
     home: HomeOption = None,
 ) -> None:
-    """Create a page and print its id."""
+    """페이지를 만들고 id를 출력한다."""
     cfg = _load(home)
     kind = kind or cfg.routes.default_kind
     if kind not in cfg.routes.kinds:
@@ -518,17 +515,17 @@ def page_new(
 
 @space_app.command("new")
 def space_new(
-    slug: Annotated[str, typer.Argument(help="Space slug.")],
+    slug: Annotated[str, typer.Argument(help="스페이스 슬러그.")],
     title: Annotated[
-        str | None, typer.Option("--title", help="Space title.")
+        str | None, typer.Option("--title", help="스페이스 제목.")
     ] = None,
     repo: Annotated[
         str | None,
-        typer.Option("--repo", help="Code repository of the space."),
+        typer.Option("--repo", help="스페이스의 코드 저장소."),
     ] = None,
     home: HomeOption = None,
 ) -> None:
-    """Create a space and print its slug."""
+    """스페이스를 만들고 슬러그를 출력한다."""
     cfg = _load(home)
     try:
         pages.create_space(cfg.home, slug, title=title, repo=repo)
@@ -541,7 +538,7 @@ cli_agent.register(app)
 
 
 def main() -> None:
-    """Runs the madang command line."""
+    """Madang 명령줄을 실행한다."""
     app()
 
 

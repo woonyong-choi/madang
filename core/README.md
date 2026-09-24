@@ -44,6 +44,23 @@ uv run madang init [--home PATH]
 
 앱 홈은 git 저장소이며 첫 커밋은 `[home] init`이다. 이미 초기화된 홈에서 다시 실행하면 기존 파일을 덮어쓰지 않고 성공으로 끝난다.
 
+### 공간과 페이지 만들기
+
+```
+uv run madang space new <slug> [--title "제목"] [--repo PATH] [--home PATH]
+uv run madang page new --title "제목" [--space root] [--kind build] [--slug 슬러그] [--home PATH]
+```
+
+`space new`는 `spaces/<slug>/`에 space.md와 빈 `pages/`를 만들고 슬러그를 출력한다. `--repo`는 공간의 코드 저장소 경로이며, 슬러그가 올바르지 않거나 이미 있으면 거부한다. `page new`는 `spaces/<space>/pages/<YYYY-MM-DD-슬러그>/`에 page.md, state.md, log.md를 만들고 페이지 id를 출력한다. `--kind`를 생략하면 routes.yaml의 기본 종류를 쓰고, 슬러그를 생략하면 제목에서 만든다.
+
+### 페이지 실행
+
+```
+uv run madang run <page-id> "<요청>" --tool claude|codex --model <모델> [--effort medium] [--target b05] [--home PATH]
+```
+
+페이지의 한 단계를 새 세션에서 실행한다. 프롬프트를 조립해 실행기(claude/codex CLI)에 넘기고, 끝나면 state.md를 검사한 뒤 결과를 `runs/N.json`에 기록하고 앱 홈에 커밋한다. `--target`은 요청이 가리키는 블록 id이다. 작업 폴더는 공간의 코드 저장소이며, 없으면 페이지 폴더이다.
+
 ### 페이지 검사
 
 ```

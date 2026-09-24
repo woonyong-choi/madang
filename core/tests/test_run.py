@@ -29,7 +29,7 @@ def git(repo: Path, *args: str) -> str:
 
 
 class FakeRunner:
-    """Stands in for an agent: edits the page in a scripted way."""
+    """에이전트를 대신해 정해진 방식으로 페이지를 고친다."""
 
     def __init__(self, name: str = "claude", act=None, status="done"):
         self.name = name
@@ -164,7 +164,7 @@ def test_runner_gets_fresh_session_inputs(home: Path, page: Path) -> None:
     assert first["cwd"] == page and first["page"] == page.name
     assert first["by"] == "claude/m-1"
     assert "MADANG_BY" not in os.environ
-    # the previous answer never reaches the next prompt
+    # 이전 답변은 다음 프롬프트에 전달되지 않는다
     assert "ANSWER-1" not in second["prompt"]
     assert "first" not in second["prompt"]
     assert "second" in second["prompt"]
@@ -233,7 +233,7 @@ def test_code_repository_changes(home: Path, tmp_path: Path) -> None:
     ]
     assert data["unknown_files"] == ["repo:src/extra.py"]
     assert outcome.ok
-    # the new space is committed together with its first run
+    # 새 space는 첫 run과 함께 커밋된다
     assert "spaces/work/space.md" in git(home, "ls-files").split()
 
 
@@ -267,7 +267,7 @@ def test_commit_message_summary() -> None:
     )
 
 
-# command line
+# 명령줄
 
 
 def use_fake_cli(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,12 +1,12 @@
-"""Stand-in for an agent CLI: replays a stream file and records its call.
+"""에이전트 CLI 대역: 스트림 파일을 재생하고 호출 내용을 기록한다.
 
-Controlled by environment variables:
-FAKE_STREAM  file whose lines are written to stdout
-FAKE_DUMP    file that receives {"argv", "cwd", "env"} as JSON
-FAKE_SLEEP   seconds to sleep after the stream (also starts a child ``sleep``)
-FAKE_CHILD   file that receives the pid of that child
-FAKE_STDERR  text written to stderr
-FAKE_EXIT    exit code
+환경 변수로 제어한다.
+FAKE_STREAM  줄을 stdout에 쓸 파일
+FAKE_DUMP    {"argv", "cwd", "env"}를 JSON으로 받을 파일
+FAKE_SLEEP   스트림 뒤에 잠들 초(자식 ``sleep``도 함께 시작한다)
+FAKE_CHILD   그 자식의 pid를 받을 파일
+FAKE_STDERR  stderr에 쓸 텍스트
+FAKE_EXIT    종료 코드
 """
 
 import json

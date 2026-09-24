@@ -1,7 +1,7 @@
-"""The page conversation: message blocks appended to ``log.md``.
+"""페이지 대화: ``log.md``에 덧붙이는 메시지 블록.
 
-Each block starts with a one-line comment header,
-``<!-- bNN | <time> | <role> | key=value ... -->``, followed by its body.
+각 블록은 한 줄 주석 머리
+``<!-- bNN | <time> | <role> | key=value ... -->``로 시작하고 본문이 따른다.
 """
 
 from __future__ import annotations
@@ -15,16 +15,16 @@ from madang.store import pages
 def format_header(
     block_id: str, stamp: str, role: str, attrs: Mapping[str, object]
 ) -> str:
-    """Returns the comment line that opens a message block.
+    """메시지 블록을 여는 주석 줄을 반환한다.
 
     Args:
-        block_id: The block id.
-        stamp: The ISO 8601 time of the message.
-        role: Who wrote it: user, router, or agent.
-        attrs: Extra ``key=value`` fields, in order.
+        block_id: 블록 id.
+        stamp: 메시지의 ISO 8601 시각.
+        role: 작성자: user, router, agent 중 하나.
+        attrs: 추가 ``key=value`` 필드(순서 유지).
 
     Returns:
-        The header line without a trailing newline.
+        끝 줄바꿈이 없는 머리 줄.
     """
     fields = " ".join(f"{key}={value}" for key, value in attrs.items())
     head = f"<!-- {block_id} | {stamp} | {role}"
@@ -34,16 +34,16 @@ def format_header(
 def append_message(
     page_dir: Path, role: str, body: str, attrs: Mapping[str, object]
 ) -> str:
-    """Appends a message block to log.md and to the page.md block order.
+    """log.md와 page.md의 블록 순서에 메시지 블록을 덧붙인다.
 
     Args:
-        page_dir: The page folder.
-        role: Who wrote it: user, router, or agent.
-        body: The message text.
-        attrs: Extra header fields, e.g. ``{"target": "page"}``.
+        page_dir: 페이지 폴더.
+        role: 작성자: user, router, agent 중 하나.
+        body: 메시지 텍스트.
+        attrs: 추가 머리 필드. 예: ``{"target": "page"}``.
 
     Returns:
-        The new block id.
+        새 블록 id.
     """
     block_id = pages.allocate_block(page_dir)
     header = format_header(block_id, pages.now().isoformat(), role, attrs)

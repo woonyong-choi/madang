@@ -1,4 +1,4 @@
-"""Agent runners: one fresh CLI subprocess per run, normalized to events."""
+"""에이전트 러너: 실행마다 새 CLI 서브프로세스를 띄우고 이벤트로 정규화한다."""
 
 from __future__ import annotations
 
@@ -18,18 +18,18 @@ RUNNERS: dict[str, type[CliRunner]] = {
 def make_runner(
     name: str, config: Config, *, core_url: str | None = None
 ) -> CliRunner:
-    """Builds the runner ``name`` from ``config.runners`` (runners.yaml).
+    """``config.runners``(runners.yaml)에서 러너 ``name``을 만든다.
 
     Args:
-        name: The runner name, a key of ``RUNNERS``.
-        config: The loaded app home configuration.
-        core_url: The core API URL passed to the agent, if any.
+        name: 러너 이름. ``RUNNERS``의 키.
+        config: 로드된 앱 홈 설정.
+        core_url: 에이전트에 넘길 core API URL. 없을 수 있다.
 
     Returns:
-        The runner.
+        러너.
 
     Raises:
-        ValueError: The runner is unknown or not configured.
+        ValueError: 러너를 모르거나 설정되지 않았다.
     """
     if name not in RUNNERS:
         raise ValueError(

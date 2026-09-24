@@ -1003,7 +1003,7 @@ components:
         - status: ok
           version: 0.1.0
 
-    # runner
+    # 러너
 
     RunnerStatus:
       type: object
@@ -1640,7 +1640,7 @@ components:
         - path: repo:docs/b04-resume.view.md
           commit: 3c4d5e6
 
-    # memory
+    # 메모리
 
     MemoryLayer:
       type: string
@@ -1843,7 +1843,7 @@ components:
           parts: {system_est: 24600, root: 110, space: 1840, state: 1320, contract: 420, target: 900, request: 40}
           total_est: 29230
 
-    # run
+    # 실행
 
     RunResultStatus:
       type: string

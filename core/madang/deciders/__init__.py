@@ -1,1 +1,1 @@
-"""Deciders (not implemented yet)."""
+"""결정기(아직 구현되지 않았다)."""

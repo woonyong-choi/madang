@@ -77,7 +77,7 @@ def test_parts_follow_the_fixed_order(home: Path, page: Path) -> None:
     ]
     positions = [out.prompt.index(m) for m in markers]
     assert positions == sorted(positions)
-    # the space header is not part of the prompt
+    # space 헤더는 프롬프트에 들어가지 않는다
     assert "slug: root" not in out.prompt
 
 
@@ -199,7 +199,7 @@ def test_tokenizer_fallback_is_marked(
     rough = build(page, home)
     assert asm.tokenizer_name() == asm.FALLBACK_TOKENIZER
     assert rough.estimate()["tokenizer"] == "utf8-bytes/3"
-    # one token per three UTF-8 bytes, shared with the state check
+    # UTF-8 3바이트당 토큰 1개로 센다. state 검사와 같은 기준이다
     request = next(p for p in rough.parts if p.name == "request")
     assert request.tokens == -(-len(request.text.encode()) // 3)
     assert state_checks.count_tokens("가나다") == 3

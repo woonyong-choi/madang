@@ -207,7 +207,7 @@ def test_exec_error_result(
     assert result.status == "error"
     assert result.exit_code == 1
     assert "claude-nope-9" in (result.error or "")
-    # the parser already reported the error; it is not repeated
+    # 파서가 이미 오류를 보고했으므로 반복하지 않는다
     assert [e.type for e in events].count("error") == 1
     assert "done" not in [e.type for e in events]
 

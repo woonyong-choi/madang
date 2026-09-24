@@ -12,7 +12,7 @@ FAKE_CLI = FIXTURES / "bin" / "fake_cli.py"
 
 @pytest.fixture
 def fake_spec() -> RunnerSpec:
-    """Returns a runner spec that runs the fake CLI with templated args."""
+    """템플릿 인자로 가짜 CLI를 실행하는 러너 스펙을 반환한다."""
     return RunnerSpec(
         bin=sys.executable,
         args=[

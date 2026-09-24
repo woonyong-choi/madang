@@ -1,4 +1,4 @@
-"""Which page a command acts on, and a guarded write that validates it."""
+"""명령이 작용할 페이지와, 검증까지 하는 보호된 쓰기."""
 
 from __future__ import annotations
 
@@ -19,14 +19,14 @@ BY_ENV = "MADANG_BY"
 
 
 class AgentError(Exception):
-    """A refused request. The message is shown to the caller."""
+    """거절된 요청. 메시지는 호출자에게 보여 준다."""
 
 
 class PageValidationError(AgentError):
-    """A change was rolled back because the page failed validation.
+    """페이지 검증에 실패해 변경을 되돌렸다.
 
     Attributes:
-        issues: The validation issues that caused the rollback.
+        issues: 롤백을 일으킨 검증 이슈.
     """
 
     def __init__(self, issues: list[Issue]) -> None:
@@ -36,13 +36,13 @@ class PageValidationError(AgentError):
 
 @dataclass
 class PageContext:
-    """The page an agent command acts on.
+    """에이전트 명령이 작용하는 페이지.
 
     Attributes:
-        home: The app home directory.
-        page_dir: The page folder.
-        from_env: Whether the page came from ``MADANG_PAGE``.
-        cfg: The loaded app home configuration.
+        home: 앱 홈 디렉터리.
+        page_dir: 페이지 폴더.
+        from_env: 페이지를 ``MADANG_PAGE``에서 얻었는지 여부.
+        cfg: 로드된 앱 홈 설정.
     """
 
     home: Path
@@ -52,23 +52,23 @@ class PageContext:
 
     @property
     def page_id(self) -> str:
-        """The page id, which is the page folder name."""
+        """페이지 id. 페이지 폴더 이름이다."""
         return self.page_dir.name
 
     @property
     def run(self) -> int | None:
-        """Run in progress when called from an agent run."""
+        """에이전트 실행에서 호출된 경우 진행 중인 실행."""
         return runs.current(self.page_dir) if self.from_env else None
 
     def by(self, explicit: str | None = None) -> str:
-        """Returns who made a decision.
+        """결정을 내린 사람을 반환한다.
 
         Args:
-            explicit: The value given with ``--by``, if any.
+            explicit: ``--by``로 받은 값. 있으면.
 
         Returns:
-            ``explicit``, else ``MADANG_BY``, else ``agent`` inside an agent
-            run and ``human`` outside one.
+            ``explicit``, 없으면 ``MADANG_BY``, 그것도 없으면 에이전트 실행
+            안에서는 ``agent``, 밖에서는 ``human``.
         """
         return (
             explicit
@@ -77,11 +77,11 @@ class PageContext:
         )
 
     def repo(self) -> Path | None:
-        """Returns the space's code repository, or None when it has none."""
+        """스페이스의 코드 저장소를 반환한다. 없으면 None."""
         return space_repo(self.page_dir)
 
     def validate(self) -> list[Issue]:
-        """Returns the validation issues of the page."""
+        """페이지의 검증 이슈를 반환한다."""
         return validate_target(
             self.page_dir,
             token_limit=self.cfg.madang.limits.state_tokens,
@@ -90,18 +90,18 @@ class PageContext:
 
 
 def resolve(page: str | None, home: Path | None) -> PageContext:
-    """Finds the page from ``--page`` or ``MADANG_PAGE``.
+    """``--page`` 또는 ``MADANG_PAGE``로 페이지를 찾는다.
 
     Args:
-        page: The page id given with ``--page``, if any.
-        home: The app home given with ``--home``, if any.
+        page: ``--page``로 받은 페이지 id. 있으면.
+        home: ``--home``으로 받은 앱 홈. 있으면.
 
     Returns:
-        The context of the page.
+        페이지의 컨텍스트.
 
     Raises:
-        AgentError: Neither ``--page`` nor ``MADANG_PAGE`` is set, the app
-            home or the page does not exist, or the config cannot be loaded.
+        AgentError: ``--page``와 ``MADANG_PAGE``가 모두 없거나, 앱 홈이나
+            페이지가 없거나, 설정을 로드할 수 없다.
     """
     from_env = page is None
     page_id = page if page is not None else os.environ.get(PAGE_ENV)
@@ -127,33 +127,33 @@ def resolve(page: str | None, home: Path | None) -> PageContext:
 
 @dataclass
 class Transaction:
-    """Saved file contents so a failed change can be undone."""
+    """실패한 변경을 되돌릴 수 있게 저장한 파일 내용."""
 
     saved: dict[Path, bytes | None] = field(default_factory=dict)
     finalizers: list[Callable[[], None]] = field(default_factory=list)
 
     def track(self, *paths: Path) -> None:
-        """Saves the current contents of ``paths`` once each.
+        """``paths``의 현재 내용을 각각 한 번씩 저장한다.
 
         Args:
-            *paths: Files to restore on rollback. Missing files are deleted.
+            *paths: 롤백 때 복원할 파일. 없던 파일은 삭제한다.
         """
         for path in paths:
             if path not in self.saved:
                 self.saved[path] = path.read_bytes() if path.is_file() else None
 
     def then(self, step: Callable[[], None]) -> None:
-        """Runs ``step`` after validation passes.
+        """검증을 통과한 뒤 ``step``을 실행한다.
 
-        A failure in ``step`` still rolls back.
+        ``step``이 실패해도 롤백한다.
 
         Args:
-            step: A callable with no arguments.
+            step: 인자 없는 콜러블.
         """
         self.finalizers.append(step)
 
     def rollback(self) -> None:
-        """Restores every tracked file to its saved contents."""
+        """추적한 모든 파일을 저장된 내용으로 복원한다."""
         for path, data in reversed(self.saved.items()):
             if data is None:
                 path.unlink(missing_ok=True)
@@ -163,20 +163,20 @@ class Transaction:
 
 @contextmanager
 def guarded(ctx: PageContext, *paths: Path) -> Iterator[Transaction]:
-    """Tracks ``paths``, runs the change, then validates the page.
+    """``paths``를 추적하고 변경을 실행한 뒤 페이지를 검증한다.
 
-    Any exception or validation issue restores the tracked files. Steps added
-    with ``txn.then`` run last, inside the same rollback scope.
+    예외나 검증 이슈가 있으면 추적한 파일을 복원한다. ``txn.then``으로
+    추가한 단계는 같은 롤백 범위 안에서 마지막에 실행한다.
 
     Args:
-        ctx: The page being changed.
-        *paths: Files the change may write.
+        ctx: 변경 중인 페이지.
+        *paths: 변경이 쓸 수 있는 파일.
 
     Yields:
-        The transaction that tracks the files.
+        파일을 추적하는 트랜잭션.
 
     Raises:
-        PageValidationError: The page has validation issues after the change.
+        PageValidationError: 변경 뒤 페이지에 검증 이슈가 있다.
     """
     txn = Transaction()
     txn.track(*paths)

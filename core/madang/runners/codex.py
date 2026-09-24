@@ -1,7 +1,7 @@
-"""Codex CLI adapter: ``codex exec --json``.
+"""Codex CLI 어댑터: ``codex exec --json``.
 
-The app home can be made writable for the agent by adding
-``["--add-dir", "{home}"]`` to the codex args in runners.yaml.
+runners.yaml의 codex args에 ``["--add-dir", "{home}"]``를 추가하면
+에이전트가 앱 홈에 쓸 수 있다.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ _RETRY_PREFIX = "Reconnecting..."
 
 
 class CodexStreamParser:
-    """Maps ``thread.*``/``turn.*``/``item.*``/``error`` lines to run events."""
+    """``thread.*``/``turn.*``/``item.*``/``error`` 줄을 이벤트로 옮긴다."""
 
     def __init__(self) -> None:
         self.final_text = ""
@@ -24,7 +24,7 @@ class CodexStreamParser:
         self._started: set[str] = set()
 
     def feed(self, obj: dict[str, Any]) -> list[RunEvent]:
-        """Returns the events for one decoded JSON line."""
+        """디코딩된 JSON 한 줄에 대한 이벤트를 반환한다."""
         kind = obj.get("type")
         if kind == "item.started":
             return self._item_started(_item(obj))
@@ -39,7 +39,7 @@ class CodexStreamParser:
             )
         if kind == "error":
             message = obj.get("message")
-            # Transport retries are reported as errors but the turn goes on.
+            # 전송 재시도는 오류로 보고되지만 턴은 계속된다.
             if isinstance(message, str) and message.startswith(_RETRY_PREFIX):
                 return []
             return self._fail(message)
@@ -146,10 +146,10 @@ def _tool_result(item: dict[str, Any]) -> str:
 
 
 class CodexRunner(CliRunner):
-    """Runs the Codex CLI."""
+    """Codex CLI를 실행한다."""
 
     name = "codex"
 
     def new_parser(self) -> CodexStreamParser:
-        """Returns a fresh codex stream parser."""
+        """새 codex 스트림 파서를 반환한다."""
         return CodexStreamParser()

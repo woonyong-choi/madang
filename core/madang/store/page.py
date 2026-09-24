@@ -1,4 +1,4 @@
-"""Page folder model: page.md header, space lookup, and run records."""
+"""페이지 폴더 모델: page.md 머리부, 공간 찾기, 실행 기록."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ PAGE_STATUSES: tuple[str, ...] = (
 
 
 class Page(BaseModel):
-    """Header of page.md. Unknown keys are kept."""
+    """page.md의 머리부. 알 수 없는 키는 보존한다."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -42,31 +42,31 @@ class Page(BaseModel):
 
 
 def load_page(page_dir: Path) -> tuple[Page, str]:
-    """Reads page.md from a page folder.
+    """페이지 폴더에서 page.md를 읽는다.
 
     Args:
-        page_dir: The page folder.
+        page_dir: 페이지 폴더.
 
     Returns:
-        A ``(header, body)`` tuple.
+        ``(header, body)`` 튜플.
 
     Raises:
-        OSError: page.md cannot be read.
-        FrontmatterError: The front matter cannot be parsed.
-        pydantic.ValidationError: The header does not match ``Page``.
+        OSError: page.md를 읽을 수 없다.
+        FrontmatterError: 머리부를 파싱할 수 없다.
+        pydantic.ValidationError: 머리부가 ``Page``와 맞지 않는다.
     """
     header, body = frontmatter.read(page_dir / PAGE_FILE)
     return Page.model_validate(header), body
 
 
 def space_dir(page_dir: Path) -> Path | None:
-    """Returns the space folder of a page at ``spaces/<slug>/pages/<id>/``.
+    """``spaces/<slug>/pages/<id>/``에 있는 페이지의 공간 폴더를 반환한다.
 
     Args:
-        page_dir: The page folder.
+        page_dir: 페이지 폴더.
 
     Returns:
-        The space folder, or None when the page is not inside ``pages/``.
+        공간 폴더. 페이지가 ``pages/`` 안에 없으면 None.
     """
     pages = page_dir.resolve().parent
     if pages.name != "pages":
@@ -75,7 +75,7 @@ def space_dir(page_dir: Path) -> Path | None:
 
 
 def space_header(page_dir: Path) -> dict[str, Any] | None:
-    """Returns the space.md header of a page's space, or None if missing."""
+    """페이지가 속한 공간의 space.md 머리부를 반환한다. 없으면 None."""
     space = space_dir(page_dir)
     if space is None or not (space / SPACE_FILE).is_file():
         return None
@@ -84,17 +84,16 @@ def space_header(page_dir: Path) -> dict[str, Any] | None:
 
 
 def space_repo(page_dir: Path) -> Path | None:
-    """Returns the code repository of the page's space.
+    """페이지가 속한 공간의 코드 저장소를 반환한다.
 
-    The path comes from ``repo`` in space.md. Relative paths are taken from
-    the space folder.
+    경로는 space.md의 ``repo``에서 가져온다. 상대 경로는 공간 폴더를
+    기준으로 한다.
 
     Args:
-        page_dir: The page folder.
+        page_dir: 페이지 폴더.
 
     Returns:
-        The repository path, or None when the space has no repository or
-        cannot be found.
+        저장소 경로. 공간에 저장소가 없거나 공간을 찾을 수 없으면 None.
     """
     space = space_dir(page_dir)
     header = space_header(page_dir)
@@ -105,16 +104,16 @@ def space_repo(page_dir: Path) -> Path | None:
 
 
 def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:
-    """Returns the highest numbered ``runs/N.json`` and its content.
+    """번호가 가장 큰 ``runs/N.json``과 그 내용을 반환한다.
 
     Args:
-        page_dir: The page folder.
+        page_dir: 페이지 폴더.
 
     Returns:
-        A ``(path, data)`` tuple, or None when the page has no run.
+        ``(path, data)`` 튜플. 페이지에 실행이 없으면 None.
 
     Raises:
-        ValueError: That file is not a JSON object.
+        ValueError: 그 파일이 JSON 객체가 아니다.
     """
     numbers = runs.list_runs(page_dir)
     if not numbers:
@@ -130,12 +129,12 @@ def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:
 
 
 def work_dir(page_dir: Path) -> Path:
-    """Returns where an agent works: the space's code repository, if any.
+    """에이전트가 일하는 곳을 반환한다. 있으면 공간의 코드 저장소.
 
     Args:
-        page_dir: The page folder.
+        page_dir: 페이지 폴더.
 
     Returns:
-        The code repository of the page's space, else the page folder.
+        페이지가 속한 공간의 코드 저장소, 없으면 페이지 폴더.
     """
     return space_repo(page_dir) or page_dir

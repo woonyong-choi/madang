@@ -1,7 +1,7 @@
 kinds: [design, build, small, review, explore]
 default_kind: build
-prefix_override: true          # "design: …" prefix forces the kind
-rules:                          # keyword rules (first decider)
+prefix_override: true          # "design: …" 접두가 종류를 강제한다
+rules:                          # 키워드 규칙 (첫 번째 판정기)
   design: [설계, 아키텍처, 원인, 왜, 구조]
   review: [리뷰, 검토, 점검]
   small:  [오타, 이름, 한 줄, 문구]
@@ -14,12 +14,12 @@ tiers:
             {runner: claude, model: claude-fable-5-1, effort: high}]
   small:   [{runner: codex,  model: gpt-6-luna, effort: high},
             {runner: codex,  model: gpt-6-sol, effort: medium}]
-  review:  [{runner: opposite, model: primary}]   # opposite of the implementing side
+  review:  [{runner: opposite, model: primary}]   # 구현한 쪽의 반대편
   explore: [{runner: codex,  model: gpt-6-luna, effort: medium},
             {runner: claude, model: claude-sonnet-5, effort: medium}]
 limits:
-  max_runs_per_message: 6       # includes promotions and reviews
-  blocked_after_failures: 2     # consecutive failures of the same verification
+  max_runs_per_message: 6       # 승격과 리뷰 포함
+  blocked_after_failures: 2     # 같은 검증의 연속 실패 횟수
 decider:
   chain: [rules, light_model]
   min_confidence: 0.7

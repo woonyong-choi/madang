@@ -1,4 +1,4 @@
-"""What a run changed: work tree snapshots taken before and after it."""
+"""실행이 바꾼 것: 실행 전후에 찍은 작업 트리 스냅샷."""
 
 from __future__ import annotations
 
@@ -13,24 +13,24 @@ UNTRACKED = "??"
 
 @dataclass(frozen=True)
 class Snapshot:
-    """The dirty files of a folder at one moment.
+    """한 시점의 폴더에서 변경된 파일들.
 
     Attributes:
-        codes: Each dirty path mapped to its porcelain status code.
-        digests: Each dirty path mapped to a digest of its content.
+        codes: 변경된 경로별 porcelain 상태 코드.
+        digests: 변경된 경로별 내용 해시.
     """
 
     codes: dict[str, str] = field(default_factory=dict)
     digests: dict[str, str] = field(default_factory=dict)
 
     def changed_since(self, before: Snapshot) -> list[str]:
-        """Returns the paths whose status or content differs from ``before``.
+        """상태나 내용이 ``before``와 다른 경로를 반환한다.
 
         Args:
-            before: The earlier snapshot of the same folder.
+            before: 같은 폴더의 이전 스냅샷.
 
         Returns:
-            Sorted paths, including files that became clean again.
+            다시 깨끗해진 파일을 포함해 정렬한 경로.
         """
         paths = set(self.codes) | set(before.codes)
         return sorted(
@@ -41,7 +41,7 @@ class Snapshot:
         )
 
     def new_untracked(self, before: Snapshot) -> list[str]:
-        """Returns untracked paths that were not dirty in ``before``."""
+        """``before``에서는 변경되지 않았던 추적 안 되는 경로를 반환한다."""
         return sorted(
             p
             for p, code in self.codes.items()
@@ -50,13 +50,13 @@ class Snapshot:
 
 
 def take(directory: Path) -> Snapshot:
-    """Records the dirty files under ``directory``.
+    """``directory`` 아래의 변경된 파일을 기록한다.
 
     Args:
-        directory: A folder inside a git work tree.
+        directory: git 작업 트리 안의 폴더.
 
     Returns:
-        The snapshot. Empty when the folder is not in a work tree.
+        스냅샷. 폴더가 작업 트리 안이 아니면 빈 스냅샷.
     """
     try:
         codes = git.status(directory)

@@ -1,7 +1,7 @@
-"""Run records: ``runs/N.json`` summaries and ``runs/N.events.jsonl`` streams.
+"""실행 기록: ``runs/N.json`` 요약과 ``runs/N.events.jsonl`` 스트림.
 
-Run numbers grow inside a page and are never reused, even after a record is
-deleted: the last number handed out is kept in ``runs/.last``.
+실행 번호는 페이지 안에서 늘어나며 기록이 삭제돼도 다시 쓰지 않는다.
+마지막으로 내준 번호는 ``runs/.last``에 보관한다.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class _Model(BaseModel):
 
 
 class RunUsage(_Model):
-    """Token counts of a run. ``input`` includes cached tokens."""
+    """실행의 토큰 수. ``input``은 캐시된 토큰을 포함한다."""
 
     input: int = 0
     cached: int = 0
@@ -36,14 +36,14 @@ class RunUsage(_Model):
 
 
 class RunVerify(_Model):
-    """The verification command of a run and whether it passed."""
+    """실행의 검증 명령과 통과 여부."""
 
     cmd: str | None = None
     ok: bool | None = None
 
 
 class RunRecord(_Model):
-    """Content of ``runs/N.json``. Unknown keys are kept."""
+    """``runs/N.json``의 내용. 알 수 없는 키는 보존한다."""
 
     n: int
     started: datetime | None = None
@@ -69,27 +69,27 @@ class RunRecord(_Model):
 
 
 def runs_dir(page_dir: Path) -> Path:
-    """Returns the ``runs/`` folder of a page."""
+    """페이지의 ``runs/`` 폴더를 반환한다."""
     return page_dir / RUNS_DIR
 
 
 def record_path(page_dir: Path, n: int) -> Path:
-    """Returns the path of ``runs/N.json``."""
+    """``runs/N.json``의 경로를 반환한다."""
     return runs_dir(page_dir) / f"{n}.json"
 
 
 def events_path(page_dir: Path, n: int) -> Path:
-    """Returns the path of ``runs/N.events.jsonl``."""
+    """``runs/N.events.jsonl``의 경로를 반환한다."""
     return runs_dir(page_dir) / f"{n}.events.jsonl"
 
 
 def events_rel(n: int) -> str:
-    """Returns the ``events_log`` value stored in a record, page-relative."""
+    """기록에 저장하는 ``events_log`` 값(페이지 기준 상대 경로)을 반환한다."""
     return f"{RUNS_DIR}/{n}.events.jsonl"
 
 
 def list_runs(page_dir: Path) -> list[int]:
-    """Returns the numbers that have an ``N.json`` record, ascending."""
+    """``N.json`` 기록이 있는 번호를 오름차순으로 반환한다."""
     runs = runs_dir(page_dir)
     if not runs.is_dir():
         return []
@@ -115,15 +115,15 @@ def _highest(page_dir: Path) -> int:
 
 
 def current(page_dir: Path) -> int | None:
-    """Returns the last run number handed out for the page.
+    """페이지에 마지막으로 내준 실행 번호를 반환한다.
 
-    That is the run in progress, if any.
+    진행 중인 실행이 있으면 그 실행이다.
 
     Args:
-        page_dir: The page folder.
+        page_dir: 페이지 폴더.
 
     Returns:
-        The run number, or None when the page has no run yet.
+        실행 번호. 페이지에 아직 실행이 없으면 None.
     """
     if not runs_dir(page_dir).is_dir():
         return None
@@ -131,13 +131,13 @@ def current(page_dir: Path) -> int | None:
 
 
 def allocate(page_dir: Path) -> int:
-    """Reserves the next run number by creating an empty ``N.events.jsonl``.
+    """빈 ``N.events.jsonl``을 만들어 다음 실행 번호를 예약한다.
 
     Args:
-        page_dir: The page folder.
+        page_dir: 페이지 폴더.
 
     Returns:
-        The new run number.
+        새 실행 번호.
     """
     runs = runs_dir(page_dir)
     runs.mkdir(parents=True, exist_ok=True)
@@ -159,14 +159,14 @@ def allocate(page_dir: Path) -> int:
 
 
 def write_run(page_dir: Path, record: RunRecord) -> Path:
-    """Writes ``record`` to ``runs/N.json`` atomically.
+    """``record``를 ``runs/N.json``에 원자적으로 쓴다.
 
     Args:
-        page_dir: The page folder.
-        record: The run record.
+        page_dir: 페이지 폴더.
+        record: 실행 기록.
 
     Returns:
-        The path written.
+        쓴 경로.
     """
     path = record_path(page_dir, record.n)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,18 +176,18 @@ def write_run(page_dir: Path, record: RunRecord) -> Path:
 
 
 def read_run(page_dir: Path, n: int) -> RunRecord:
-    """Reads ``runs/N.json``.
+    """``runs/N.json``을 읽는다.
 
     Args:
-        page_dir: The page folder.
-        n: The run number.
+        page_dir: 페이지 폴더.
+        n: 실행 번호.
 
     Returns:
-        The run record.
+        실행 기록.
 
     Raises:
-        OSError: The file cannot be read.
-        ValueError: The file is not valid JSON or not a valid record.
+        OSError: 파일을 읽을 수 없다.
+        ValueError: 파일이 올바른 JSON이 아니거나 올바른 기록이 아니다.
     """
     path = record_path(page_dir, n)
     try:

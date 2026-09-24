@@ -30,7 +30,7 @@ def test_claude_ok() -> None:
     assert events[0].text == "ok"
     assert parser.finished and parser.error is None
     assert parser.final_text == "ok"
-    # input = fresh + cache creation + cache read; cached = cache read
+    # input = 새 입력 + 캐시 생성 + 캐시 읽기, cached = 캐시 읽기
     assert parser.usage == Usage(
         input=10 + 9469 + 13689, cached=13689, output=347
     )
@@ -157,7 +157,7 @@ def test_codex_tools() -> None:
         "docs.search",
         '{"query":"runner"}',
     )
-    # the transport retry notice is not an error
+    # 전송 재시도 안내는 오류가 아니다
     assert parser.error is None
     assert parser.final_text == "done"
     assert parser.usage == Usage(input=15230, cached=11904, output=402)
@@ -168,7 +168,7 @@ def test_codex_error() -> None:
     events = replay(parser, "codex-error.jsonl")
 
     errors = [e for e in events if e.type == "error"]
-    # retries are skipped; the final error and turn.failed remain
+    # 재시도는 건너뛰고 최종 오류와 turn.failed만 남는다
     assert len(errors) == 2
     assert all("401 Unauthorized" in (e.message or "") for e in errors)
     assert not parser.finished

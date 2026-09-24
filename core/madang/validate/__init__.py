@@ -1,4 +1,4 @@
-"""Validators for page folder files."""
+"""페이지 폴더 파일 검사기."""
 
 from madang.validate.issues import Issue
 from madang.validate.page import validate_page, validate_target

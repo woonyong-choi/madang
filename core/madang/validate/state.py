@@ -1,4 +1,4 @@
-"""state.md checks: header, decisions, artifacts, sections, size, and done."""
+"""state.md 검사: 머리부, 결정, 산출물, 절, 크기, 완료 조건."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ _HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*#*[ \t]*$")
 
 @lru_cache(maxsize=1)
 def default_kinds() -> tuple[str, ...]:
-    """Returns the kinds listed in the bundled routes.yaml."""
+    """내장 routes.yaml에 적힌 종류를 반환한다."""
     data = yaml.safe_load(config.default_text("routes.yaml")) or {}
     return tuple(data.get("kinds") or ())
 
@@ -37,21 +37,21 @@ def _encoding() -> Any:
         import tiktoken
 
         return tiktoken.get_encoding("cl100k_base")
-    except Exception:  # encoding file unavailable (offline first run)
+    except Exception:  # 인코딩 파일을 쓸 수 없음(오프라인 첫 실행)
         return None
 
 
 def count_tokens(text: str) -> int:
-    """Counts tokens with tiktoken ``cl100k_base``.
+    """``cl100k_base`` tiktoken 인코딩으로 토큰을 센다.
 
-    Without the encoding file, falls back to a conservative estimate of one
-    token per three UTF-8 bytes.
+    인코딩 파일이 없으면 UTF-8 3바이트당 토큰 1개라는 보수적 추정으로
+    대신한다.
 
     Args:
-        text: The text to count.
+        text: 셀 텍스트.
 
     Returns:
-        The token count.
+        토큰 수.
     """
     enc = _encoding()
     if enc is not None:
@@ -74,16 +74,16 @@ def validate_state(
     token_limit: int = DEFAULT_TOKEN_LIMIT,
     kinds: Sequence[str] | None = None,
 ) -> list[Issue]:
-    """Checks a state.md file. Never modifies it.
+    """state.md 파일을 검사한다. 파일을 고치지는 않는다.
 
     Args:
-        path: The state.md file.
-        repo: The space's code repository used for ``repo:`` artifacts.
-        token_limit: The maximum file size in tokens.
-        kinds: The allowed page kinds. Defaults to the bundled routes.yaml.
+        path: state.md 파일.
+        repo: ``repo:`` 산출물에 쓰는 공간의 코드 저장소.
+        token_limit: 파일의 최대 토큰 수.
+        kinds: 허용하는 페이지 종류. 기본값은 내장 routes.yaml.
 
     Returns:
-        The issues found; empty when the file is valid.
+        찾은 문제. 파일이 올바르면 빈 목록.
     """
     path = Path(path)
     page_dir = path.parent
@@ -231,7 +231,7 @@ def _check_decisions(decisions: Any, lines: Lines, add: Any) -> None:
 
 
 def _inside(base: Path, rel: str) -> Path | None:
-    """Resolve ``rel`` under ``base``; ``None`` when it escapes ``base``."""
+    """``base`` 아래에서 ``rel``을 해석한다. ``base``를 벗어나면 ``None``."""
     if not rel or Path(rel).is_absolute():
         return None
     root = base.resolve()

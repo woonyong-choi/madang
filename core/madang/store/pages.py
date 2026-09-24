@@ -1,7 +1,7 @@
-"""Page and space operations: lookup, header updates, block ids, creation.
+"""페이지·공간 연산: 찾기, 머리부 갱신, 블록 id, 생성.
 
-Header updates rewrite only the YAML front matter; the Markdown body is kept
-byte for byte.
+머리부 갱신은 YAML 머리부만 다시 쓰며 마크다운 본문은 바이트 단위로
+그대로 둔다.
 """
 
 from __future__ import annotations
@@ -29,25 +29,25 @@ _LOG_BLOCK = re.compile(r"^<!--\s*b(\d+)\s*\|", re.MULTILINE)
 
 
 class PageNotFoundError(LookupError):
-    """No page, or more than one, matches a page id."""
+    """페이지 id와 맞는 페이지가 없거나 둘 이상이다."""
 
 
-# lookup
+# 찾기
 
 
 def find_page(home: Path, page_id: str) -> Path:
-    """Returns ``spaces/<slug>/pages/<page_id>`` under the app home.
+    """앱 홈 아래의 ``spaces/<slug>/pages/<page_id>``를 반환한다.
 
     Args:
-        home: The app home directory.
-        page_id: The page id.
+        home: 앱 홈 디렉터리.
+        page_id: 페이지 id.
 
     Returns:
-        The page folder.
+        페이지 폴더.
 
     Raises:
-        PageNotFoundError: The id is invalid, or no space (or more than one) has
-            the page.
+        PageNotFoundError: id가 올바르지 않거나, 그 페이지를 가진 공간이
+            없거나 둘 이상이다.
     """
     if (
         not page_id
@@ -73,11 +73,11 @@ def find_page(home: Path, page_id: str) -> Path:
     return matches[0]
 
 
-# headers
+# 머리부
 
 
 def read_header(path: Path) -> dict[str, Any]:
-    """Returns the front matter mapping of ``path``."""
+    """``path``의 머리부 매핑을 반환한다."""
     header, _ = frontmatter.read(path)
     return header
 
@@ -85,19 +85,19 @@ def read_header(path: Path) -> dict[str, Any]:
 def update_header(
     path: Path, mutate: Callable[[dict[str, Any]], None]
 ) -> dict[str, Any]:
-    """Rewrites the front matter of ``path`` through ``mutate``.
+    """``mutate``를 거쳐 ``path``의 머리부를 다시 쓴다.
 
-    The body is preserved exactly and the file is replaced atomically.
+    본문은 그대로 보존하고 파일은 원자적으로 교체한다.
 
     Args:
-        path: The Markdown file.
-        mutate: Changes the header mapping in place.
+        path: 마크다운 파일.
+        mutate: 머리부 매핑을 제자리에서 바꾼다.
 
     Returns:
-        The new header.
+        새 머리부.
 
     Raises:
-        FrontmatterError: The front matter cannot be parsed.
+        FrontmatterError: 머리부를 파싱할 수 없다.
     """
     parts = frontmatter.split(path.read_bytes().decode("utf-8"))
     header = frontmatter.load_header(parts)
@@ -110,21 +110,21 @@ def update_header(
 def update_state(
     page_dir: Path, mutate: Callable[[dict[str, Any]], None]
 ) -> dict[str, Any]:
-    """Rewrites the state.md header of a page as in ``update_header``."""
+    """``update_header``처럼 페이지의 state.md 머리부를 다시 쓴다."""
     return update_header(page_dir / STATE_FILE, mutate)
 
 
 def update_page(
     page_dir: Path, mutate: Callable[[dict[str, Any]], None]
 ) -> dict[str, Any]:
-    """Rewrites the page.md header and refreshes its ``updated`` time.
+    """page.md 머리부를 다시 쓰고 ``updated`` 시각을 갱신한다.
 
     Args:
-        page_dir: The page folder.
-        mutate: Changes the header mapping in place.
+        page_dir: 페이지 폴더.
+        mutate: 머리부 매핑을 제자리에서 바꾼다.
 
     Returns:
-        The new header.
+        새 머리부.
     """
 
     def wrapped(header: dict[str, Any]) -> None:
@@ -134,16 +134,16 @@ def update_page(
     return update_header(page_dir / PAGE_FILE, wrapped)
 
 
-# blocks
+# 블록
 
 
 def format_block_id(n: int) -> str:
-    """Returns the block id for number ``n``, e.g. ``b05``."""
+    """번호 ``n``의 블록 id를 반환한다. 예: ``b05``."""
     return f"b{n:02d}"
 
 
 def parse_block_id(block_id: str) -> int | None:
-    """Returns the number of a ``bNN`` block id, or None if it is not one."""
+    """``bNN`` 블록 id의 번호를 반환한다. 블록 id가 아니면 None."""
     m = _BLOCK_ID.match(block_id)
     return int(m.group(1)) if m else None
 
@@ -175,16 +175,16 @@ def _used_block_numbers(page_dir: Path) -> set[int]:
 
 
 def allocate_block(page_dir: Path) -> str:
-    """Reserves the next block id.
+    """다음 블록 id를 예약한다.
 
-    Ids grow and are never handed out twice. The last number is kept in
-    ``blocks/.last`` so ids of deleted blocks are not reused.
+    id는 늘어나기만 하고 두 번 내주지 않는다. 마지막 번호를
+    ``blocks/.last``에 보관해 삭제된 블록의 id를 다시 쓰지 않는다.
 
     Args:
-        page_dir: The page folder.
+        page_dir: 페이지 폴더.
 
     Returns:
-        The new block id.
+        새 블록 id.
     """
     n = max(_used_block_numbers(page_dir), default=0) + 1
     blocks = page_dir / BLOCKS_DIR
@@ -194,7 +194,7 @@ def allocate_block(page_dir: Path) -> str:
 
 
 def append_block(page_dir: Path, block_id: str) -> None:
-    """Adds ``block_id`` to the end of page.md ``blocks`` if it is missing."""
+    """``block_id``가 없으면 page.md ``blocks`` 끝에 추가한다."""
 
     def mutate(header: dict[str, Any]) -> None:
         blocks = [str(b) for b in header.get("blocks") or []]
@@ -206,14 +206,14 @@ def append_block(page_dir: Path, block_id: str) -> None:
 
 
 def block_files(page_dir: Path, block_id: str) -> list[Path]:
-    """Returns the files of a block in ``blocks/``, without sidecars.
+    """``blocks/``에 있는 블록의 파일을 부속 파일 없이 반환한다.
 
     Args:
-        page_dir: The page folder.
-        block_id: The block id.
+        page_dir: 페이지 폴더.
+        block_id: 블록 id.
 
     Returns:
-        Sorted paths, excluding ``.meta.yaml`` sidecars.
+        ``.meta.yaml`` 부속 파일을 뺀 정렬된 경로.
     """
     blocks = page_dir / BLOCKS_DIR
     if not blocks.is_dir() or parse_block_id(block_id) is None:
@@ -230,13 +230,13 @@ def block_files(page_dir: Path, block_id: str) -> list[Path]:
     )
 
 
-# creation
+# 생성
 
 
 def slugify(text: str) -> str:
-    """Returns a lowercase, hyphen separated slug of ``text``.
+    """``text``를 소문자와 하이픈으로 구분한 슬러그로 반환한다.
 
-    Letters of any script are kept. Falls back to ``page``.
+    어떤 문자 체계의 글자든 유지한다. 비면 ``page``를 쓴다.
     """
     norm = unicodedata.normalize("NFKC", text).strip().lower()
     slug = re.sub(r"[^\w]+", "-", norm).strip("-_")
@@ -246,20 +246,20 @@ def slugify(text: str) -> str:
 def create_space(
     home: Path, slug: str, *, title: str | None = None, repo: str | None = None
 ) -> Path:
-    """Creates ``spaces/<slug>/`` with space.md and an empty pages folder.
+    """space.md와 빈 pages 폴더를 가진 ``spaces/<slug>/``를 만든다.
 
     Args:
-        home: The app home directory.
-        slug: The space slug. Must already be a valid slug.
-        title: The space title. Defaults to the slug.
-        repo: The code repository path for space.md.
+        home: 앱 홈 디렉터리.
+        slug: 공간 슬러그. 이미 올바른 슬러그여야 한다.
+        title: 공간 제목. 기본값은 슬러그.
+        repo: space.md에 적을 코드 저장소 경로.
 
     Returns:
-        The space folder.
+        공간 폴더.
 
     Raises:
-        ValueError: The slug is invalid.
-        FileExistsError: The space already exists.
+        ValueError: 슬러그가 올바르지 않다.
+        FileExistsError: 공간이 이미 있다.
     """
     if slugify(slug) != slug:
         raise ValueError(f"invalid space slug '{slug}'")
@@ -269,9 +269,7 @@ def create_space(
     (space / PAGES_DIR).mkdir(parents=True, exist_ok=True)
     header = {"slug": slug, "title": title or slug, "repo": repo}
     (space / SPACE_FILE).write_text(
-        frontmatter.dumps(
-            header, "Notes shared by every page in this space.\n"
-        ),
+        frontmatter.dumps(header, "이 공간의 모든 페이지가 함께 쓰는 메모.\n"),
         "utf-8",
     )
     return space
@@ -303,25 +301,25 @@ def create_page(
     goal: str = "",
     day: date | None = None,
 ) -> Path:
-    """Creates a page folder with page.md, state.md, and log.md.
+    """page.md, state.md, log.md를 가진 페이지 폴더를 만든다.
 
-    The folder is ``spaces/<space>/pages/<YYYY-MM-DD-slug>/``.
+    폴더는 ``spaces/<space>/pages/<YYYY-MM-DD-slug>/``이다.
 
     Args:
-        home: The app home directory.
-        space: The space slug.
-        title: The page title.
-        slug: The page slug. Defaults to a slug of the title.
-        kind: The page kind.
-        goal: The goal written to state.md. Defaults to the title.
-        day: The date in the page id. Defaults to today.
+        home: 앱 홈 디렉터리.
+        space: 공간 슬러그.
+        title: 페이지 제목.
+        slug: 페이지 슬러그. 기본값은 제목의 슬러그.
+        kind: 페이지 종류.
+        goal: state.md에 적을 목표. 기본값은 제목.
+        day: 페이지 id에 들어갈 날짜. 기본값은 오늘.
 
     Returns:
-        The page folder.
+        페이지 폴더.
 
     Raises:
-        FileNotFoundError: The space does not exist.
-        FileExistsError: The page already exists.
+        FileNotFoundError: 공간이 없다.
+        FileExistsError: 페이지가 이미 있다.
     """
     space_dir = Path(home) / SPACES_DIR / space
     if not (space_dir / SPACE_FILE).is_file():
@@ -359,9 +357,9 @@ def create_page(
     return page_dir
 
 
-# helpers
+# 도우미
 
 
 def now() -> datetime:
-    """Returns the local time with its offset, to the second."""
+    """오프셋을 포함한 로컬 시각을 초 단위로 반환한다."""
     return datetime.now().astimezone().replace(microsecond=0)

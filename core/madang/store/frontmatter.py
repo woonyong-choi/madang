@@ -1,7 +1,7 @@
-"""YAML front matter: split a Markdown file into header and body and back.
+"""YAML 머리부: 마크다운 파일을 머리부와 본문으로 나누고 다시 합친다.
 
-``split`` followed by ``join`` returns the original text byte for byte, so
-callers can read the header without disturbing the body.
+``split`` 다음 ``join``은 원문을 바이트 단위로 그대로 돌려주므로,
+호출자는 본문을 건드리지 않고 머리부를 읽을 수 있다.
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ FENCE = "---"
 
 
 class FrontmatterError(ValueError):
-    """Front matter that cannot be split or parsed.
+    """나누거나 파싱할 수 없는 머리부.
 
     Attributes:
-        line: The 1-based file line of the problem, if known.
+        line: 문제가 있는 파일의 1부터 시작하는 줄 번호(알 수 있을 때).
     """
 
     def __init__(self, message: str, line: int | None = None) -> None:
@@ -29,11 +29,11 @@ class FrontmatterError(ValueError):
 
 @dataclass
 class Parts:
-    """A file cut at its front matter fences.
+    """머리부 울타리에서 잘라 낸 파일.
 
-    ``header`` is the raw YAML between the fences (``None`` when the file has
-    no front matter). ``open_nl``/``close_nl`` keep the fence line endings so
-    that ``join`` is lossless.
+    ``header``는 울타리 사이의 원본 YAML이다(머리부가 없으면 ``None``).
+    ``open_nl``/``close_nl``은 울타리 줄의 줄바꿈을 보존해 ``join``이
+    손실 없이 동작하게 한다.
     """
 
     header: str | None
@@ -43,12 +43,12 @@ class Parts:
 
     @property
     def header_line(self) -> int:
-        """1-based file line of the first header line."""
+        """머리부 첫 줄의 1부터 시작하는 파일 줄 번호."""
         return 2
 
     @property
     def body_line(self) -> int:
-        """1-based file line where the body starts."""
+        """본문이 시작하는 1부터 시작하는 파일 줄 번호."""
         if self.header is None:
             return 1
         return self.header.count("\n") + 3
@@ -63,17 +63,16 @@ def _line_ending(line: str) -> str:
 
 
 def split(text: str) -> Parts:
-    """Cuts a file at its front matter fences.
+    """파일을 머리부 울타리에서 자른다.
 
     Args:
-        text: The file contents.
+        text: 파일 내용.
 
     Returns:
-        The parts. ``header`` is None when the text does not start with
-        ``---``.
+        나눈 조각. 텍스트가 ``---``로 시작하지 않으면 ``header``는 None.
 
     Raises:
-        FrontmatterError: The front matter is not closed.
+        FrontmatterError: 머리부가 닫히지 않았다.
     """
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].rstrip("\r\n") != FENCE:
@@ -90,7 +89,7 @@ def split(text: str) -> Parts:
 
 
 def join(parts: Parts) -> str:
-    """Returns the file text for ``parts``; the inverse of ``split``."""
+    """``parts``의 파일 텍스트를 반환한다. ``split``의 역연산이다."""
     if parts.header is None:
         return parts.body
     return (
@@ -100,16 +99,16 @@ def join(parts: Parts) -> str:
 
 
 def load_header(parts: Parts) -> dict[str, Any]:
-    """Parses the header as a YAML mapping.
+    """머리부를 YAML 매핑으로 파싱한다.
 
     Args:
-        parts: The split file.
+        parts: 나눈 파일.
 
     Returns:
-        The header mapping, or an empty dict when there is none.
+        머리부 매핑. 머리부가 없으면 빈 dict.
 
     Raises:
-        FrontmatterError: The header is not valid YAML or not a mapping.
+        FrontmatterError: 머리부가 올바른 YAML이 아니거나 매핑이 아니다.
     """
     if parts.header is None:
         return {}
@@ -133,31 +132,31 @@ def load_header(parts: Parts) -> dict[str, Any]:
 
 
 def parse(text: str) -> tuple[dict[str, Any], str]:
-    """Parses a file into its header mapping and body.
+    """파일을 머리부 매핑과 본문으로 파싱한다.
 
     Args:
-        text: The file contents.
+        text: 파일 내용.
 
     Returns:
-        A ``(header, body)`` tuple.
+        ``(header, body)`` 튜플.
 
     Raises:
-        FrontmatterError: The front matter cannot be split or parsed.
+        FrontmatterError: 머리부를 나누거나 파싱할 수 없다.
     """
     parts = split(text)
     return load_header(parts), parts.body
 
 
 def read(path: Path) -> tuple[dict[str, Any], str]:
-    """Reads and parses a file as in ``parse``."""
+    """파일을 읽어 ``parse``처럼 파싱한다."""
     return parse(path.read_text(encoding="utf-8"))
 
 
 def dump_header(header: dict[str, Any]) -> str:
-    """Returns a header mapping as the YAML text between the fences."""
+    """머리부 매핑을 울타리 사이에 들어갈 YAML 텍스트로 반환한다."""
     return yaml.safe_dump(header, sort_keys=False, allow_unicode=True)
 
 
 def dumps(header: dict[str, Any], body: str) -> str:
-    """Returns new file text from a header mapping and a body."""
+    """머리부 매핑과 본문으로 새 파일 텍스트를 만들어 반환한다."""
     return join(Parts(header=dump_header(header), body=body))

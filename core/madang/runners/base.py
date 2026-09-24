@@ -1,7 +1,7 @@
-"""Runner protocol, tool-neutral run events, and the shared CLI driver.
+"""러너 프로토콜, 도구에 중립적인 실행 이벤트, 공용 CLI 구동기.
 
-Every run starts a fresh CLI process. The adapter only differs in how it turns
-one line of the tool's JSON stream into ``RunEvent`` values.
+실행마다 새 CLI 프로세스를 시작한다. 어댑터는 도구의 JSON 스트림 한 줄을
+``RunEvent`` 값으로 바꾸는 방식만 다르다.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ STDERR_TAIL_LINES = 50
 
 @dataclass(frozen=True)
 class Usage:
-    """Token counts. ``input`` includes cached tokens."""
+    """토큰 수. ``input``은 캐시된 토큰을 포함한다."""
 
     input: int = 0
     cached: int = 0
@@ -52,11 +52,11 @@ class Usage:
 
 @dataclass(frozen=True)
 class RunEvent:
-    """One normalized event. Only the fields that belong to ``type`` are set.
+    """정규화된 이벤트 하나. ``type``에 속한 필드만 채운다.
 
     text: ``text`` · tool_call: ``name``, ``summary`` ·
     tool_result: ``summary`` · file_changed: ``path`` · usage: ``usage`` ·
-    done: ``text`` (final answer) · error: ``message``.
+    done: ``text``(최종 답) · error: ``message``.
     """
 
     type: EventType
@@ -68,23 +68,23 @@ class RunEvent:
     message: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Returns the fields that are set, as a JSON-ready dict."""
+        """값이 있는 필드를 JSON에 바로 쓸 수 있는 dict로 반환한다."""
         return {k: v for k, v in asdict(self).items() if v is not None}
 
 
 @dataclass
 class RunResult:
-    """The outcome of one run.
+    """실행 한 번의 결과.
 
     Attributes:
-        status: How the run ended.
-        usage: Token counts reported by the tool.
-        final_text: The final answer.
-        events_log: The file that holds the raw stream, if any.
-        exit_code: The process exit code, or None when it did not start.
-        duration: Wall time in seconds.
-        error: Why the run did not finish, if it did not.
-        events: Every event emitted during the run.
+        status: 실행이 끝난 방식.
+        usage: 도구가 보고한 토큰 수.
+        final_text: 최종 답.
+        events_log: 원본 스트림을 담은 파일. 없을 수 있다.
+        exit_code: 프로세스 종료 코드. 시작하지 못했으면 None.
+        duration: 실제 경과 시간(초).
+        error: 실행이 끝나지 못했다면 그 이유.
+        events: 실행 중 발생한 모든 이벤트.
     """
 
     status: RunStatus
@@ -98,7 +98,7 @@ class RunResult:
 
     @property
     def changed_files(self) -> list[str]:
-        """Paths from ``file_changed`` events, in first-seen order."""
+        """``file_changed`` 이벤트의 경로. 처음 나온 순서."""
         seen: dict[str, None] = {}
         for event in self.events:
             if event.type == "file_changed" and event.path:
@@ -107,7 +107,7 @@ class RunResult:
 
 
 class Runner(Protocol):
-    """Something that runs one agent turn and reports events."""
+    """에이전트 턴 하나를 실행하고 이벤트를 보고하는 것."""
 
     name: str
 
@@ -120,19 +120,19 @@ class Runner(Protocol):
         effort: str,
         on_event: Callable[[RunEvent], None],
     ) -> RunResult:
-        """Runs once and blocks until the run ends."""
+        """한 번 실행하고 끝날 때까지 블록한다."""
         ...
 
 
 def summarize(value: Any, limit: int = SUMMARY_LIMIT) -> str:
-    """Returns ``value`` as one line of at most ``limit`` characters.
+    """``value``를 최대 ``limit``자의 한 줄로 반환한다.
 
     Args:
-        value: A string, or any JSON-serializable value.
-        limit: The maximum length. Longer lines end with an ellipsis.
+        value: 문자열 또는 JSON 직렬화 가능한 값.
+        limit: 최대 길이. 더 긴 줄은 말줄임표로 끝난다.
 
     Returns:
-        The summary line.
+        요약 줄.
     """
     if not isinstance(value, str):
         value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -141,7 +141,7 @@ def summarize(value: Any, limit: int = SUMMARY_LIMIT) -> str:
 
 
 class StreamParser(Protocol):
-    """Turns decoded JSON lines into events and keeps the run's outcome."""
+    """디코딩된 JSON 줄을 이벤트로 바꾸고 실행 결과를 보관한다."""
 
     final_text: str
     usage: Usage | None
@@ -149,7 +149,7 @@ class StreamParser(Protocol):
     finished: bool
 
     def feed(self, obj: dict[str, Any]) -> list[RunEvent]:
-        """Returns the events for one decoded JSON line."""
+        """디코딩된 JSON 한 줄에 대한 이벤트를 반환한다."""
         ...
 
 
@@ -157,17 +157,17 @@ _VAR = re.compile(r"\{([a-z_]+)\}")
 
 
 def render_args(args: list[str], values: Mapping[str, str | None]) -> list[str]:
-    """Substitutes ``{name}`` placeholders in runner arguments.
+    """러너 인자의 ``{name}`` 자리표시자를 치환한다.
 
     Args:
-        args: Argument templates.
-        values: Placeholder values. None means unset for this run.
+        args: 인자 템플릿.
+        values: 자리표시자 값. None이면 이번 실행에서 미설정.
 
     Returns:
-        The rendered arguments.
+        치환된 인자.
 
     Raises:
-        ValueError: A placeholder is unknown or unset.
+        ValueError: 자리표시자를 모르거나 값이 없다.
     """
 
     def sub(match: re.Match[str]) -> str:
@@ -185,15 +185,15 @@ def render_args(args: list[str], values: Mapping[str, str | None]) -> list[str]:
 
 
 class CliRunner:
-    """Runs a subscription CLI as a fresh subprocess and parses its stream.
+    """구독형 CLI를 새 서브프로세스로 실행하고 스트림을 파싱한다.
 
-    Subclasses set ``name`` and implement ``new_parser``.
+    하위 클래스는 ``name``을 정하고 ``new_parser``를 구현한다.
 
     Attributes:
-        spec: How to start the CLI.
-        home: The app home passed to the agent.
-        core_url: The core API URL passed to the agent, if any.
-        kill_grace: Seconds between SIGTERM and SIGKILL when stopping.
+        spec: CLI를 시작하는 방법.
+        home: 에이전트에 넘길 앱 홈.
+        core_url: 에이전트에 넘길 core API URL. 없을 수 있다.
+        kill_grace: 중지할 때 SIGTERM과 SIGKILL 사이의 초.
     """
 
     name: str = ""
@@ -215,7 +215,7 @@ class CliRunner:
         self._stop_reason: RunStatus | None = None
 
     def new_parser(self) -> StreamParser:
-        """Returns a fresh parser for one run's stream."""
+        """실행 하나의 스트림용 새 파서를 반환한다."""
         raise NotImplementedError
 
     def command(
@@ -227,22 +227,22 @@ class CliRunner:
         effort: str,
         page: str | None = None,
     ) -> list[str]:
-        """Builds the command line for one run.
+        """실행 한 번의 명령줄을 만든다.
 
-        The prompt is appended after ``--`` unless the arguments place it.
+        인자가 프롬프트 위치를 정하지 않으면 ``--`` 뒤에 프롬프트를 붙인다.
 
         Args:
-            cwd: The working directory of the run.
-            prompt: The prompt.
-            model: The model name.
-            effort: The reasoning effort.
-            page: The page id, if the run belongs to a page.
+            cwd: 실행의 작업 디렉터리.
+            prompt: 프롬프트.
+            model: 모델 이름.
+            effort: 추론 강도.
+            page: 페이지 id. 실행이 페이지에 속하는 경우.
 
         Returns:
-            The command and its arguments.
+            명령과 그 인자.
 
         Raises:
-            ValueError: An argument placeholder is unknown or unset.
+            ValueError: 인자 자리표시자를 모르거나 값이 없다.
         """
         values = {
             "model": model,
@@ -255,18 +255,18 @@ class CliRunner:
         uses_prompt = any("{prompt}" in arg for arg in self.spec.args)
         args = render_args(self.spec.args, values)
         if not uses_prompt:
-            # "--" keeps a prompt starting with "-" from reading as an option.
+            # "--"는 "-"로 시작하는 프롬프트가 옵션으로 읽히지 않게 한다.
             args += ["--", prompt]
         return [self.spec.bin, *args]
 
     def environment(self, page: str | None) -> dict[str, str]:
-        """Returns the process environment with the madang variables set.
+        """Madang 변수를 설정한 프로세스 환경을 반환한다.
 
         Args:
-            page: The page id, or None to remove ``MADANG_PAGE``.
+            page: 페이지 id. None이면 ``MADANG_PAGE``를 제거한다.
 
         Returns:
-            A copy of ``os.environ`` with the madang variables applied.
+            madang 변수를 적용한 ``os.environ`` 복사본.
         """
         env = dict(os.environ)
         env[HOME_ENV] = str(self.home)
@@ -290,24 +290,24 @@ class CliRunner:
         timeout: float | None = None,
         events_log: Path | None = None,
     ) -> RunResult:
-        """Runs once and blocks until the process ends.
+        """한 번 실행하고 프로세스가 끝날 때까지 블록한다.
 
         Args:
-            cwd: The working directory of the run.
-            prompt: The prompt.
-            model: The model name.
-            effort: The reasoning effort.
-            on_event: Called with each event as it arrives.
-            page: The page id, if the run belongs to a page.
-            timeout: Seconds before the whole process group is stopped and
-                the run ends as ``blocked``.
-            events_log: A file the raw stream is appended to line by line.
+            cwd: 실행의 작업 디렉터리.
+            prompt: 프롬프트.
+            model: 모델 이름.
+            effort: 추론 강도.
+            on_event: 이벤트가 도착할 때마다 호출된다.
+            page: 페이지 id. 실행이 페이지에 속하는 경우.
+            timeout: 프로세스 그룹 전체를 중지하고 실행을
+                ``blocked``로 끝내기까지의 초.
+            events_log: 원본 스트림을 줄 단위로 덧붙일 파일.
 
         Returns:
-            The result of the run.
+            실행 결과.
 
         Raises:
-            ValueError: An argument placeholder is unknown or unset.
+            ValueError: 인자 자리표시자를 모르거나 값이 없다.
         """
         cmd = self.command(
             cwd=cwd, prompt=prompt, model=model, effort=effort, page=page
@@ -410,9 +410,9 @@ class CliRunner:
         )
 
     def cancel(self) -> None:
-        """Stops the running process group, if any.
+        """실행 중인 프로세스 그룹이 있으면 중지한다.
 
-        The run ends as ``cancelled``.
+        실행은 ``cancelled``로 끝난다.
         """
         self._stop("cancelled")
 

@@ -1,1 +1,1 @@
-"""Process supervision (not implemented yet)."""
+"""프로세스 감독(아직 구현되지 않았다)."""

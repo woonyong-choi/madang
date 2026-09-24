@@ -1,4 +1,4 @@
-home_remote: null   # optional, e.g. git@github.com:<user>/madang-home.git
+home_remote: null   # 선택. 예: git@github.com:<user>/madang-home.git
 core:
   port: 7470
   bind: 127.0.0.1

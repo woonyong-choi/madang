@@ -1,7 +1,7 @@
 # Root
 
-Notes every agent reads on every run. Keep this short: who you are, how you like to work,
-and rules that apply across all spaces.
+모든 에이전트가 매 실행마다 읽는 노트. 짧게 유지한다: 나는 누구인지, 어떻게 일하길
+원하는지, 모든 스페이스에 적용되는 규칙.
 
 ## About me
 

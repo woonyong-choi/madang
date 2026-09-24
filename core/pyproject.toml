@@ -55,10 +55,10 @@ select = [
     "PLW",
 ]
 ignore = [
-    "D105",  # Magic methods are self-describing.
-    "D107",  # __init__ arguments are documented on the class.
-    "PLC0415",  # Lazy imports keep CLI startup light.
-    "PLW2901",  # Loop variable rebinding is idiomatic for normalisation.
+    "D105",  # 매직 메서드는 이름만으로 뜻이 드러난다.
+    "D107",  # __init__ 인자는 클래스 docstring에 적는다.
+    "PLC0415",  # 지연 import로 CLI 시작을 가볍게 한다.
+    "PLW2901",  # 정규화 시 루프 변수 재할당은 관용적이다.
 ]
 
 [tool.ruff.lint.per-file-ignores]

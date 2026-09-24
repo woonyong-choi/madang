@@ -1,4 +1,4 @@
-"""Claude Code adapter: ``claude -p --output-format stream-json --verbose``."""
+"""Claude Code 어댑터: ``claude -p --output-format stream-json --verbose``."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from typing import Any
 
 from madang.runners.base import CliRunner, RunEvent, Usage, summarize
 
-# Tools whose successful result means the file at ``file_path`` was written.
+# 성공 결과가 ``file_path`` 파일을 썼다는 뜻인 도구.
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
-# Input key that best describes a call, by tool name.
+# 도구 이름별로 호출을 가장 잘 설명하는 입력 키.
 _SUMMARY_KEYS = {
     "Bash": "command",
     "Read": "file_path",
@@ -25,7 +25,7 @@ _SUMMARY_KEYS = {
 
 
 class ClaudeStreamParser:
-    """Maps ``system``/``assistant``/``user``/``result`` lines to run events."""
+    """``system``/``assistant``/``user``/``result`` 줄을 이벤트로 옮긴다."""
 
     def __init__(self) -> None:
         self.final_text = ""
@@ -35,7 +35,7 @@ class ClaudeStreamParser:
         self._pending_writes: dict[str, str] = {}
 
     def feed(self, obj: dict[str, Any]) -> list[RunEvent]:
-        """Returns the events for one decoded JSON line."""
+        """디코딩된 JSON 한 줄에 대한 이벤트를 반환한다."""
         kind = obj.get("type")
         if kind == "assistant":
             return self._assistant(obj)
@@ -138,10 +138,10 @@ def _usage(raw: dict[str, Any]) -> Usage:
 
 
 class ClaudeRunner(CliRunner):
-    """Runs the Claude Code."""
+    """Claude Code를 실행한다."""
 
     name = "claude"
 
     def new_parser(self) -> ClaudeStreamParser:
-        """Returns a fresh claude stream parser."""
+        """새 claude 스트림 파서를 반환한다."""
         return ClaudeStreamParser()

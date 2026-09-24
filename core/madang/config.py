@@ -1,4 +1,4 @@
-"""App home location and config file loading."""
+"""앱 홈 위치와 설정 파일 로딩."""
 
 from __future__ import annotations
 
@@ -24,21 +24,21 @@ class _Model(BaseModel):
 
 
 class CoreSettings(_Model):
-    """Where the core API listens."""
+    """코어 API가 대기하는 주소."""
 
     port: int = 7470
     bind: str = "127.0.0.1"
 
 
 class AgentSettings(_Model):
-    """Paths of the agent tools' own config files."""
+    """에이전트 도구 자체 설정 파일의 경로."""
 
     claude_settings: str = "~/.claude/settings.json"
     codex_config: str = "~/.codex/config.toml"
 
 
 class Limits(_Model):
-    """Size and time limits for pages and runs."""
+    """페이지와 실행의 크기·시간 제한."""
 
     state_tokens: int = 2000
     block_input_tokens: int = 4000
@@ -54,13 +54,13 @@ class Limits(_Model):
 
 
 class UiSettings(_Model):
-    """Desktop app preferences."""
+    """데스크톱 앱 환경설정."""
 
     language: str = "ko"
 
 
 class MadangConfig(_Model):
-    """Global settings from ``config/madang.yaml``."""
+    """``config/madang.yaml``의 전역 설정."""
 
     home_remote: str | None = None
     core: CoreSettings = Field(default_factory=CoreSettings)
@@ -73,7 +73,7 @@ class MadangConfig(_Model):
 
 
 class Tier(_Model):
-    """One runner and model choice for a kind of run."""
+    """실행 종류별 러너와 모델 선택 하나."""
 
     runner: str
     model: str
@@ -81,21 +81,21 @@ class Tier(_Model):
 
 
 class RouteLimits(_Model):
-    """Limits on how many runs one message may start."""
+    """메시지 하나가 시작할 수 있는 실행 수의 제한."""
 
     max_runs_per_message: int = 6
     blocked_after_failures: int = 2
 
 
 class DeciderSettings(_Model):
-    """Which deciders pick a kind, and how sure they must be."""
+    """종류를 고르는 판정기와 필요한 확신도."""
 
     chain: list[str] = Field(default_factory=lambda: ["rules", "light_model"])
     min_confidence: float = 0.7
 
 
 class RoutesConfig(_Model):
-    """The routing table from ``config/routes.yaml``."""
+    """``config/routes.yaml``의 라우팅 표."""
 
     kinds: list[str]
     default_kind: str
@@ -110,7 +110,7 @@ class RoutesConfig(_Model):
 
 
 class RunnerSpec(_Model):
-    """How to start one agent CLI, from ``config/runners.yaml``."""
+    """``config/runners.yaml``의 에이전트 CLI 하나를 시작하는 방법."""
 
     bin: str
     args: list[str] = Field(default_factory=list)
@@ -119,7 +119,7 @@ class RunnerSpec(_Model):
 
 
 class Config(BaseModel):
-    """Everything loaded from the app home ``config/`` folder."""
+    """앱 홈 ``config/`` 폴더에서 읽은 모든 설정."""
 
     home: Path
     madang: MadangConfig
@@ -128,27 +128,27 @@ class Config(BaseModel):
 
 
 def resolve_home(home: str | os.PathLike[str] | None = None) -> Path:
-    """Returns the app home directory.
+    """앱 홈 폴더를 반환한다.
 
     Args:
-        home: An explicit path. Takes precedence over ``MADANG_HOME``, which
-            takes precedence over ``~/.madang``.
+        home: 명시한 경로. ``MADANG_HOME``보다, ``MADANG_HOME``은
+            ``~/.madang``보다 우선한다.
 
     Returns:
-        The absolute app home path.
+        앱 홈의 절대 경로.
     """
     raw = home if home is not None else os.environ.get(HOME_ENV) or DEFAULT_HOME
     return Path(raw).expanduser().resolve()
 
 
 def default_text(name: str) -> str:
-    """Returns the text of a bundled default file.
+    """번들된 기본 파일의 텍스트를 반환한다.
 
     Args:
-        name: A file name in ``madang/defaults``.
+        name: ``madang/defaults``의 파일 이름.
 
     Returns:
-        The file contents.
+        파일 내용.
     """
     return (
         resources.files("madang")
@@ -168,20 +168,20 @@ def _read_yaml(path: Path, name: str) -> dict[str, Any]:
 
 
 def load_config(home: str | os.PathLike[str] | None = None) -> Config:
-    """Loads ``config/*.yaml`` from the app home.
+    """앱 홈의 ``config/*.yaml``을 읽는다.
 
-    Missing files fall back to the bundled defaults.
+    없는 파일은 번들된 기본값으로 대신한다.
 
     Args:
-        home: The app home, resolved as in ``resolve_home``.
+        home: 앱 홈. ``resolve_home``과 같이 해석한다.
 
     Returns:
-        The loaded configuration.
+        읽은 설정.
 
     Raises:
-        OSError: A config file cannot be read.
-        yaml.YAMLError: A config file is not valid YAML.
-        pydantic.ValidationError: A config file does not match its schema.
+        OSError: 설정 파일을 읽을 수 없는 경우.
+        yaml.YAMLError: 설정 파일이 올바른 YAML이 아닌 경우.
+        pydantic.ValidationError: 설정 파일이 스키마와 맞지 않는 경우.
     """
     root = resolve_home(home)
     cfg = root / CONFIG_DIR

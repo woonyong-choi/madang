@@ -1,6 +1,6 @@
-"""What each agent command does to the page.
+"""각 에이전트 명령이 페이지에 하는 일.
 
-Every write is validated and undone on failure.
+모든 쓰기는 검증하며 실패하면 되돌린다.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ PROMOTE_DIR = "docs"
 DATA_SUFFIXES = (".json", ".csv", ".source.yaml")
 TEMPLATES_ENV = "MADANG_TEMPLATES"
 
-# Templates bundled with the app: name -> (version, [(slot, required)]).
+# 앱에 포함된 템플릿: 이름 -> (버전, [(슬롯, 필수 여부)]).
 BUILTIN_TEMPLATES: dict[str, tuple[int, list[tuple[str, bool]]]] = {
     "table": (1, [("data", True)]),
     "decisions": (1, [("state", True)]),
@@ -72,20 +72,20 @@ def set_task(
     title: str | None = None,
     due: str | None = None,
 ) -> str:
-    """Adds a task to state.md or updates an existing one.
+    """state.md에 태스크를 추가하거나 기존 태스크를 갱신한다.
 
     Args:
-        ctx: The page to change.
-        task_id: The task id.
-        status: The new status, one of ``TASK_STATUSES``.
-        title: The task title. Required for a new task.
-        due: The due date as ``YYYY-MM-DD``.
+        ctx: 변경할 페이지.
+        task_id: 태스크 id.
+        status: 새 상태. ``TASK_STATUSES`` 중 하나.
+        title: 태스크 제목. 새 태스크는 필수.
+        due: 마감일. ``YYYY-MM-DD``.
 
     Returns:
-        A one-line summary for the caller.
+        호출자에게 보여 줄 한 줄 요약.
 
     Raises:
-        AgentError: An argument is invalid or the page fails validation.
+        AgentError: 인자가 잘못됐거나 페이지 검증에 실패했다.
     """
     _check_id(task_id, "task")
     if status not in TASK_STATUSES:
@@ -142,24 +142,24 @@ def decide(
     state: str = "confirmed",
     by: str | None = None,
 ) -> str:
-    """Records a new decision in state.md.
+    """state.md에 새 결정을 기록한다.
 
     Args:
-        ctx: The page to change.
-        decision_id: The id of the new decision.
-        topic: What was decided.
-        choice: The chosen option. Must be one of ``options``.
-        options: Comma separated options.
-        supersedes: The id of an existing decision this one replaces.
-        state: The decision state, one of ``DECISION_STATES``.
-        by: Who decided. See ``PageContext.by``.
+        ctx: 변경할 페이지.
+        decision_id: 새 결정의 id.
+        topic: 무엇을 결정했는지.
+        choice: 선택한 옵션. ``options`` 중 하나여야 한다.
+        options: 쉼표로 구분한 옵션.
+        supersedes: 이 결정이 대체하는 기존 결정의 id.
+        state: 결정 상태. ``DECISION_STATES`` 중 하나.
+        by: 결정한 사람. ``PageContext.by`` 참고.
 
     Returns:
-        A one-line summary for the caller.
+        호출자에게 보여 줄 한 줄 요약.
 
     Raises:
-        AgentError: An argument is invalid, the id already exists, or the
-            page fails validation.
+        AgentError: 인자가 잘못됐거나, id가 이미 있거나, 페이지 검증에
+            실패했다.
     """
     _check_id(decision_id, "decision")
     opts = [o.strip() for o in options.split(",") if o.strip()]
@@ -224,20 +224,20 @@ def _within(path: Path, base: Path) -> str | None:
 
 
 def artifact_entry(ctx: PageContext, raw: str, cwd: Path | None = None) -> str:
-    """Normalizes a path to a state.md artifact entry.
+    """경로를 state.md 산출물 항목으로 정규화한다.
 
     Args:
-        ctx: The page the artifact belongs to.
-        raw: A path relative to the page or ``cwd``, an absolute path, or
-            ``repo:<path>``.
-        cwd: The directory relative paths are resolved against. Defaults to
-            the current directory.
+        ctx: 산출물이 속한 페이지.
+        raw: 페이지 또는 ``cwd`` 기준 상대 경로, 절대 경로,
+            또는 ``repo:<path>``.
+        cwd: 상대 경로를 해석할 기준 디렉터리. 기본값은 현재
+            디렉터리.
 
     Returns:
-        ``blocks/...`` (relative to the page) or ``repo:<path>``.
+        ``blocks/...``(페이지 기준) 또는 ``repo:<path>``.
 
     Raises:
-        AgentError: The path is outside the page and the code repository.
+        AgentError: 경로가 페이지와 코드 저장소 밖에 있다.
     """
     if raw.startswith(REPO_PREFIX):
         return REPO_PREFIX + Path(raw[len(REPO_PREFIX) :]).as_posix()
@@ -270,18 +270,18 @@ def _register(header: dict[str, Any], entry: str) -> bool:
 
 
 def add_artifact(ctx: PageContext, raw: str, cwd: Path | None = None) -> str:
-    """Registers a file as an artifact in state.md.
+    """파일을 state.md의 산출물로 등록한다.
 
     Args:
-        ctx: The page to change.
-        raw: The file, as accepted by ``artifact_entry``.
-        cwd: The directory relative paths are resolved against.
+        ctx: 변경할 페이지.
+        raw: 파일. ``artifact_entry``가 받는 형식.
+        cwd: 상대 경로를 해석할 기준 디렉터리.
 
     Returns:
-        A one-line summary for the caller.
+        호출자에게 보여 줄 한 줄 요약.
 
     Raises:
-        AgentError: The path is not allowed or the page fails validation.
+        AgentError: 허용되지 않는 경로이거나 페이지 검증에 실패했다.
     """
     entry = artifact_entry(ctx, raw, cwd)
     added = False
@@ -303,33 +303,33 @@ def add_artifact(ctx: PageContext, raw: str, cwd: Path | None = None) -> str:
 
 
 def commit(ctx: PageContext, message: str) -> str:
-    """Commits every change in the space's code repository.
+    """스페이스 코드 저장소의 모든 변경을 커밋한다.
 
     Args:
-        ctx: The page whose space owns the repository.
-        message: The commit message.
+        ctx: 저장소를 소유한 스페이스의 페이지.
+        message: 커밋 메시지.
 
     Returns:
-        A one-line summary for the caller.
+        호출자에게 보여 줄 한 줄 요약.
 
     Raises:
-        AgentError: The space has no repository or the commit is refused.
+        AgentError: 스페이스에 저장소가 없거나 커밋이 거절됐다.
     """
     repo = coderepo.require_repo(ctx)
     return f"committed {coderepo.commit_all(repo, message)} in {repo}"
 
 
 def push(ctx: PageContext) -> str:
-    """Pushes the current branch of the space's code repository.
+    """스페이스 코드 저장소의 현재 브랜치를 푸시한다.
 
     Args:
-        ctx: The page whose space owns the repository.
+        ctx: 저장소를 소유한 스페이스의 페이지.
 
     Returns:
-        A one-line summary for the caller.
+        호출자에게 보여 줄 한 줄 요약.
 
     Raises:
-        AgentError: The space has no repository or the push is refused.
+        AgentError: 스페이스에 저장소가 없거나 푸시가 거절됐다.
     """
     repo = coderepo.require_repo(ctx)
     remote, branch = coderepo.push_current(repo)
@@ -348,18 +348,18 @@ def _promoted_name(block_id: str, source: Path) -> str:
 
 
 def promote(ctx: PageContext, block_id: str) -> str:
-    """Copies a block file to the code repository and commits it.
+    """블록 파일을 코드 저장소로 복사하고 커밋한다.
 
     Args:
-        ctx: The page that owns the block.
-        block_id: The block id, ``bNN``.
+        ctx: 블록을 소유한 페이지.
+        block_id: 블록 id, ``bNN``.
 
     Returns:
-        A one-line summary for the caller.
+        호출자에게 보여 줄 한 줄 요약.
 
     Raises:
-        AgentError: The block cannot be promoted or the page fails
-            validation.
+        AgentError: 블록을 승격할 수 없거나 페이지 검증에
+            실패했다.
     """
     repo = coderepo.require_repo(ctx)
     if pages.parse_block_id(block_id) is None:
@@ -431,20 +431,19 @@ def _read_template(path: Path) -> tuple[int, list[tuple[str, bool]]]:
 def find_template(
     ctx: PageContext, spec: str
 ) -> tuple[str, int, list[tuple[str, bool]]]:
-    """Finds a template by name.
+    """이름으로 템플릿을 찾는다.
 
-    Searches the app home ``templates/``, then ``MADANG_TEMPLATES``, then the
-    built-in templates.
+    앱 홈 ``templates/``, ``MADANG_TEMPLATES``, 내장 템플릿 순으로 찾는다.
 
     Args:
-        ctx: The page the view is created in.
-        spec: ``name`` or ``name@version``.
+        ctx: 뷰를 만드는 페이지.
+        spec: ``name`` 또는 ``name@version``.
 
     Returns:
-        A ``(name, version, slots)`` tuple. Each slot is ``(slot, required)``.
+        ``(name, version, slots)`` 튜플. 각 슬롯은 ``(slot, required)``.
 
     Raises:
-        AgentError: The template is invalid, missing, or of another version.
+        AgentError: 템플릿이 잘못됐거나, 없거나, 버전이 다르다.
     """
     name, _, want = spec.partition("@")
     if not name or not _ID.match(name):
@@ -506,20 +505,20 @@ def _bindings(
 def create_view(
     ctx: PageContext, template: str, data: list[str], title: str | None = None
 ) -> str:
-    """Creates a view block bound to data blocks and appends it to page.md.
+    """데이터 블록에 묶인 뷰 블록을 만들어 page.md에 덧붙인다.
 
     Args:
-        ctx: The page to change.
-        template: The template, as accepted by ``find_template``.
-        data: Data block ids for the free slots in order, or ``slot=bNN``.
-        title: The view title.
+        ctx: 변경할 페이지.
+        template: 템플릿. ``find_template``가 받는 형식.
+        data: 빈 슬롯에 순서대로 넣을 데이터 블록 id 또는 ``slot=bNN``.
+        title: 뷰 제목.
 
     Returns:
-        A one-line summary for the caller.
+        호출자에게 보여 줄 한 줄 요약.
 
     Raises:
-        AgentError: The template or bindings are invalid, or the page fails
-            validation.
+        AgentError: 템플릿이나 바인딩이 잘못됐거나 페이지 검증에
+            실패했다.
     """
     name, version, slots = find_template(ctx, template)
     bindings = _bindings(ctx, slots, data)

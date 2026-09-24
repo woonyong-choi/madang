@@ -1,4 +1,4 @@
-"""Thin wrapper around the git CLI for the app home repository."""
+"""앱 홈 저장소용 git CLI 얇은 래퍼."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ TIMEOUT_SECONDS = 60.0
 
 
 class GitError(RuntimeError):
-    """A git command failed or git is not installed."""
+    """git 명령이 실패했거나 git이 설치되어 있지 않다."""
 
 
 def run(
@@ -22,19 +22,19 @@ def run(
     check: bool = True,
     timeout: float = TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
-    """Runs git in ``repo`` without a terminal prompt.
+    """터미널 프롬프트 없이 ``repo``에서 git을 실행한다.
 
     Args:
-        repo: The repository directory.
-        *args: The git arguments.
-        check: Whether a non-zero exit raises.
-        timeout: Seconds before git is stopped.
+        repo: 저장소 디렉터리.
+        *args: git 인자.
+        check: 0이 아닌 종료 코드에서 예외를 던질지 여부.
+        timeout: git을 중단하기까지의 초.
 
     Returns:
-        The finished process with text output.
+        텍스트 출력을 가진 종료된 프로세스.
 
     Raises:
-        GitError: git is missing, times out, or fails and ``check`` is true.
+        GitError: git이 없거나, 시간 초과되거나, ``check``가 참일 때 실패했다.
     """
     try:
         proc = subprocess.run(
@@ -58,30 +58,30 @@ def run(
 
 
 def is_repo(repo: Path) -> bool:
-    """Returns whether ``repo`` has a ``.git`` entry."""
+    """``repo``에 ``.git`` 항목이 있는지 반환한다."""
     return (repo / ".git").exists()
 
 
 def init(repo: Path) -> None:
-    """Creates a repository with ``main`` as the initial branch."""
+    """``main``을 초기 브랜치로 하는 저장소를 만든다."""
     run(repo, "init", "-q", "-b", "main")
 
 
 def add(repo: Path, paths: Sequence[str]) -> None:
-    """Stages ``paths``. Does nothing when ``paths`` is empty."""
+    """``paths``를 스테이징한다. 비어 있으면 아무것도 하지 않는다."""
     if paths:
         run(repo, "add", "--", *paths)
 
 
 def committed_paths(repo: Path, paths: Sequence[str]) -> set[str]:
-    """Returns the subset of ``paths`` present in HEAD.
+    """``paths`` 중 HEAD에 있는 부분집합을 반환한다.
 
     Args:
-        repo: The repository directory.
-        paths: Paths relative to the repository.
+        repo: 저장소 디렉터리.
+        paths: 저장소 기준 상대 경로.
 
     Returns:
-        The committed paths; empty when there is no commit yet.
+        커밋된 경로. 아직 커밋이 없으면 빈 집합.
     """
     if not paths:
         return set()
@@ -94,7 +94,7 @@ def committed_paths(repo: Path, paths: Sequence[str]) -> set[str]:
 
 
 def has_staged_changes(repo: Path) -> bool:
-    """Returns whether the index differs from HEAD."""
+    """인덱스가 HEAD와 다른지 반환한다."""
     return run(repo, "diff", "--cached", "--quiet", check=False).returncode != 0
 
 
@@ -114,19 +114,19 @@ def commit(
     *,
     unsigned: bool = False,
 ) -> None:
-    """Commits staged changes.
+    """스테이징된 변경을 커밋한다.
 
-    A fallback identity is used when the repository has none.
+    저장소에 작성자 정보가 없으면 대체 정보를 쓴다.
 
     Args:
-        repo: The repository directory.
-        message: The commit message.
-        paths: Limits the commit to these paths when given.
-        unsigned: Skips commit signing, so a headless commit never waits for
-            a signing prompt.
+        repo: 저장소 디렉터리.
+        message: 커밋 메시지.
+        paths: 주어지면 커밋을 이 경로들로 제한한다.
+        unsigned: 커밋 서명을 건너뛰어, 헤드리스 커밋이 서명 프롬프트를
+            기다리지 않게 한다.
 
     Raises:
-        GitError: The commit fails.
+        GitError: 커밋이 실패했다.
     """
     extra = ["--", *paths] if paths else []
     sign = ["-c", "commit.gpgsign=false"] if unsigned else []
@@ -143,28 +143,28 @@ def commit(
 
 
 def head(repo: Path) -> str:
-    """Returns the short hash of HEAD."""
+    """HEAD의 짧은 해시를 반환한다."""
     return run(repo, "rev-parse", "--short", "HEAD").stdout.strip()
 
 
 def log_oneline(repo: Path) -> list[str]:
-    """Returns ``git log --oneline`` lines; empty when there is no commit."""
+    """``git log --oneline`` 줄을 반환한다. 커밋이 없으면 빈 목록."""
     out = run(repo, "log", "--oneline", check=False).stdout
     return [line for line in out.splitlines() if line]
 
 
 def status(directory: Path) -> dict[str, str]:
-    """Returns the changed and untracked files under ``directory``.
+    """``directory`` 아래의 변경된 파일과 추적 안 되는 파일을 반환한다.
 
     Args:
-        directory: A folder inside a work tree.
+        directory: 작업 트리 안의 폴더.
 
     Returns:
-        Each path, relative to ``directory``, mapped to its two-letter
-        ``git status --porcelain`` code (``??`` for untracked files).
+        ``directory`` 기준 상대 경로별 두 글자 ``git status --porcelain``
+        코드(추적 안 되는 파일은 ``??``).
 
     Raises:
-        GitError: ``directory`` is not in a work tree, or git fails.
+        GitError: ``directory``가 작업 트리 안이 아니거나 git이 실패했다.
     """
     prefix = run(directory, "rev-parse", "--show-prefix").stdout.strip()
     out = run(
@@ -183,6 +183,6 @@ def status(directory: Path) -> dict[str, str]:
             continue
         code, path = entry[:2], entry[3:]
         if "R" in code or "C" in code:
-            next(entries, None)  # original name of a rename or copy
+            next(entries, None)  # 이름 변경·복사의 원래 이름
         found[path.removeprefix(prefix)] = code
     return found

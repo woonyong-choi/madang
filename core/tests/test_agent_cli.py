@@ -80,7 +80,7 @@ def refused(*args: str, match: str = ""):
     return result
 
 
-# page selection
+# 페이지 선택
 
 
 def test_refuses_without_page(
@@ -145,7 +145,7 @@ def test_app_home_is_not_committed(env: Env) -> None:
     assert git.log_oneline(env.home) == before
 
 
-# task
+# 과업
 
 
 def test_task_add_and_update(env: Env) -> None:
@@ -211,7 +211,7 @@ def test_write_rolled_back_when_page_is_invalid(env: Env) -> None:
     assert state.read_bytes() == before
 
 
-# decide
+# 결정
 
 
 def test_decide_and_supersede(env: Env) -> None:
@@ -344,7 +344,7 @@ def test_decide_refusals(env: Env) -> None:
     assert (env.page / "state.md").read_bytes() == before
 
 
-# artifact
+# 산출물
 
 
 def test_artifact_add(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -377,7 +377,7 @@ def test_artifact_refusals(env: Env, tmp_path: Path) -> None:
     assert (env.page / "state.md").read_bytes() == before
 
 
-# commit
+# 커밋
 
 
 def test_commit(env: Env) -> None:
@@ -412,7 +412,7 @@ def test_commit_refused_without_repo(env: Env) -> None:
     refused("commit", "-m", "x", match="does not exist")
 
 
-# push
+# 푸시
 
 
 def add_remote(env: Env, tmp_path: Path) -> Path:
@@ -450,7 +450,7 @@ def test_push_refusals(env: Env, tmp_path: Path) -> None:
     refused("push", match="detached")
 
 
-# promote
+# 승격
 
 
 def test_promote(env: Env) -> None:
@@ -487,7 +487,7 @@ def test_promote_rolled_back_when_page_is_invalid(env: Env) -> None:
     assert len(sh(env.repo, "log", "--oneline").splitlines()) == 1
 
 
-# view
+# 보기
 
 
 def test_view_create(env: Env) -> None:
@@ -627,7 +627,7 @@ def test_view_rolled_back_when_page_is_invalid(env: Env) -> None:
     assert not list((env.page / "blocks").glob("*.view.md"))
 
 
-# help
+# 도움말
 
 
 def test_help() -> None:

@@ -62,7 +62,7 @@ def test_write_and_read(page_dir: Path) -> None:
     assert data["custom"] == "kept"
     assert runs.read_run(page_dir, 1) == record
     assert runs.list_runs(page_dir) == [1]
-    # readable by the validator's run lookup
+    # 검증기의 run 조회로 읽을 수 있다
     assert latest_run(page_dir)[1]["n"] == 1
     assert not list((page_dir / "runs").glob("*.tmp"))
 

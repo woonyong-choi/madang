@@ -1,7 +1,7 @@
-"""Code repository operations: commit, push to the current branch, file status.
+"""코드 저장소 작업: 커밋, 현재 브랜치 푸시, 파일 상태.
 
-Push never forces and only ever sends the checked-out branch to the branch of
-the same name.
+푸시는 강제로 하지 않으며, 체크아웃된 브랜치를 같은 이름의 브랜치로만
+보낸다.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from madang.cli_agent.context import AgentError, PageContext
 from madang.store import git
 
-# File names that must not be committed by an agent.
+# 에이전트가 커밋하면 안 되는 파일 이름.
 SENSITIVE_NAMES = (
     ".env",
     ".env.*",
@@ -33,16 +33,16 @@ SENSITIVE_NAMES = (
 
 
 def require_repo(ctx: PageContext) -> Path:
-    """Returns the space's code repository.
+    """스페이스의 코드 저장소를 반환한다.
 
     Args:
-        ctx: The page whose space owns the repository.
+        ctx: 저장소를 소유한 스페이스의 페이지.
 
     Returns:
-        The repository work tree.
+        저장소 워크 트리.
 
     Raises:
-        AgentError: The space has no repository or it is not a git work tree.
+        AgentError: 스페이스에 저장소가 없거나 git 워크 트리가 아니다.
     """
     repo = ctx.repo()
     if repo is None:
@@ -58,7 +58,7 @@ def require_repo(ctx: PageContext) -> Path:
 
 
 def sensitive(paths: list[str]) -> list[str]:
-    """Returns the paths whose file name matches ``SENSITIVE_NAMES``."""
+    """파일 이름이 ``SENSITIVE_NAMES``와 맞는 경로를 반환한다."""
     return [
         p
         for p in paths
@@ -81,28 +81,28 @@ def _changed_paths(repo: Path) -> list[str]:
         status, path = entry[:2], entry[3:]
         paths.append(path)
         if "R" in status or "C" in status:
-            next(entries, None)  # original name of a rename or copy
+            next(entries, None)  # 이름 변경이나 복사의 원래 이름
     return paths
 
 
 def head(repo: Path) -> str:
-    """Returns the short hash of HEAD."""
+    """HEAD의 짧은 해시를 반환한다."""
     return git.run(repo, "rev-parse", "--short", "HEAD").stdout.strip()
 
 
 def commit_all(repo: Path, message: str) -> str:
-    """Stages every change in the repository and commits it.
+    """저장소의 모든 변경을 스테이징하고 커밋한다.
 
     Args:
-        repo: The repository work tree.
-        message: The commit message.
+        repo: 저장소 워크 트리.
+        message: 커밋 메시지.
 
     Returns:
-        The short hash of the new commit.
+        새 커밋의 짧은 해시.
 
     Raises:
-        AgentError: The message is empty, nothing changed, a changed file
-            looks sensitive, or git fails.
+        AgentError: 메시지가 비었거나, 변경이 없거나, 변경된 파일이
+            민감해 보이거나, git이 실패했다.
     """
     if not message.strip():
         raise AgentError("commit message is empty")
@@ -126,19 +126,18 @@ def commit_all(repo: Path, message: str) -> str:
 
 
 def commit_paths(repo: Path, paths: list[str], message: str) -> str | None:
-    """Commits only ``paths``.
+    """``paths``만 커밋한다.
 
     Args:
-        repo: The repository work tree.
-        paths: Paths relative to the repository.
-        message: The commit message.
+        repo: 저장소 워크 트리.
+        paths: 저장소 기준 경로.
+        message: 커밋 메시지.
 
     Returns:
-        The short hash of the new commit, or None when the paths are
-        unchanged.
+        새 커밋의 짧은 해시. 경로에 변경이 없으면 None.
 
     Raises:
-        AgentError: git fails. The paths are unstaged again.
+        AgentError: git이 실패했다. 경로는 다시 언스테이징한다.
     """
     try:
         git.add(repo, paths)
@@ -157,16 +156,16 @@ def commit_paths(repo: Path, paths: list[str], message: str) -> str | None:
 
 
 def push_current(repo: Path) -> tuple[str, str]:
-    """Pushes the current branch to its remote without force.
+    """현재 브랜치를 강제 없이 리모트로 푸시한다.
 
     Args:
-        repo: The repository work tree.
+        repo: 저장소 워크 트리.
 
     Returns:
-        A ``(remote, branch)`` tuple.
+        ``(remote, branch)`` 튜플.
 
     Raises:
-        AgentError: HEAD is detached, there is no remote, or the push fails.
+        AgentError: HEAD가 분리됐거나, 리모트가 없거나, 푸시가 실패했다.
     """
     proc = git.run(
         repo, "symbolic-ref", "--quiet", "--short", "HEAD", check=False

@@ -1,4 +1,4 @@
-"""Real CLI runs. Excluded by default; run with ``pytest -m integration``."""
+"""실제 CLI 실행. 기본으로는 제외되며 ``pytest -m integration``으로 돌린다."""
 
 import shutil
 import subprocess
@@ -16,8 +16,8 @@ pytestmark = pytest.mark.integration
 
 PROMPT = "Reply with exactly: ok"
 
-# Same commands as the bundled runners.yaml, plus options that keep the input
-# small: no tools, no user settings or MCP servers, a one-line system prompt.
+# 기본 제공 runners.yaml과 같은 명령에 입력을 작게 유지하는 옵션을 더했다.
+# 도구, 사용자 설정, MCP 서버 없이 한 줄짜리 시스템 프롬프트만 쓴다.
 RUNNERS = {
     "claude": {
         "bin": "claude",
