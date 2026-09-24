@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from madang.store import git
+from madang import git
 
 UNTRACKED = "??"
 # 파일 목록으로 찍을 때 들어가지 않는 폴더.

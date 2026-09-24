@@ -352,12 +352,16 @@ class AutoMerge(_Strict):
     test: str | None = None
 
 
+# 설정이 없을 때 막는 git 명령.
+DEFAULT_DENY = ("push --force", "reset --hard", "clean -fd")
+
+
 class ProjectPolicy(_Strict):
     """부작용을 정책이 판단할 때 쓰는 규칙."""
 
     auto_merge: AutoMerge = Field(default_factory=AutoMerge)
     auto_publish: bool = False
-    deny: list[str] = Field(default_factory=list)
+    deny: list[str] = Field(default_factory=lambda: list(DEFAULT_DENY))
 
 
 class PublishSettings(_Strict):

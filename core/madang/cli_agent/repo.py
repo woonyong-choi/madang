@@ -9,8 +9,8 @@ from __future__ import annotations
 import fnmatch
 from pathlib import Path, PurePosixPath
 
+from madang import git
 from madang.cli_agent.context import AgentError
-from madang.store import git
 
 # 에이전트가 커밋하면 안 되는 파일 이름.
 SENSITIVE_NAMES = (
@@ -44,13 +44,11 @@ def require_repo(folder: Path) -> Path:
     Raises:
         AgentError: 폴더가 없거나 git 워크 트리가 아니다.
     """
-    repo = folder
-    if not repo.is_dir():
-        raise AgentError(f"프로젝트 폴더 {repo}가 없다")
-    proc = git.run(repo, "rev-parse", "--is-inside-work-tree", check=False)
-    if proc.returncode != 0 or proc.stdout.strip() != "true":
-        raise AgentError(f"프로젝트 폴더 {repo}는 git 저장소가 아니다")
-    return repo
+    if not folder.is_dir():
+        raise AgentError(f"프로젝트 폴더 {folder}가 없다")
+    if not git.is_work_tree(folder):
+        raise AgentError(f"프로젝트 폴더 {folder}는 git 저장소가 아니다")
+    return folder
 
 
 def sensitive(paths: list[str]) -> list[str]:
@@ -91,7 +89,7 @@ def commit_all(repo: Path, message: str) -> str:
             + ", ".join(blocked)
         )
     try:
-        git.run(repo, "add", "-A")
+        git.stage(repo)
         if not git.has_staged_changes(repo):
             raise AgentError("코드 저장소에 커밋할 변경이 없다")
         git.commit(repo, message)
@@ -112,26 +110,19 @@ def push_current(repo: Path) -> tuple[str, str]:
     Raises:
         AgentError: HEAD가 분리됐거나, 리모트가 없거나, 푸시가 실패했다.
     """
-    proc = git.run(
-        repo, "symbolic-ref", "--quiet", "--short", "HEAD", check=False
-    )
-    branch = proc.stdout.strip()
-    if proc.returncode != 0 or not branch:
+    branch = git.current_branch(repo)
+    if branch is None:
         raise AgentError("HEAD가 분리돼 있다. 브랜치를 체크아웃한 뒤 푸시한다")
-    remote = git.run(
-        repo, "config", f"branch.{branch}.remote", check=False
-    ).stdout.strip()
-    remotes = git.run(repo, "remote").stdout.split()
+    remote = git.upstream_remote(repo, branch)
+    remotes = git.remotes(repo)
     if not remote or remote == ".":
         if "origin" not in remotes:
             raise AgentError("코드 저장소에 푸시할 리모트가 없다")
         remote = "origin"
     elif remote not in remotes:
         raise AgentError(f"브랜치 '{branch}'의 리모트 '{remote}'가 없다")
-    ref = f"refs/heads/{branch}"
-    proc = git.run(repo, "push", remote, f"{ref}:{ref}", check=False)
-    if proc.returncode != 0:
-        raise AgentError(
-            f"{remote}/{branch} 푸시에 실패했다: {proc.stderr.strip()}"
-        )
+    try:
+        git.push(repo, remote, branch)
+    except git.GitError as exc:
+        raise AgentError(f"{remote}/{branch} 푸시에 실패했다: {exc}") from exc
     return remote, branch

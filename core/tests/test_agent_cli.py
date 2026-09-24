@@ -8,10 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
+from madang import git
 from madang.api.app import create_app
 from madang.cli import app
 from madang.cli_agent import client
-from madang.store import frontmatter, git, pages, projects
+from madang.store import frontmatter, pages, projects
 from madang.store.home import init_home
 
 PAGE_ID = "2026-09-24-lock"

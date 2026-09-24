@@ -15,8 +15,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from madang import config
-from madang.store import git
+from madang import config, git
 from madang.viewers.manifest import ViewerError
 
 # 접두어로 사본을 찾을 때 요구하는 최소 길이(git 짧은 해시와 같다)

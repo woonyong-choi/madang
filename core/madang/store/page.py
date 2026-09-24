@@ -17,6 +17,8 @@ LEDGER_FILE = "ledger.md"
 BRIEF_FILE = "brief.md"
 MADANG_DIR = config.PROJECT_DIR
 PAGES_DIR = "pages"
+# 페이지 워크트리를 담는 폴더: 프로젝트 폴더 옆 ``<프로젝트>.wt/``.
+WORKTREES_SUFFIX = ".wt"
 
 PageStatus = Literal["planning", "doing", "blocked", "review", "done"]
 PAGE_STATUSES: tuple[str, ...] = (
@@ -108,13 +110,24 @@ def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:
     return path, data
 
 
+def worktree_path(root: Path, page_id: str) -> Path:
+    """페이지 워크트리 폴더 ``<프로젝트>.wt/<page-id>/``를 반환한다."""
+    return root.parent / f"{root.name}{WORKTREES_SUFFIX}" / page_id
+
+
 def work_dir(page_dir: Path) -> Path:
-    """에이전트가 일하는 곳을 반환한다. 페이지가 속한 프로젝트 폴더.
+    """에이전트가 일하는 곳을 반환한다.
+
+    페이지 워크트리가 있으면 그 폴더, 없으면 페이지가 속한 프로젝트 폴더다.
 
     Args:
         page_dir: 페이지 폴더.
 
     Returns:
-        프로젝트 폴더. 프로젝트 밖의 페이지면 페이지 폴더.
+        작업 폴더. 프로젝트 밖의 페이지면 페이지 폴더.
     """
-    return project_root(page_dir) or page_dir
+    root = project_root(page_dir)
+    if root is None:
+        return page_dir
+    worktree = worktree_path(root, page_dir.name)
+    return worktree if worktree.is_dir() else root

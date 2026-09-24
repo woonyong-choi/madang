@@ -287,7 +287,7 @@ def test_init_refuses_unrelated_folder(home: Path) -> None:
 
 
 def test_git_timeout_raises(tmp_path: Path) -> None:
-    from madang.store import git as store_git
+    from madang import git
 
-    with pytest.raises(store_git.GitError, match="timed out"):
-        store_git.run(tmp_path, "version", timeout=1e-9)
+    with pytest.raises(git.GitError, match="timed out"):
+        git.run(tmp_path, "version", timeout=1e-9)

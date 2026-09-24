@@ -14,8 +14,7 @@ from typing import Any
 
 import yaml
 
-from madang import config
-from madang.store import git
+from madang import config, git
 from madang.store.files import atomic_write
 from madang.store.home import MARKER
 from madang.store.page import BRIEF_FILE, LEDGER_FILE, MADANG_DIR, PAGES_DIR
