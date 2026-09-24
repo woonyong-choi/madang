@@ -1,7 +1,8 @@
 /*
  * document.js - Madang 문서 렌더러.
  *
- * 마크다운(머리부, 표, 코드 블록)과 view 펜스를 HTML 문자열로 그린다.
+ * 마크다운(머리부, 표, 코드 블록), view 펜스, page.md 블록(요청·실행·결과·
+ * 묻는 블록)을 HTML 문자열로 그린다.
  * DOM 없이 돌아서 앱 문서 탭(WebView)과 게시(Node)가 같은 함수를 부른다.
  * 마크다운 해석은 같은 폴더의 vendor/marked.umd.js(MIT)가 맡는다.
  * 네트워크에 접근하지 않는다. 원격 이미지는 불러오지 않고 링크로 보여 준다.
@@ -38,6 +39,25 @@
       'addEventListener("load",send);if(window.ResizeObserver){' +
       'new ResizeObserver(send).observe(document.documentElement);}' +
       '})();</script>';
+  // page.md 블록 머리: <!-- bNN | 시각 | 역할 | key=value ... -->
+  const BLOCK_HEAD = /^<!--[ \t]*(b\d+)[ \t]*\|[ \t]*([^|\n]*?)[ \t]*\|[ \t]*([\w-]+)[ \t]*(?:\|[ \t]*([^\n]*?))?[ \t]*-->[ \t]*\r?$/gm;
+  const CLOCK = /T(\d\d:\d\d)/;
+  const BLOCK_LABELS = {
+    request: '요청',
+    answer: '답',
+    route: '라우팅',
+    run: '실행',
+    result: '결과',
+    ask: '묻는 블록',
+    doc: '문서',
+    data: '데이터',
+    view: '뷰',
+    code: '코드',
+    term: '터미널',
+    site: '사이트',
+  };
+  // 접어서 보여 주는 블록 종류. 펼치면 본문이 보인다.
+  const FOLDED_KINDS = ['route', 'run'];
   const FALLBACK_MESSAGES = {
     missing: (name) => `뷰어 "${name}"를 찾을 수 없어 데이터를 표로 보여 줍니다.`,
     broken: (name) => `뷰어 "${name}" 연결이 끊겨 데이터를 표로 보여 줍니다.`,
@@ -165,10 +185,18 @@
     return out + tokenStyle(tokens);
   }
 
+  // 펜스의 data= 파일로 가는 "데이터" 링크. 앱은 이 링크로 데이터 탭을 연다.
+  function dataLink(ref) {
+    if (!ref.data || !isSafeLink(ref.data)) return '';
+    return '<p class="madang-view-links"><a class="madang-view-data" href="' +
+        escapeHtml(ref.data) + '" data-open="data">데이터</a></p>';
+  }
+
   function viewFrame(ref, entry, tokens) {
     const srcdoc = viewDocument(entry.html, entry.data, tokens);
     return '<figure class="madang-view" data-view="' + escapeHtml(ref.name) +
-        '" data-status="ok"><iframe class="madang-view-frame" ' +
+        '" data-status="ok">' + dataLink(ref) +
+        '<iframe class="madang-view-frame" ' +
         'sandbox="allow-scripts" title="' + escapeHtml(ref.name) +
         '" srcdoc="' + escapeHtml(srcdoc) + '"></iframe></figure>\n';
   }
@@ -193,8 +221,8 @@
     return '<figure class="madang-view madang-view-fallback" data-view="' +
         escapeHtml(ref.name) + '" data-status="' + status + '">' +
         '<figcaption>' + escapeHtml(FALLBACK_MESSAGES[status](ref.name)) +
-        '</figcaption>' + detail + errorList(entry.errors) + body +
-        '</figure>\n';
+        '</figcaption>' + dataLink(ref) + detail + errorList(entry.errors) +
+        body + '</figure>\n';
   }
 
   function renderView(ref, context) {
@@ -257,6 +285,155 @@
         '</tbody></table>';
   }
 
+  // ---------------------------------------------------------------- 블록
+
+  function decodeValue(value) {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+
+  // 머리 줄의 key=value. 값은 퍼센트 인코딩일 수 있다(공백이 든 제목 등).
+  function blockAttrs(text) {
+    const attrs = {};
+    String(text || '').split(/\s+/).forEach((item) => {
+      const eq = item.indexOf('=');
+      if (eq > 0) attrs[item.slice(0, eq)] = decodeValue(item.slice(eq + 1));
+    });
+    return attrs;
+  }
+
+  // 본문을 첫 블록 머리 앞의 개요와 쓰인 순서대로의 블록으로 나눈다.
+  function splitBlocks(body) {
+    const heads = Array.from(body.matchAll(BLOCK_HEAD));
+    if (!heads.length) return {overview: body, blocks: []};
+    const blocks = heads.map((head, i) => {
+      const start = head.index + head[0].length;
+      const end = i + 1 < heads.length ? heads[i + 1].index : body.length;
+      return {
+        id: head[1],
+        time: head[2],
+        role: head[3],
+        attrs: blockAttrs(head[4]),
+        body: body.slice(start, end).trim(),
+      };
+    });
+    return {overview: body.slice(0, heads[0].index), blocks: blocks};
+  }
+
+  // 역할과 머리 필드로 블록 종류를 정한다. 메시지가 아닌 역할은 그대로 쓴다.
+  function blockKind(block) {
+    switch (block.role) {
+      case 'user':
+        return block.attrs.answer ? 'answer' : 'request';
+      case 'agent':
+        return 'result';
+      case 'router':
+        return block.attrs.ask === 'true' ? 'ask' : 'route';
+      default:
+        return block.role;
+    }
+  }
+
+  function dataAttributes(data) {
+    return Object.keys(data).filter((key) => {
+      return data[key] !== undefined && data[key] !== null && data[key] !== '';
+    }).map((key) => {
+      return ' data-' + key + '="' + escapeHtml(data[key]) + '"';
+    }).join('');
+  }
+
+  function span(name, text) {
+    if (!text) return '';
+    return '<span class="madang-block-' + name + '">' + escapeHtml(text) +
+        '</span>';
+  }
+
+  function openLink(href, kind) {
+    return '<a class="madang-block-open" href="' + escapeHtml(href) +
+        '" data-open="' + kind + '">열기</a>';
+  }
+
+  // 블록 컴포넌트 하나. 라우팅·실행은 접힌 <details>, 나머지는 <section>.
+  function blockHtml(part) {
+    const folded = FOLDED_KINDS.indexOf(part.data.kind) >= 0;
+    const tag = folded ? 'details' : 'section';
+    const head = folded ? 'summary' : 'header';
+    const body = part.body ?
+      '<div class="madang-block-body">' + part.body + '</div>' : '';
+    return '<' + tag + ' class="madang-block"' + dataAttributes(part.data) +
+        '><' + head + ' class="madang-block-head">' +
+        span('label', part.label) + span('title', part.title) +
+        span('meta', part.meta) + (part.time || '') + (part.open || '') +
+        '</' + head + '>' + body + '</' + tag + '>\n';
+  }
+
+  function renderBlock(block, markdown) {
+    const kind = blockKind(block);
+    const attrs = block.attrs;
+    const meta = [];
+    if (attrs.target && attrs.target !== 'page') meta.push('→ ' + attrs.target);
+    if (attrs.run) meta.push('run ' + attrs.run);
+    const clock = CLOCK.exec(block.time);
+    const parts = splitFrontMatter(block.body);
+    const head =
+        parts.frontMatter === null ? '' : frontMatterHtml(parts.frontMatter);
+    return blockHtml({
+      data: {
+        block: block.id,
+        kind: kind,
+        role: block.role,
+        run: attrs.run,
+        pending: attrs.pending,
+      },
+      label: BLOCK_LABELS[kind] || kind,
+      title: attrs.title,
+      meta: meta.join(' · '),
+      time: clock ? '<time class="madang-block-time" datetime="' +
+          escapeHtml(block.time) + '">' + clock[1] + '</time>' : '',
+      open: attrs.file && isSafeLink(attrs.file) ?
+          openLink(attrs.file, 'block') : '',
+      body: head + markdown.parse(parts.body),
+    });
+  }
+
+  function renderRun(run) {
+    const n = String(run.n);
+    const files = Array.isArray(run.files) ? run.files : [];
+    const list = files.length ? '<ul class="madang-block-files">' +
+        files.map((file) => '<li><code>' + escapeHtml(file) + '</code></li>')
+            .join('') + '</ul>' : '';
+    return blockHtml({
+      data: {kind: 'run', run: n, status: run.status},
+      label: BLOCK_LABELS.run + ' ' + n,
+      title: run.title,
+      meta: [run.summary, run.status].filter(Boolean).join(' · '),
+      open: openLink('#run-' + n, 'run'),
+      body: list,
+    });
+  }
+
+  // 개요 뒤에 블록을 쓰인 순서대로 그린다. 실행은 그 실행을 일으킨 블록
+  // (`after`) 바로 뒤에, 짝이 없으면 끝에 둔다.
+  function renderBody(body, context, markdown) {
+    const parts = splitBlocks(body);
+    const runs = Array.isArray(context.runs) ? context.runs : [];
+    const ids = parts.blocks.map((block) => block.id);
+    let html = markdown.parse(parts.overview);
+    parts.blocks.forEach((block) => {
+      html += renderBlock(block, markdown);
+      runs.filter((run) => run.after === block.id).forEach((run) => {
+        html += renderRun(run);
+      });
+    });
+    runs.filter((run) => ids.indexOf(run.after) < 0).forEach((run) => {
+      html += renderRun(run);
+    });
+    return html;
+  }
+
   // ---------------------------------------------------------------- 마크다운
 
   // 원문 HTML은 글자로, 위험한 링크는 글자로, 원격 이미지는 링크로 바꾼다.
@@ -316,22 +493,35 @@
    * 정보 문자열이 `view <이름>[@해시] data=<경로>`인 코드 펜스는
    * `context.views[key]`로 그린다. 상태가 "ok"면 `allow-scripts`만 있는
    * sandbox iframe에 뷰어 HTML·데이터·앱 토큰을 넣고, 그 밖("invalid",
-   * "broken", 항목 없음)이면 데이터를 표로 대체한다.
+   * "broken", 항목 없음)이면 데이터를 표로 대체한다. `data=`가 있으면
+   * 그 파일로 가는 "데이터" 링크를 붙인다.
+   *
+   * page.md 블록 머리 주석(`<!-- bNN | 시각 | 역할 | key=value -->`)은 블록
+   * 컴포넌트가 된다: user는 요청(`answer=`면 답), agent는 결과, router는
+   * 라우팅(`ask=true`면 묻는 블록). 그 밖의 역할(doc, data, view 등)은 그
+   * 이름의 블록이고 `file=`이 있으면 "열기" 링크를 단다. 값은 퍼센트
+   * 인코딩일 수 있다.
    *
    * @param {string} markdown 마크다운 원문. 맨 앞 `---` 머리부는 떼어 낸다.
    * @param {{views: (!Object<string, {status: string, html: (string|undefined),
    *     data: *, errors: (!Array<{path: string, message: string}>|undefined),
    *     message: (string|undefined)}>|undefined),
-   *     tokens: (!Object<string, string>|undefined)}=} context `views`는
+   *     tokens: (!Object<string, string>|undefined),
+   *     runs: (!Array<{n: number, after: (string|undefined),
+   *     title: (string|undefined), summary: (string|undefined),
+   *     status: (string|undefined),
+   *     files: (!Array<string>|undefined)}>|undefined)}=} context `views`는
    *     listViews()의 `key`별 해석 결과, `tokens`는 `bg`·`text`·`accent`·
-   *     `font`·`radius` 값(`--app-*`로 주입).
+   *     `font`·`radius` 값(`--app-*`로 주입), `runs`는 실행 기록(`after`
+   *     블록 뒤에 접힌 실행 블록으로 그린다).
    * @return {{html: string, frontMatter: ?string,
    *     views: !Array<!Object>}} `madang-document` 요소 하나로 감싼 HTML,
    *     머리부 원문, 문서의 view 참조(listViews()와 같다).
    */
   function renderDocument(markdown, context) {
     const parts = splitFrontMatter(markdown);
-    const body = createMarkdown(context || {}).parse(parts.body);
+    const options = context || {};
+    const body = renderBody(parts.body, options, createMarkdown(options));
     const head =
         parts.frontMatter === null ? '' : frontMatterHtml(parts.frontMatter);
     return {

@@ -179,6 +179,10 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
                                         ),
                                         openExternally = viewModel::openExternally,
                                         reloadDiff = viewModel::reloadDiff,
+                                        documents = DocumentActions(
+                                            open = viewModel::openDocumentRequest,
+                                            views = viewModel::documentViews
+                                        ),
                                         onEditing = { editing = it }
                                     ),
                                     onEditing = { editing = it },
@@ -246,9 +250,6 @@ private fun pageActions(
     onEditing: (Boolean) -> Unit,
     onEscape: () -> Unit
 ) = PageActions(
-    toggleExpandAll = viewModel::toggleExpandAll,
-    toggleFold = viewModel::toggleFold,
-    openItem = viewModel::openItem,
     tabs = tabs,
     cancelRun = viewModel::cancelRun,
     back = { viewModel.focusPane(Pane.LIST) }.takeIf { Pane.LIST !in panes },

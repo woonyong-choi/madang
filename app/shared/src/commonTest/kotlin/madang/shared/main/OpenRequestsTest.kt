@@ -75,7 +75,8 @@ class OpenRequestsTest {
     private val files = FakeFiles(
         mapOf(
             "/work/jobs/.github/ci.yml" to "on: push\n",
-            "/work/jobs/src/lock.ts" to "export {}\n"
+            "/work/jobs/src/lock.ts" to "export {}\n",
+            "/work/jobs/.madang/pages/resume/page.md" to PAGE_MD
         )
     )
 
@@ -279,7 +280,41 @@ class OpenRequestsTest {
         }
     }
 
+    @Test
+    fun pageSourceIsReadFromTheProjectFolder() = runTest {
+        val (viewModel, _) = viewModel()
+
+        assertEquals("/work/jobs/.madang/pages/resume", viewModel.state.value.pageFolder)
+        assertEquals(PAGE_MD, viewModel.page.source)
+    }
+
+    @Test
+    fun documentLinksOpenTabsByTheRuleTable() = runTest {
+        val (viewModel, _) = viewModel()
+        val folder = "/work/jobs/.madang/pages/resume"
+
+        viewModel.openDocumentRequest(DocumentRequest.Link("./base.json"), folder)
+        assertEquals(CenterTab.File("$folder/base.json"), viewModel.tabs.active)
+
+        viewModel.openDocumentRequest(DocumentRequest.Block("b02", "blocks/b02-base.json"), folder)
+        assertEquals(CenterTab.Block("b02"), viewModel.tabs.active)
+
+        viewModel.openDocumentRequest(DocumentRequest.Run(1), folder)
+        assertEquals(CenterTab.Run(1), viewModel.tabs.active)
+
+        viewModel.openDocumentRequest(DocumentRequest.Link("https://example.com/"), folder)
+        assertEquals(CenterTab.Browser("https://example.com/"), viewModel.tabs.active)
+
+        viewModel.openDocumentRequest(DocumentRequest.Block("b09", "../notes.md"), folder)
+        assertEquals(CenterTab.File("/work/jobs/.madang/pages/notes.md"), viewModel.tabs.active)
+
+        viewModel.openDocumentRequest(DocumentRequest.Link("mailto:me@example.com"), folder)
+        assertEquals(listOf("mailto:me@example.com"), files.opened)
+    }
+
     private companion object {
+        const val PAGE_MD = "<!-- b01 | 2026-09-24T08:11:02+09:00 | user | target=page -->\nhi\n"
+
         val DIFF_JSON = JsonObject(
             mapOf(
                 "text" to JsonPrimitive(

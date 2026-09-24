@@ -64,7 +64,10 @@ import madang.shared.main.TabKind
 import madang.shared.main.TabSet
 import madang.shared.main.dataFormatOf
 import madang.shared.main.isCodeView
+import madang.shared.main.joinPath
 import madang.shared.main.kindOf
+import madang.shared.main.pageMarkdown
+import madang.shared.main.parentPath
 import madang.shared.main.tabName
 
 /**
@@ -73,6 +76,7 @@ import madang.shared.main.tabName
  * @property activate 탭을 고른다. null은 페이지 탭.
  * @property drawerOpen 탭 안 오른쪽 서랍이 펼쳐져 있다. 모든 블록 탭이 함께 쓴다.
  * @property openExternally 파일이나 URL을 운영체제의 기본 앱으로 연다.
+ * @property documents 문서 탭의 링크와 view 펜스.
  * @property onEditing 원문 편집기에 포커스가 들어오고 나간다(단축키를 끄고 켠다).
  */
 class TabActions(
@@ -83,6 +87,7 @@ class TabActions(
     val data: DataActions = DataActions(),
     val openExternally: (String) -> Unit = {},
     val reloadDiff: () -> Unit = {},
+    val documents: DocumentActions = DocumentActions(),
     val onEditing: (Boolean) -> Unit = {}
 )
 
@@ -184,15 +189,25 @@ private fun tabIcon(tab: CenterTab, page: PageDetail): ImageVector = when {
     }
 }
 
-/** 페이지 탭이 아닌 탭의 내용. 탭 종류([kindOf])대로 그린다. */
+/**
+ * 페이지 탭이 아닌 탭의 내용. 탭 종류([kindOf])대로 그린다.
+ *
+ * @param folder 페이지 기록 폴더. 블록 파일과 page.md가 이 폴더 기준이다. 모르면 null.
+ */
 @Composable
-fun CenterTabContent(open: OpenPage, tab: CenterTab, actions: TabActions, modifier: Modifier) {
+fun CenterTabContent(
+    open: OpenPage,
+    tab: CenterTab,
+    folder: String?,
+    actions: TabActions,
+    modifier: Modifier
+) {
     when (tab) {
-        is CenterTab.Block -> BlockTabContent(open, tab, actions, modifier)
+        is CenterTab.Block -> BlockTabContent(open, tab, folder, actions, modifier)
 
         is CenterTab.Run -> {
             val run = open.detail.runs.firstOrNull { it.n == tab.n } ?: return
-            RunTab(open.detail, run, open.runEvents[run.n], actions, modifier)
+            RunTab(open, run, folder, actions, modifier)
         }
 
         is CenterTab.Browser -> BrowserTab(tab.url, actions, modifier)
@@ -208,6 +223,7 @@ fun CenterTabContent(open: OpenPage, tab: CenterTab, actions: TabActions, modifi
 private fun BlockTabContent(
     open: OpenPage,
     tab: CenterTab.Block,
+    folder: String?,
     actions: TabActions,
     modifier: Modifier
 ) {
@@ -224,7 +240,10 @@ private fun BlockTabContent(
             modifier = modifier
         ) { BlockFacts(block, content) }
     } else {
-        DocTab(block.id, content, actions, modifier) { BlockFacts(block, content) }
+        val dir = folder?.let {
+            block.file?.let { file -> parentPath(joinPath(folder, file)) } ?: it
+        }
+        DocTab(block.id, content, dir, actions, modifier) { BlockFacts(block, content) }
     }
 }
 
@@ -263,15 +282,22 @@ private fun FileTabContent(
 
         isCodeView(path) -> CodeTab(path, content, actions, modifier)
 
-        else -> DocTab(path, content, actions, modifier) { FileFacts(path, content, actions) }
+        else -> DocTab(path, content, parentPath(path), actions, modifier) {
+            FileFacts(path, content, actions)
+        }
     }
 }
 
-/** 문서 탭. 서랍에서 미리보기와 원본을 바꾼다. */
+/**
+ * 문서 탭. 미리보기는 렌더러([RenderedDocument])가 그리고, 서랍에서 원본과 바꾼다.
+ *
+ * @param dir 문서가 있는 폴더. 상대 링크와 view 펜스 `data=`의 기준이다.
+ */
 @Composable
 private fun DocTab(
     key: String,
     content: String?,
+    dir: String?,
     actions: TabActions,
     modifier: Modifier,
     facts: @Composable ColumnScope.() -> Unit
@@ -281,11 +307,19 @@ private fun DocTab(
     TabFrame(
         modifier,
         actions,
+        scroll = content == null || source,
         main = {
             when {
                 content == null -> Placeholder(strings.loading)
+
                 source -> SourceText(content)
-                else -> PageMarkdown(content)
+
+                else -> RenderedDocument(
+                    content,
+                    dir,
+                    actions.documents,
+                    Modifier.weight(1f).fillMaxWidth()
+                )
             }
         },
         drawer = {
@@ -359,26 +393,30 @@ private fun FileFacts(path: String, content: String?, actions: TabActions) {
 }
 
 /**
- * run 탭. 본문에는 이 run을 일으킨 요청과 run이 남긴 메시지를, 서랍에는 입력 구성·사용량·바뀐
- * 파일·이벤트 로그를 보인다.
+ * run 탭. 본문에는 이 run을 일으킨 요청과 run이 남긴 블록을 렌더러로, 서랍에는 입력 구성·사용량·
+ * 바뀐 파일·이벤트 로그를 보인다.
  */
 @Composable
 private fun RunTab(
-    page: PageDetail,
+    open: OpenPage,
     run: RunRecord,
-    events: List<RunStreamEvent>?,
+    folder: String?,
     actions: TabActions,
     modifier: Modifier
 ) {
     val strings = LocalStrings.current
-    val messages = page.blocks.filter {
-        it.type == BlockType.MESSAGE && (it.run == run.n || it.id == run.trigger?.message)
+    val markdown = remember(open, run.n) {
+        pageMarkdown(open, open.source) { it.run == run.n || it.id == run.trigger?.message }
     }
     TabFrame(
         modifier,
         actions,
+        scroll = false,
         main = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 RunnerChip("${run.runner.orEmpty()}/${run.model.orEmpty()}")
                 Text(
                     runSummary(run, strings.navigator),
@@ -398,13 +436,16 @@ private fun RunTab(
                 strings.tabs.runRequest,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                modifier = Modifier.padding(start = 24.dp, top = 16.dp)
             )
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                messages.forEach { BlockItem(it, null, folded = false, onToggle = {}) }
-            }
+            RenderedDocument(
+                markdown,
+                folder,
+                actions.documents,
+                Modifier.weight(1f).fillMaxWidth()
+            )
         },
-        drawer = { RunDrawer(run, events) }
+        drawer = { RunDrawer(run, open.runEvents[run.n]) }
     )
 }
 
@@ -475,6 +516,7 @@ fun eventLine(event: RunStreamEvent): String {
 internal fun TabFrame(
     modifier: Modifier,
     actions: TabActions,
+    scroll: Boolean = true,
     main: @Composable ColumnScope.() -> Unit,
     drawer: @Composable ColumnScope.() -> Unit
 ) {
@@ -490,8 +532,12 @@ internal fun TabFrame(
                 }
             }
             Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                    .padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
+                modifier = if (scroll) {
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                        .padding(start = 24.dp, end = 24.dp, bottom = 16.dp)
+                } else {
+                    Modifier.fillMaxSize()
+                },
                 content = main
             )
         }

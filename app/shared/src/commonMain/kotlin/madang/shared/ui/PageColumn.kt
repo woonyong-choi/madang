@@ -1,10 +1,8 @@
 package madang.shared.ui
 
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,10 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -26,6 +20,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,20 +33,15 @@ import kotlinx.coroutines.delay
 import madang.api.model.RunStreamEvent
 import madang.shared.main.ActiveRun
 import madang.shared.main.ComposerState
-import madang.shared.main.FlowItem
 import madang.shared.main.MainState
 import madang.shared.main.OpenPage
 import madang.shared.main.RunActivity
 import madang.shared.main.Sidebar
-import madang.shared.main.foldedKeys
-import madang.shared.main.isFoldable
-import madang.shared.main.openTargetFor
+import madang.shared.main.pageMarkdown
+import madang.shared.main.pageRuns
 
 /** 가운데 열 조작. */
 class PageActions(
-    val toggleExpandAll: () -> Unit,
-    val toggleFold: (String) -> Unit,
-    val openItem: (FlowItem) -> Unit,
     val tabs: TabActions,
     val cancelRun: () -> Unit,
     val back: (() -> Unit)?,
@@ -64,9 +54,9 @@ class PageActions(
 )
 
 /**
- * 가운데 열: 위에 탭 줄, 가운데 활성 탭 내용, 아래 입력창 하나. 첫 탭 "페이지"는 문서 흐름이고,
- * 흐름에서 블록·run을 더블클릭하면 그 종류의 탭이 열린다. 사이드바가 열리면 오른쪽에
- * 붙는다.
+ * 가운데 열: 위에 탭 줄, 가운데 활성 탭 내용, 아래 입력창 하나. 첫 탭 "페이지"는 렌더러가 그린
+ * 문서 흐름이고, 흐름에서 블록·실행의 "열기"를 누르면 그 종류의 탭이 열린다. 사이드바가 열리면
+ * 오른쪽에 붙는다.
  */
 @Composable
 fun PageColumn(
@@ -116,14 +106,17 @@ private fun CenterColumn(
         val content = Modifier.weight(1f).fillMaxWidth()
         when (val tab = state.tabs.active) {
             null -> PageTab(state, open, actions, content)
-            else -> CenterTabContent(open, tab, actions.tabs, content)
+            else -> CenterTabContent(open, tab, state.pageFolder, actions.tabs, content)
         }
         HorizontalDivider()
         ComposerBar(composer, actions.composer)
     }
 }
 
-/** 페이지 탭: 제목과 상태, 미등록 파일 띠, 사람 결정 카드, 블록 흐름, 끝에 진행 중인 run 카드. */
+/**
+ * 페이지 탭: 제목과 상태, 미등록 파일 띠, 사람 결정 카드, 렌더러가 그린 블록 흐름(page.md), 끝에
+ * 진행 중인 run 카드.
+ */
 @Composable
 private fun PageTab(state: MainState, open: OpenPage, actions: PageActions, modifier: Modifier) {
     val strings = LocalStrings.current.navigator
@@ -142,9 +135,6 @@ private fun PageTab(state: MainState, open: OpenPage, actions: PageActions, modi
                     modifier = Modifier.padding(start = 8.dp).weight(1f, fill = false)
                 )
                 StatusChip(page.status, Modifier.padding(start = 10.dp))
-            }
-            TextButton(onClick = actions.toggleExpandAll) {
-                Text(if (state.expandAll) strings.foldByRule else strings.expandAll)
             }
             TextButton(onClick = actions.openDiff) {
                 Text(LocalStrings.current.tabs.openDiff)
@@ -169,52 +159,24 @@ private fun PageTab(state: MainState, open: OpenPage, actions: PageActions, modi
             DecisionCard(waiting, answered, actions.answer)
         }
         HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
-        val items = open.flowItems
-        val folded = foldedKeys(items, state.expandAll, state.toggled)
-        val run = state.activeRuns[page.id]
-        val listState = rememberLazyListState()
-        FollowNewItems(listState, page.id, items.size + if (run != null) 1 else 0)
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(items, key = { it.key }) { item ->
-                val isFolded = item.key in folded
-                val toggle = { if (isFoldable(item)) actions.toggleFold(item.key) }
-                val openTab = { actions.openItem(item) }
-                when (item) {
-                    is FlowItem.Block -> BlockItem(
-                        item.header,
-                        open.contents[item.header.id],
-                        isFolded,
-                        toggle,
-                        onOpen = openTab.takeIf { openTargetFor(item) != null }
-                    )
-
-                    is FlowItem.Run -> RunItem(item.record, isFolded, toggle, openTab)
-
-                    is FlowItem.Pending -> PendingMessageItem(item.message.text)
-                }
-            }
-            if (run != null) {
-                item(key = "active-run") { RunProgressCard(run, actions.cancelRun) }
+        val markdown = remember(open) { pageMarkdown(open, open.source) }
+        val runs = remember(page.runs, strings) { pageRuns(page.runs) { runSummary(it, strings) } }
+        // 페이지마다 새 화면이라 새로 연 페이지는 맨 위부터, 같은 페이지는 새 블록을 따라간다.
+        key(page.id) {
+            RenderedDocument(
+                markdown,
+                state.pageFolder,
+                actions.tabs.documents,
+                Modifier.weight(1f).fillMaxWidth(),
+                follow = true,
+                runs = runs
+            )
+        }
+        state.activeRuns[page.id]?.let { run ->
+            Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                RunProgressCard(run, actions.cancelRun)
             }
         }
-    }
-}
-
-/**
- * 같은 페이지에서 항목이 늘면(보낸 메시지, run 카드) 끝으로 스크롤한다. 페이지를 새로 열 때는
- * 문서처럼 처음부터 보인다.
- */
-@Composable
-private fun FollowNewItems(listState: LazyListState, page: String, count: Int) {
-    var seen by remember(page) { mutableStateOf(count) }
-    LaunchedEffect(page, count) {
-        if (count > seen) listState.animateScrollToItem(count - 1)
-        seen = count
     }
 }
 

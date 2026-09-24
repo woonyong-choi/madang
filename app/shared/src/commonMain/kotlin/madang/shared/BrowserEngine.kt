@@ -28,7 +28,7 @@ sealed interface BrowserStatus {
     data object Unavailable : BrowserStatus
 }
 
-/** 브라우저 탭이 쓰는 웹 엔진. 데스크톱은 KCEF(Chromium)다. */
+/** 브라우저 탭과 문서 탭이 쓰는 웹 엔진. 데스크톱은 KCEF(Chromium)다. */
 interface BrowserEngine {
     val status: StateFlow<BrowserStatus>
 
@@ -41,9 +41,21 @@ interface BrowserEngine {
      */
     @Composable
     fun Page(url: String, reload: Int, modifier: Modifier)
+
+    /**
+     * 렌더러 호스트(`templates/_runtime/app.html`)를 띄우고 [payload]를 `madangApp.render()`로
+     * 그리는 웹 화면. [payload]가 바뀌면 같은 화면에서 다시 그린다. 호스트가 앱 요청 주소
+     * (`madang-app://…`)로 탐색하면 막고 [onRequest]에 그 주소를 넘긴다. [status]가
+     * [BrowserStatus.Ready]일 때만 부른다.
+     */
+    @Composable
+    fun Document(payload: String, onRequest: (String) -> Unit, modifier: Modifier)
 }
 
-/** 브라우저 엔진이 없는 플랫폼. 브라우저 탭은 주소와 "외부 브라우저로 열기"만 보인다. */
+/**
+ * 브라우저 엔진이 없는 플랫폼. 브라우저 탭은 주소와 "외부 브라우저로 열기"만, 문서 탭은 원문만
+ * 보인다.
+ */
 object NoBrowserEngine : BrowserEngine {
     override val status: StateFlow<BrowserStatus> = MutableStateFlow(BrowserStatus.Unavailable)
 
@@ -51,6 +63,9 @@ object NoBrowserEngine : BrowserEngine {
 
     @Composable
     override fun Page(url: String, reload: Int, modifier: Modifier) = Unit
+
+    @Composable
+    override fun Document(payload: String, onRequest: (String) -> Unit, modifier: Modifier) = Unit
 }
 
 /** 화면에서 쓰는 브라우저 엔진. [MadangApp]이 플랫폼의 것으로 채운다. */

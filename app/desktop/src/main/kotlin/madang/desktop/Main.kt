@@ -29,8 +29,11 @@ private val smokeMode = System.getenv("MADANG_SMOKE") == "1"
 /** MADANG_FAKE_CORE=1이면 계약 예시로 답하는 가짜 core에 붙는다. */
 private val fakeCoreMode = System.getenv("MADANG_FAKE_CORE") == "1"
 
-/** 브라우저 탭 엔진. 번들은 앱 설정 폴더 아래에 받는다. */
-private val browser = KcefBrowserEngine(DesktopPaths.appConfigDir().resolve("kcef-bundle"))
+/** 브라우저 탭·문서 탭 엔진. 번들과 렌더러는 앱 설정 폴더 아래에 둔다. */
+private val browser = KcefBrowserEngine(
+    DesktopPaths.appConfigDir().resolve("kcef-bundle"),
+    DocumentRuntime(DesktopPaths.appConfigDir().resolve("document-runtime"))
+)
 
 /** run 완료·묻는 블록 시스템 알림. */
 private val notifier = TrayNotifier()

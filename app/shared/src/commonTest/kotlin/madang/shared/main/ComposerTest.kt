@@ -69,16 +69,6 @@ class ComposerTest {
         assertTrue(accepted.pending.isEmpty())
     }
 
-    @Test
-    fun pendingMessageFoldsEarlierConversation() {
-        val page = OpenPage(detail(listOf("b01")))
-            .copy(pending = listOf(PendingMessage("pending-1", "다음")))
-
-        val folded = foldedKeys(page.flowItems, expandAll = false, toggled = emptySet())
-
-        assertEquals(setOf("b01"), folded)
-    }
-
     private fun detail(userBlocks: List<String>) = PageDetail(
         id = "p",
         project = "root",

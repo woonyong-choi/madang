@@ -76,6 +76,8 @@ data class DataDraft(
  * @property files 파일 탭의 절대 경로별 내용.
  * @property diff 디프 탭 내용. 디프 탭을 연 적이 없으면 null.
  * @property drafts 데이터 탭에서 고치는 중인 블록 id별 원문.
+ * @property source 디스크의 page.md 원문. 읽지 못했으면 null이고 문서 탭은 core 머리부로 흐름을
+ *   만든다.
  */
 data class OpenPage(
     val detail: PageDetail,
@@ -85,7 +87,8 @@ data class OpenPage(
     val answered: String? = null,
     val files: Map<String, Load<String>> = emptyMap(),
     val diff: Load<DiffView>? = null,
-    val drafts: Map<String, DataDraft> = emptyMap()
+    val drafts: Map<String, DataDraft> = emptyMap(),
+    val source: String? = null
 ) {
     /** 블록 흐름 끝에 아직 core에 없는 메시지를 붙인 것. */
     val flowItems: List<FlowItem>
@@ -115,7 +118,6 @@ data class OpenPage(
  * @property selectedPage 2열에서 고른 페이지. [page]는 그 페이지를 불러온 결과다.
  * @property pane 키보드 포커스가 있는 열.
  * @property tabs 열린 페이지의 가운데 열 탭 세트.
- * @property toggled 접힘 규칙과 반대로 둔 본문 항목의 key.
  * @property activeRuns 페이지 id별 진행 중인 run.
  * @property watch 진행 중 밖의 run 상태: 끝난 run, 사람 필요, 읽지 않은 완료.
  * @property unknownFilesOpen 열린 페이지의 미등록 파일 목록을 펼쳤다.
@@ -136,8 +138,6 @@ data class MainState(
     val page: OpenPage? = null,
     val tabs: TabSet = TabSet(),
     val pane: Pane = Pane.PROJECTS,
-    val expandAll: Boolean = false,
-    val toggled: Set<String> = emptySet(),
     val activeRuns: Map<String, ActiveRun> = emptyMap(),
     val watch: RunWatch = RunWatch(),
     val unknownFilesOpen: Boolean = false,
@@ -148,6 +148,14 @@ data class MainState(
     val tagRows: List<TagRow> get() = tagRows(cards, expandedTags)
 
     val listCards: List<PageCard> get() = visibleCards(cards, projects, source, filter)
+
+    /** 열린 페이지의 기록 폴더(page.md가 있는 곳). 프로젝트 경로를 모르면 null. */
+    val pageFolder: String?
+        get() = page?.detail?.let { detail ->
+            projects.firstOrNull {
+                it.id == detail.project
+            }?.path?.let { pageFolder(it, detail.id) }
+        }
 
     /** 페이지 제목. 카드가 없으면 id. */
     fun pageTitle(page: String): String = cards.firstOrNull { it.id == page }?.title ?: page

@@ -6,6 +6,7 @@ WebView와 게시가 함께 쓰는 런타임.
 |---|---|
 | `document.js` | 문서 렌더러. 마크다운(머리부·표·코드)과 view 펜스를 HTML로 그린다 |
 | `document.css` | 렌더 결과의 기본 모양. 앱 토큰(`--app-*`)을 따른다 |
+| `app.html`·`app.js` | 앱 문서 탭(WebView)의 호스트. 앱이 넘긴 문서를 `document.js`로 그리고 링크를 앱 요청으로 바꾼다 |
 | `madang.js` | 템플릿 런타임(바인딩, 선택, 편집, 브리지). `renderMarkdown`·`renderDocument`는 `document.js`를 쓴다 |
 | `vendor/marked.umd.js` | 마크다운 해석기(MIT). 고지는 `THIRD_PARTY_NOTICES.md` |
 
@@ -36,6 +37,23 @@ const {renderDocument, listViews} = require('./_runtime/document.js'); // Node
 - 표·코드 블록은 GFM 그대로. 원문 HTML은 글자로 보여 준다(실행하지 않는다).
 - 링크는 `http`·`https`·`mailto`·상대 경로만 남긴다. 이미지는 상대 경로와 `data:image`만 불러오고 원격 이미지는 링크로 바꾼다.
 
+### page.md 블록
+
+page.md 본문의 블록 머리 주석 `<!-- bNN | 시각 | 역할 | key=value ... -->`은 블록 컴포넌트
+(`<section class="madang-block">`, 라우팅·실행은 접힌 `<details>`)가 된다. 첫 머리 앞은 개요다.
+
+| 머리 | 블록(`data-kind`) |
+|---|---|
+| `user` | 요청(`request`). `answer=`가 있으면 답(`answer`) |
+| `agent` | 결과(`result`) |
+| `router` | 라우팅(`route`). `ask=true`면 묻는 블록(`ask`) |
+| 그 밖(`doc`, `data`, `view`, …) | 그 이름. `file=`이 있으면 "열기" 링크(`data-open="block"`) |
+
+- 값은 퍼센트 인코딩일 수 있다(`title=%EC%BB%A4%EB%B2%84`). `pending=true`면 흐리게 보인다.
+- 블록 본문 맨 앞의 `---` 머리부는 그 블록 안에서 접힌다.
+- `context.runs`(`[{n, after, title, summary, status, files}]`)의 실행은 `after` 블록 바로 뒤에,
+  짝이 없으면 끝에 접힌 실행 블록(`data-kind="run"`, "열기"는 `data-open="run"`)으로 그린다.
+
 ### view 펜스
 
 ````md
@@ -63,6 +81,7 @@ context = {
 ```
 
 - `ok`: `sandbox="allow-scripts"`만 있는 iframe(`srcdoc`)에 뷰어를 넣는다. 부모 문서에 접근할 수 없다.
+- `data=`가 있으면 상태와 상관없이 그 파일로 가는 "데이터" 링크(`a.madang-view-data`)를 붙인다.
 - `invalid`·`broken`·`missing`(항목 없음 포함): iframe을 만들지 않고, 이유와 어긋난 경로 목록, 데이터 표를 보여 준다.
 
 iframe 문서에는 렌더러가 다음을 넣는다.
@@ -76,6 +95,25 @@ iframe 문서에는 렌더러가 다음을 넣는다.
 
 `srcdoc` 문서는 호스트 페이지의 CSP를 물려받는다. 뷰어 스크립트가 돌려면 호스트 CSP의 `script-src`에
 `'unsafe-inline'`이 있어야 한다(`_tests/fixtures/document.html` 참고).
+
+## 앱 문서 탭 호스트 `app.html`
+
+앱은 이 폴더를 그대로 풀어 `app.html`을 WebView로 열고 `madangApp.render(payload)`를 부른다.
+
+```js
+madangApp.render({
+  markdown: '…',            // 문서 원문(page.md 흐름이나 .md 파일)
+  context: {views, tokens, runs}, // renderDocument()와 같다
+  base: 'file:///…/docs/',  // 문서 폴더. 상대 경로 이미지가 여기서 풀린다
+  follow: true,             // 블록이 늘면 끝으로 스크롤한다
+});
+```
+
+- 토큰 5개는 문서 바탕(`:root`)에도 걸어 앱 테마와 같은 색으로 보인다.
+- 링크를 누르면 탐색 대신 `madang-app://<type>?<필드>`로 앱에 알린다. 앱은 그 탐색을 막고 탭을 연다.
+  `open?href=`(일반 링크·"데이터" 링크), `block?id=&href=`(블록 "열기"), `run?n=`(실행 "열기").
+  `#…` 문서 안 이동은 그대로 둔다. "열기"가 있는 블록은 더블클릭해도 그 링크와 같다.
+- 호스트 CSP는 `script-src`에 `'unsafe-inline'`이 있어 뷰어 iframe 스크립트가 돈다. `base-uri`는 `file:`만.
 
 ## 뷰어 규격
 
@@ -99,5 +137,5 @@ iframe 문서에는 렌더러가 다음을 넣는다.
 cd templates/_tests
 npm install
 npx eslint . ../_runtime
-npx playwright test   # 템플릿 + 문서 렌더러(md, view iframe, 토큰, 표 대체, 외부 요청 0건)
+npx playwright test   # 템플릿 + 문서 렌더러(md, 블록, view iframe, 토큰, 표 대체, 앱 호스트, 외부 요청 0건)
 ```

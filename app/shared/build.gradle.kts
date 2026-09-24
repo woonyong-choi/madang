@@ -31,7 +31,6 @@ kotlin {
                 implementation(libs.compose.ui)
                 implementation(libs.compose.material3)
                 implementation(libs.compose.material.icons.extended)
-                implementation(libs.markdown.renderer.m3)
                 implementation(libs.kotlinx.datetime)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)

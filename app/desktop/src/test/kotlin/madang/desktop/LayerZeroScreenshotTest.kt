@@ -469,6 +469,10 @@ class LayerZeroScreenshotTest {
 
         @Composable
         override fun Page(url: String, reload: Int, modifier: Modifier) = Unit
+
+        @Composable
+        override fun Document(payload: String, onRequest: (String) -> Unit, modifier: Modifier) =
+            Unit
     }
 
     private companion object {

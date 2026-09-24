@@ -69,26 +69,6 @@ class PageFlowTest {
     }
 
     @Test
-    fun routerAndRunsFoldAndOldMessagesFold() {
-        val folded = foldedKeys(pageFlow(page), expandAll = false, toggled = emptySet())
-
-        assertEquals(
-            setOf("b01", "run-1", "b02", "b03", "run-2", "b08", "run-3"),
-            folded
-        )
-    }
-
-    @Test
-    fun expandAllAndToggleOverrideRules() {
-        val items = pageFlow(page)
-
-        assertEquals(emptySet(), foldedKeys(items, expandAll = true, toggled = setOf("b01")))
-
-        val toggled = foldedKeys(items, expandAll = false, toggled = setOf("b03", "b09"))
-        assertEquals(setOf("b01", "run-1", "b02", "run-2", "b08", "b09", "run-3"), toggled)
-    }
-
-    @Test
     fun jsonArrayOfObjectsBecomesTable() {
         val preview = dataPreview(
             """[{"company":"펄어비스","period":"2019"},{"company":"한빛","role":"lead"}]"""

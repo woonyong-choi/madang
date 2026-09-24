@@ -20,7 +20,9 @@ import madang.api.client.MessagesApi
 import madang.api.client.PagesApi
 import madang.api.client.ProjectsApi
 import madang.api.client.RunsApi
+import madang.api.client.SetupApi
 import madang.api.client.TrashApi
+import madang.api.client.ViewersApi
 import madang.api.model.BlockAddedEvent
 import madang.api.model.BlockContent
 import madang.api.model.BlockDeletedEvent
@@ -103,6 +105,13 @@ class MainViewModel(
     private val messagesApi = core.api(::MessagesApi)
     private val decisionsApi = core.api(::DecisionsApi)
     private val gitApi = core.api(::GitApi)
+    private val viewersApi = core.api(::ViewersApi)
+    private val setupApi = core.api(::SetupApi)
+    private val documents = DocumentViews(
+        listViewers = { viewersApi.listViewers(it).bodyOrThrow() },
+        home = { setupApi.getHome().bodyOrThrow().path },
+        files = files
+    )
     private var pendingCount = 0
 
     private val _notices = MutableSharedFlow<Notice>(extraBufferCapacity = NOTICE_BUFFER)
@@ -231,6 +240,38 @@ class MainViewModel(
     /** 파일이나 URL을 운영체제의 기본 앱으로 연다(코드 보기의 "외부 편집기로 열기"). */
     fun openExternally(target: String) = files.openExternally(target)
 
+    /**
+     * 문서 탭에서 누른 링크를 연다. 실행 블록은 run 탭, 블록 "열기"는 그 블록을 흐름에서 연 것과
+     * 같고, 나머지 링크는 [linkTarget] 규칙대로 연다(view 펜스의 "데이터" 링크는 데이터 탭).
+     *
+     * @param documentDir 링크가 적힌 문서의 폴더. 상대 경로의 기준이다.
+     */
+    fun openDocumentRequest(request: DocumentRequest, documentDir: String?) {
+        when (request) {
+            is DocumentRequest.Run -> openTab(CenterTab.Run(request.n))
+
+            is DocumentRequest.Block -> {
+                val block = _state.value.page?.detail?.blocks?.firstOrNull { it.id == request.id }
+                    ?.let { FlowItem.Block(it) }
+                if (block != null && openTargetFor(block) != null) {
+                    openItem(block)
+                } else {
+                    openLink(request.href, documentDir)
+                }
+            }
+
+            is DocumentRequest.Link -> openLink(request.href, documentDir)
+        }
+    }
+
+    /**
+     * 문서의 view 펜스를 렌더러 context로 푼다. 열린 페이지의 프로젝트 뷰어가 먼저다.
+     *
+     * @param documentDir 문서의 폴더. `data=` 경로의 기준이다.
+     */
+    suspend fun documentViews(markdown: String, documentDir: String?): Map<String, ViewEntry> =
+        documents.resolve(markdown, documentDir, _state.value.page?.detail?.project)
+
     /** 데이터 탭에서 블록 원문을 고친다. */
     fun editData(block: String, text: String) {
         val page = _state.value.page?.detail?.id ?: return
@@ -302,14 +343,6 @@ class MainViewModel(
             TabKey.PREVIOUS -> it.previous()
             TabKey.PAGE -> it.activate(null)
         }
-    }
-
-    fun toggleExpandAll() = _state.update {
-        it.copy(expandAll = !it.expandAll, toggled = emptySet())
-    }
-
-    fun toggleFold(key: String) = _state.update {
-        it.copy(toggled = if (key in it.toggled) it.toggled - key else it.toggled + key)
     }
 
     /** 고른 프로젝트에 새 페이지를 만든다. 등록한 프로젝트가 없으면 아무것도 하지 않는다. */
@@ -547,12 +580,10 @@ class MainViewModel(
         if (_state.value.selectedPage != id) return@request
         val tabs = _state.updateAndGet { state ->
             val open = state.page?.takeIf { it.detail.id == id }
-            val toggled = if (open != null) state.toggled else emptySet()
             val tabs = if (open != null) state.tabs else savedTabs(id)
             state.copy(
                 page = open?.withDetail(detail) ?: OpenPage(detail),
                 tabs = tabs.retainIn(detail),
-                toggled = toggled,
                 watch = state.watch.read(id).withWaiting(id, detail.waiting != null)
             )
         }.tabs
@@ -561,7 +592,8 @@ class MainViewModel(
         val contents = detail.blocks
             .filter { it.type in TAB_BLOCK_TYPES }
             .associate { it.id to blocksApi.getBlock(id, it.id).bodyOrThrow().content }
-        updateOpen(id) { it.copy(contents = contents) }
+        val source = _state.value.pageFolder?.let { readOrNull(pageFile(it)) }
+        updateOpen(id) { it.copy(contents = contents, source = source) }
     }
 
     /**
@@ -616,6 +648,23 @@ class MainViewModel(
             }
             updateOpen(page) { it.copy(diff = loaded) }
         }
+    }
+
+    private fun openLink(href: String, documentDir: String?) {
+        when (val target = linkTarget(href, documentDir)) {
+            is LinkTarget.Open -> open(target.request)
+            is LinkTarget.External -> files.openExternally(target.target)
+            null -> Unit
+        }
+    }
+
+    /** 로컬 파일을 읽는다. 없거나 읽을 수 없으면 null. */
+    private suspend fun readOrNull(path: String): String? = try {
+        files.read(path)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     /** code 블록의 작업 폴더 기준 경로를 core가 알려 준 작업 폴더로 풀어 연다. */

@@ -72,7 +72,7 @@ fun BrowserTab(url: String, actions: TabActions, modifier: Modifier) {
 
 /** 엔진이 준비되지 않았을 때 가운데에 보이는 상태와 진행. */
 @Composable
-private fun EngineNotice(status: BrowserStatus, modifier: Modifier) {
+internal fun EngineNotice(status: BrowserStatus, modifier: Modifier) {
     val strings = LocalStrings.current.tabs
     Box(modifier = modifier.padding(24.dp), contentAlignment = Alignment.Center) {
         Column(

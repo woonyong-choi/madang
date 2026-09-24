@@ -38,3 +38,42 @@
 }
 .madang-view-fallback figcaption,
 .madang-view-errors { color: #b42318; }
+.madang-view-links { margin: 0 0 6px; text-align: right; font-size: 13px; }
+
+/* page.md 블록(요청·실행·결과·묻는 블록 등) */
+.madang-block {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(127, 127, 127, .25);
+  border-radius: var(--app-radius, 6px);
+}
+.madang-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  opacity: .85;
+}
+summary.madang-block-head { cursor: pointer; }
+.madang-block-label { font-weight: 600; color: var(--app-accent, #3a5bd9); }
+.madang-block-title { font-weight: 600; }
+.madang-block-meta,
+.madang-block-time { opacity: .75; }
+.madang-block-open { margin-left: auto; }
+.madang-block-body > :first-child { margin-top: 6px; }
+.madang-block-body > :last-child { margin-bottom: 0; }
+.madang-block-files { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.madang-block[data-kind="request"],
+.madang-block[data-kind="answer"] {
+  margin-left: 15%;
+  background: rgba(127, 127, 127, .08);
+}
+.madang-block[data-kind="route"],
+.madang-block[data-kind="run"] { padding: 6px 14px; border-style: dashed; }
+.madang-block[data-kind="result"] {
+  border-left: 3px solid var(--app-accent, #3a5bd9);
+}
+.madang-block[data-kind="ask"] { border-color: #b54708; }
+.madang-block[data-kind="ask"] .madang-block-label { color: #b54708; }
+.madang-block[data-pending="true"] { opacity: .6; }

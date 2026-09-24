@@ -26,9 +26,24 @@ dependencies {
     testImplementation(libs.kotlinx.datetime)
 }
 
+// 문서 탭 렌더러. 게시와 같은 `templates/_runtime` 파일을 jar에 싣는다(DocumentRuntime.FILES).
+val documentRuntime: File = rootProject.projectDir.resolve("../templates/_runtime").canonicalFile
+
 // 창 아이콘에 쓰는 PNG만 jar에 넣는다. icns·ico는 패키징에서만 쓴다.
 tasks.processResources {
     from("icons") { include("icon.png") }
+    from(documentRuntime) {
+        include(
+            "app.html",
+            "app.js",
+            "document.js",
+            "document.css",
+            "vendor/marked.umd.js",
+            "vendor/marked.LICENSE",
+            "THIRD_PARTY_NOTICES.md"
+        )
+        into("madang-runtime")
+    }
 }
 
 // 개발 실행과 테스트는 저장소의 core 프로젝트와 계약 파일을 쓴다.

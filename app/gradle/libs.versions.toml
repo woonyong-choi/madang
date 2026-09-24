@@ -10,7 +10,6 @@ ktlint-gradle = "14.2.0"
 ktlint-cli = "1.8.0"
 snakeyaml = "2.4"
 kotlinx-datetime = "0.8.0"
-markdown-renderer = "0.45.0"
 compose-material-icons = "1.7.3"
 kcef = "2025.03.23"
 
@@ -30,7 +29,6 @@ ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.re
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
-markdown-renderer-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdown-renderer" }
 compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "compose-material-icons" }
 kcef = { module = "dev.datlag:kcef", version.ref = "kcef" }
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
