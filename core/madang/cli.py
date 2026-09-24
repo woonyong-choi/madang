@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -10,6 +11,7 @@ import typer
 from madang import __version__, config
 from madang.store.git import GitError
 from madang.store.home import init_home
+from madang.validate import validate_target
 
 app = typer.Typer(
     name="madang",
@@ -55,6 +57,41 @@ def init(home: HomeOption = None) -> None:
         typer.echo(f"initialized {path} (committed existing files)")
     else:
         typer.echo(f"already initialized: {path}")
+
+
+@app.command()
+def validate(
+    target: Annotated[Path, typer.Argument(help="state.md path or page folder.")],
+    repo: Annotated[
+        Optional[Path],
+        typer.Option("--repo", help="Code repository for repo: artifacts. Defaults to repo in space.md."),
+    ] = None,
+    home: HomeOption = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Print issues as JSON.")] = False,
+) -> None:
+    """Check state.md (and page.md) of a page. Exit 1 when issues are found."""
+    if not target.exists():
+        typer.echo(f"error: {target} does not exist", err=True)
+        raise typer.Exit(2)
+    try:
+        cfg = config.load_config(home)
+    except Exception as exc:
+        typer.echo(f"error: cannot load config: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    issues = validate_target(
+        target,
+        repo=repo.expanduser() if repo is not None else None,
+        token_limit=cfg.madang.limits.state_tokens,
+        kinds=cfg.routes.kinds,
+    )
+    if as_json:
+        payload = {"ok": not issues, "issues": [issue.to_dict() for issue in issues]}
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        for issue in issues:
+            typer.echo(issue.format())
+    if issues:
+        raise typer.Exit(1)
 
 
 def main() -> None:
