@@ -103,21 +103,21 @@ class FixtureFlowTest {
     }
 
     @Test
-    fun invalidStateIsRejectedWithLines() = runBlocking {
+    fun invalidLedgerIsRejectedWithLines() = runBlocking {
         client().use { core ->
             val api = core.api(::MemoryApi)
-            val state = api.getMemory(page).bodyOrThrow().state
-            assertEquals(2000, state.tokenLimit)
+            val ledger = api.getMemory(page).bodyOrThrow().ledger
+            assertEquals(2000, ledger.tokenLimit)
 
-            val broken = state.content.replace("status: review", "status: finished")
+            val broken = ledger.content.replace("status: review", "status: finished")
             val error = assertFailsWith<CoreApiException> {
-                api.saveMemory(page, MemoryLayer.STATE, MemoryContent(broken)).bodyOrThrow()
+                api.saveMemory(page, MemoryLayer.LEDGER, MemoryContent(broken)).bodyOrThrow()
             }
             assertEquals(400, error.status)
             assertEquals(listOf(2), error.issues.map { it.line })
 
-            val fixed = state.content.replace("status: review", "status: doing")
-            val saved = api.saveMemory(page, MemoryLayer.STATE, MemoryContent(fixed)).bodyOrThrow()
+            val fixed = ledger.content.replace("status: review", "status: doing")
+            val saved = api.saveMemory(page, MemoryLayer.LEDGER, MemoryContent(fixed)).bodyOrThrow()
             assertEquals(fixed, saved.content)
         }
     }

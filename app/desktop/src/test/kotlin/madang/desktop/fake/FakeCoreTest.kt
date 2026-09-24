@@ -14,6 +14,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import madang.api.client.PagesApi
 import madang.api.client.ProjectsApi
+import madang.api.model.ConfigDocument
+import madang.api.model.EventType
 import madang.api.model.HomeInit
 import madang.api.model.RoutesDocument
 import madang.shared.core.CoreApiException
@@ -45,7 +47,7 @@ class FakeCoreTest {
     fun everyEventExampleDecodes() {
         val events = examples.events()
 
-        assertEquals(19, events.size)
+        assertEquals(EventType.entries.size, events.size)
         assertTrue(events.all { decodeEvent(it) != null })
     }
 
@@ -77,6 +79,31 @@ class FakeCoreTest {
             val home = core.setup.getHome().bodyOrThrow()
             assertTrue(home.initialized)
             assertEquals("~/work/madang", home.path)
+        }
+    }
+
+    @Test
+    fun configFilesAreCheckedBeforeSaving() = runTest {
+        client().use { core ->
+            assertTrue(core.setup.getConfig().bodyOrThrow().text.contains("core:"))
+            assertEquals("", core.setup.getProjectConfig("jobs").bodyOrThrow().text)
+
+            val broken = assertFailsWith<CoreApiException> {
+                core.setup.saveConfig(ConfigDocument("core:\n  port: [7470\n")).bodyOrThrow()
+            }
+            assertEquals(listOf("invalid-yaml"), broken.issues.map { it.code })
+
+            val unknown = assertFailsWith<CoreApiException> {
+                core.setup.saveProjectConfig("jobs", ConfigDocument("track: true\nrun: []\n"))
+                    .bodyOrThrow()
+            }
+            assertEquals(400, unknown.status)
+            assertEquals(listOf(2), unknown.issues.map { it.line })
+            assertEquals("", core.setup.getProjectConfig("jobs").bodyOrThrow().text)
+
+            val saved = "track: true\nruns: []\n"
+            core.setup.saveProjectConfig("jobs", ConfigDocument(saved)).bodyOrThrow()
+            assertEquals(saved, core.setup.getProjectConfig("jobs").bodyOrThrow().text)
         }
     }
 

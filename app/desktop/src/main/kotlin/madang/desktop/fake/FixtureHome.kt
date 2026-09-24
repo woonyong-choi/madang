@@ -408,7 +408,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
                     run = run.n,
                     question = Question(
                         kind = Question.Kind.CHOICE,
-                        prompt = "state.md 보정에 실패했습니다. 어떻게 할까요?",
+                        prompt = "ledger.md 보정에 실패했습니다. 어떻게 할까요?",
                         options = listOf("retry", "next_tier", "stop")
                     )
                 )
@@ -469,7 +469,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
             model = route.model,
             input = RunInput(input.parts, input.totalEst),
             usage = RunUsage(input = input.totalEst, cached = 0, output = OUTPUT_TOKENS),
-            changedFiles = listOf("state.md"),
+            changedFiles = listOf("ledger.md"),
             unknownFiles = listOf(scratch),
             verify = RunVerify(),
             resultStatus = RunResultStatus.REVIEW
@@ -508,14 +508,14 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         val memory = memoryOf(page)
         val parts = InputParts(
             systemEst = SYSTEM_TOKENS,
-            root = memory.root.tokens,
-            project = memory.project.tokens,
-            state = memory.state.tokens,
+            profile = memory.profile.tokens,
+            brief = memory.brief.tokens,
+            ledger = memory.ledger.tokens,
             contract = CONTRACT_TOKENS,
             target = 0,
             request = FixtureMemory.tokens(text.orEmpty())
         )
-        val total = parts.systemEst + parts.root + parts.project + parts.state + parts.contract +
+        val total = parts.systemEst + parts.profile + parts.brief + parts.ledger + parts.contract +
             parts.target + parts.request
         return InputPreview(
             kind = route.kind,
@@ -530,7 +530,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
 
     private fun memoryOf(page: PageDetail): Memory {
         val project = projects.first { it.id == page.project }
-        return Memory(memory.root(), memory.project(project), memory.state(page, project))
+        return Memory(memory.profile(), memory.brief(project), memory.ledger(page, project))
     }
 
     private fun saveMemory(pageId: String, layerName: String, body: String?): FixtureResponse {
@@ -551,9 +551,9 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
             )
         }
         val saved = when (layer) {
-            MemoryLayer.ROOT -> memoryOf(page).root
-            MemoryLayer.PROJECT -> memoryOf(page).project
-            MemoryLayer.STATE -> memoryOf(page).state
+            MemoryLayer.PROFILE -> memoryOf(page).profile
+            MemoryLayer.BRIEF -> memoryOf(page).brief
+            MemoryLayer.LEDGER -> memoryOf(page).ledger
         }
         emit(
             "memory.updated",

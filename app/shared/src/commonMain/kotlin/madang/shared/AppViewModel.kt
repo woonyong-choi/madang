@@ -58,7 +58,8 @@ class AppViewModel(private val deps: AppDependencies, private val scope: Corouti
             store = deps.settings,
             scope = sessionScope,
             onLanguageChange = { _language.value = it },
-            onReconnect = ::reconnect
+            onReconnect = ::reconnect,
+            project = main?.state?.value?.targetProject
         )
         _screen.value = Screen.Settings(settings)
     }

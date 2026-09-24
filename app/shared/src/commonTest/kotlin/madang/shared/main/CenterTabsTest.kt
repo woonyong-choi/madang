@@ -248,7 +248,7 @@ class CenterTabsTest {
     private companion object {
         const val PREVIEW_JSON =
             """{"kind":"small","tier":1,"runner":"codex","model":"gpt-6-luna",""" +
-                """"parts":{"system_est":1,"root":1,"project":1,"state":1,"contract":1,""" +
+                """"parts":{"system_est":1,"profile":1,"brief":1,"ledger":1,"contract":1,""" +
                 """"target":1,"request":1},"total_est":7}"""
     }
 }

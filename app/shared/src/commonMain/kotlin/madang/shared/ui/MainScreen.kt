@@ -90,15 +90,15 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
                 .focusRequester(focus)
                 .focusable()
                 .onPreviewKeyEvent { event ->
-                    when (val shortcut = shortcut(event, editing, memory.isOpen)) {
+                    when (val shortcut = shortcut(event, editing, state.sidebar.open)) {
                         null -> false
 
                         Shortcut.Search -> true.also { dialog = MainDialog.Search }
 
                         Shortcut.Memory -> true.also { viewModel.toggleMemory() }
 
-                        Shortcut.CloseMemory -> true.also {
-                            viewModel.memory.close()
+                        Shortcut.CloseSidebar -> true.also {
+                            viewModel.closeSidebar()
                             focus.requestFocus()
                         }
 
@@ -240,12 +240,16 @@ private fun pageActions(
         onEditing = onEditing,
         onEscape = onEscape
     ),
-    memory = MemoryActions(
-        select = viewModel.memory::select,
-        edit = viewModel.memory::edit,
-        save = viewModel.memory::save,
-        close = viewModel.memory::close,
-        onEditing = onEditing
+    sidebar = SidebarActions(
+        select = viewModel::selectSideTab,
+        close = viewModel::closeSidebar,
+        memory = MemoryActions(
+            edit = viewModel.memory::edit,
+            editField = viewModel.memory::editField,
+            toggleRaw = viewModel.memory::toggleRaw,
+            save = viewModel.memory::save,
+            onEditing = onEditing
+        )
     )
 )
 
@@ -268,7 +272,7 @@ private sealed interface Shortcut {
 
     data object Memory : Shortcut
 
-    data object CloseMemory : Shortcut
+    data object CloseSidebar : Shortcut
 
     data class Nav(val key: NavKey) : Shortcut
 
@@ -280,13 +284,13 @@ private sealed interface Shortcut {
  * 키 입력을 메인 화면 동작으로. [editing]이면 Cmd/Ctrl 단축키와 Esc만 받는다. 화면이 받지 않는
  * 키는 null.
  */
-private fun shortcut(event: KeyEvent, editing: Boolean, memoryOpen: Boolean): Shortcut? {
+private fun shortcut(event: KeyEvent, editing: Boolean, sidebarOpen: Boolean): Shortcut? {
     if (event.type != KeyEventType.KeyDown) return null
     val command = event.isMetaPressed || event.isCtrlPressed
     val plain = !command && !event.isAltPressed && !event.isShiftPressed
     return when {
         command && event.key == Key.K -> Shortcut.Search
-        event.key == Key.Escape && memoryOpen -> Shortcut.CloseMemory
+        event.key == Key.Escape && sidebarOpen -> Shortcut.CloseSidebar
         editing && !command -> null
         plain && event.key == Key.Escape -> Shortcut.Tab(TabKey.PAGE)
         plain && event.key == Key.M -> Shortcut.Memory

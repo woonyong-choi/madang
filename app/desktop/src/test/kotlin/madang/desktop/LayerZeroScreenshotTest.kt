@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.TimeZone
+import madang.api.model.MemoryLayer
 import madang.desktop.fake.ContractExamples
 import madang.desktop.fake.FakeCore
 import madang.desktop.fake.FixtureHome
@@ -31,9 +32,14 @@ import madang.shared.core.EventStream
 import madang.shared.main.BlockTab
 import madang.shared.main.FlowItem
 import madang.shared.main.ListSource
+import madang.shared.main.MEMORY_ORDER
 import madang.shared.main.MainState
 import madang.shared.main.MainViewModel
+import madang.shared.main.MemoryDraft
 import madang.shared.main.Pane
+import madang.shared.main.SideTab
+import madang.shared.main.placeIssues
+import madang.shared.main.splitMemory
 import madang.shared.ui.KoreanStrings
 import madang.shared.ui.ListClock
 import madang.shared.ui.LocalListClock
@@ -45,8 +51,8 @@ import org.jetbrains.skia.EncodedImageFormat
  * 픽스처 앱 홈으로 레이어 0을 화면 밖에서 그려 PNG로 남긴다.
  *
  * 넓은 창(3열), 좁은 창(목록 + 본문 2열), 더 좁은 창(본문 1열)과, 메시지를 보내 run 카드가 붙고
- * 미등록 파일 띠·사람 결정 카드·메모리 검사 오류가 보이는 화면, 가운데 열의 페이지 탭과 run 탭을
- * 그린다. 결과는 `madang.screenshotDir`(기본 `build/screenshots`)에 쓴다.
+ * 미등록 파일 띠·사람 결정 카드·메모리 검사 오류가 보이는 화면, 가운데 열의 페이지 탭과 run 탭,
+ * 오른쪽 사이드바의 메모리 탭(Profile / Brief / Ledger와 머리부 폼의 검사 오류)을 그린다. 결과는 `madang.screenshotDir`(기본 `build/screenshots`)에 쓴다.
  */
 class LayerZeroScreenshotTest {
 
@@ -190,20 +196,49 @@ class LayerZeroScreenshotTest {
         viewModel.send()
         viewModel.await { it.page?.detail?.waiting?.decision != null }
 
-        viewModel.toggleMemory()
-        val memory = viewModel.memory.state
-        runBlocking { withTimeout(10.seconds) { memory.first { it.current != null } } }
-        val broken = checkNotNull(memory.value.current).text
-            .replace("status: review", "status: finished")
-        viewModel.memory.edit(broken)
-        viewModel.memory.save()
-        val rejected = runBlocking {
-            withTimeout(10.seconds) { memory.first { it.current?.issues?.isNotEmpty() == true } }
-        }
-        assertEquals(setOf(2), checkNotNull(rejected.current).issuesByLine.keys)
+        val rejected = rejectLedgerStatus(viewModel)
+        assertEquals(setOf(2), rejected.issuesByLine.keys)
 
         val file = render("decision-memory", 1440, 900, viewModel)
         assertTrue(file.length() > 10_000, file.path)
+    }
+
+    @Test
+    fun memoryTabShowsLayersInOrderWithInlineErrors() {
+        val viewModel = viewModel()
+        viewModel.await { it.loaded }
+        viewModel.show("jobs", RESUME, Pane.PAGE)
+
+        val rejected = rejectLedgerStatus(viewModel)
+        val memory = viewModel.memory.state.value
+        assertEquals(MEMORY_ORDER, memory.ordered.map { it.file.layer })
+        assertEquals(SideTab.MEMORY, viewModel.state.value.sidebar.tab)
+        val parts = splitMemory(rejected.text)
+        val status = parts.fields.first { it.key == "status" }
+        assertEquals(
+            listOf(2),
+            placeIssues(parts, rejected.issues).byField[status.line]?.map {
+                it.line
+            }
+        )
+
+        val file = render("memory-tab", 1440, 900, viewModel)
+        assertTrue(file.length() > 10_000, file.path)
+    }
+
+    /** 메모리 탭을 열고 Ledger의 status를 틀린 값으로 저장해 검사 오류를 받는다. */
+    private fun rejectLedgerStatus(viewModel: MainViewModel): MemoryDraft {
+        viewModel.toggleMemory()
+        val memory = viewModel.memory.state
+        runBlocking { withTimeout(10.seconds) { memory.first { it.ordered.size == 3 } } }
+        viewModel.memory.editField(MemoryLayer.LEDGER, "status", "finished")
+        viewModel.memory.save(MemoryLayer.LEDGER)
+        val rejected = runBlocking {
+            withTimeout(10.seconds) {
+                memory.first { it.drafts[MemoryLayer.LEDGER]?.issues?.isNotEmpty() == true }
+            }
+        }
+        return checkNotNull(rejected.drafts[MemoryLayer.LEDGER])
     }
 
     @Test

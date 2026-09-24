@@ -66,8 +66,8 @@ import madang.shared.settings.InMemorySettingsStore
  * 내용의 이벤트가 다시 와도 id로 덮어쓰므로 결과가 같다. 낙관적 갱신은 보낸 메시지뿐이다.
  *
  * 가운데 열은 페이지 탭과 doc·data·run 탭이다. 탭 세트는 페이지마다 앱 설정에 저장해 두고
- * 페이지를 열 때 되살린다. 입력창([composer])은 활성 탭에게 보내고, 메모리 패널([memory])과
- * 최근 삭제([trash])는 열린 페이지를 따라간다.
+ * 페이지를 열 때 되살린다. 입력창([composer])은 활성 탭에게 보내고, 오른쪽 사이드바의 메모리
+ * 탭([memory])과 최근 삭제([trash])는 열린 페이지를 따라간다.
  *
  * @param newPageTitle 새 페이지의 처음 제목.
  * @param settings 페이지별 탭 세트를 저장하는 앱 설정.
@@ -98,7 +98,7 @@ class MainViewModel(
     init {
         scope.launch { events.items().collect(::onItem) }
         scope.launch {
-            state.map { it.page?.detail?.id }.distinctUntilChanged().collect(::onOpenPageChanged)
+            state.map { it.page?.detail?.id }.distinctUntilChanged().collect { onOpenPageChanged() }
         }
         scope.launch {
             state.map { it.sendTarget }.distinctUntilChanged().collect(composer::setTarget)
@@ -279,10 +279,26 @@ class MainViewModel(
         }
     }
 
-    /** 메모리 패널을 열거나 닫는다(M). 열린 페이지가 없으면 무시한다. */
+    /** 사이드바의 메모리 탭을 열거나 닫는다(M). 다른 탭이 보이고 있으면 메모리 탭으로 바꾼다. */
     fun toggleMemory() {
-        val page = _state.value.page?.detail?.id ?: return
-        if (memory.state.value.isOpen) memory.close() else memory.open(page)
+        val sidebar = _state.value.sidebar
+        showSidebar(if (sidebar.showsMemory) sidebar.copy(open = false) else Sidebar(true))
+    }
+
+    fun selectSideTab(tab: SideTab) = showSidebar(Sidebar(open = true, tab = tab))
+
+    fun closeSidebar() = showSidebar(_state.value.sidebar.copy(open = false))
+
+    private fun showSidebar(sidebar: Sidebar) {
+        _state.update { it.copy(sidebar = sidebar) }
+        syncMemory()
+    }
+
+    /** 메모리 탭이 보이고 페이지가 열려 있을 때만 그 페이지의 메모리를 받는다. */
+    private fun syncMemory() {
+        val state = _state.value
+        val page = state.page?.detail?.id
+        if (state.sidebar.showsMemory && page != null) memory.open(page) else memory.close()
     }
 
     fun showUnknownFiles(show: Boolean) = _state.update {
@@ -319,10 +335,9 @@ class MainViewModel(
         }
     }
 
-    private fun onOpenPageChanged(page: String?) {
+    private fun onOpenPageChanged() {
         _state.update { it.copy(unknownFilesOpen = false) }
-        if (!memory.state.value.isOpen) return
-        if (page == null) memory.close() else memory.open(page)
+        syncMemory()
     }
 
     private fun onItem(item: EventStreamItem) {

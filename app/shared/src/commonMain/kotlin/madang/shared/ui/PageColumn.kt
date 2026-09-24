@@ -43,6 +43,7 @@ import madang.shared.main.MainState
 import madang.shared.main.MemoryState
 import madang.shared.main.OpenPage
 import madang.shared.main.RunActivity
+import madang.shared.main.Sidebar
 import madang.shared.main.foldedKeys
 import madang.shared.main.isFoldable
 import madang.shared.main.tabFor
@@ -59,12 +60,12 @@ class PageActions(
     val showUnknownFiles: () -> Unit,
     val answer: (String) -> Unit,
     val composer: ComposerActions,
-    val memory: MemoryActions
+    val sidebar: SidebarActions
 )
 
 /**
  * 가운데 열: 위에 탭 줄, 가운데 활성 탭 내용, 아래 입력창 하나. 첫 탭 "페이지"는 문서 흐름이고,
- * 흐름에서 doc·data·run을 클릭하면 같은 이름의 탭이 열린다. 메모리 패널이 열리면 오른쪽에
+ * 흐름에서 doc·data·run을 클릭하면 같은 이름의 탭이 열린다. 사이드바가 열리면 오른쪽에
  * 붙는다.
  */
 @Composable
@@ -75,11 +76,17 @@ fun PageColumn(
     actions: PageActions,
     modifier: Modifier
 ) {
+    val sidebar: Sidebar = state.sidebar
     Row(modifier = modifier) {
         CenterColumn(state, composer, actions, Modifier.weight(1f).fillMaxHeight())
-        if (memory.isOpen && state.page != null) {
+        if (sidebar.open) {
             VerticalDivider()
-            MemoryPanel(memory, actions.memory, Modifier.width(MEMORY_WIDTH).fillMaxHeight())
+            RightSidebar(
+                sidebar,
+                memory,
+                actions.sidebar,
+                Modifier.width(SIDEBAR_WIDTH).fillMaxHeight()
+            )
         }
     }
 }
@@ -273,4 +280,4 @@ private fun progressText(event: RunStreamEvent, strings: NavigatorStrings): Stri
         RunStreamEvent.Type.ERROR -> strings.runError(event.message.orEmpty())
     }
 
-private val MEMORY_WIDTH = 400.dp
+private val SIDEBAR_WIDTH = 420.dp

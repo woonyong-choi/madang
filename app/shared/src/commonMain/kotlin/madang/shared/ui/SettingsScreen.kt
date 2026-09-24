@@ -1,5 +1,7 @@
 package madang.shared.ui
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -22,11 +25,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import madang.shared.settings.DocumentStatus
 import madang.shared.settings.Language
-import madang.shared.settings.RoutesStatus
+import madang.shared.settings.SettingsDocument
 import madang.shared.settings.SettingsState
 import madang.shared.settings.SettingsViewModel
 
@@ -43,6 +45,10 @@ fun SettingsScreen(viewModel: SettingsViewModel, onClose: () -> Unit) {
             TextButton(onClick = onClose) { Text(strings.close) }
         }
         ConnectionSection(state, viewModel)
+        HorizontalDivider()
+        ConfigSection(state, viewModel)
+        HorizontalDivider()
+        ProjectConfigSection(state, viewModel)
         HorizontalDivider()
         RoutesSection(state, viewModel)
         HorizontalDivider()
@@ -77,43 +83,100 @@ private fun ConnectionSection(state: SettingsState, viewModel: SettingsViewModel
     }
 }
 
+/** 앱 홈 config.yaml. */
 @Composable
-private fun RoutesSection(state: SettingsState, viewModel: SettingsViewModel) {
+private fun ConfigSection(state: SettingsState, viewModel: SettingsViewModel) {
     val strings = LocalStrings.current
-    Section(strings.routesTitle) {
-        OutlinedTextField(
-            value = state.routesText,
-            onValueChange = viewModel::setRoutesText,
-            enabled = state.routesStatus != RoutesStatus.Loading,
-            textStyle = TextStyle(fontFamily = FontFamily.Monospace),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 240.dp)
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = viewModel::saveRoutes,
-                enabled = state.routesStatus == RoutesStatus.Editing ||
-                    state.routesStatus is RoutesStatus.Invalid
-            ) { Text(strings.save) }
-            OutlinedButton(onClick = viewModel::loadRoutes) { Text(strings.reload) }
+    Section(strings.configTitle) {
+        Hint(strings.configHint)
+        DocumentEditorView(SettingsDocument.CONFIG, state, viewModel)
+    }
+}
+
+/** 프로젝트를 골라 그 `.madang/config.yaml`을 고친다. */
+@Composable
+private fun ProjectConfigSection(state: SettingsState, viewModel: SettingsViewModel) {
+    val strings = LocalStrings.current
+    Section(strings.projectConfigTitle) {
+        Hint(strings.projectConfigHint)
+        if (state.projects.isEmpty()) {
+            Hint(strings.noProjects)
+            DocumentStatusLine(state.document(SettingsDocument.PROJECT_CONFIG).status)
+            return@Section
         }
-        RoutesStatusLine(state.routesStatus)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            for (project in state.projects) {
+                FilterChip(
+                    selected = state.project == project.id,
+                    onClick = { viewModel.selectProject(project.id) },
+                    label = { Text(project.title) }
+                )
+            }
+        }
+        DocumentEditorView(SettingsDocument.PROJECT_CONFIG, state, viewModel)
     }
 }
 
 @Composable
-private fun RoutesStatusLine(status: RoutesStatus) {
+private fun RoutesSection(state: SettingsState, viewModel: SettingsViewModel) {
+    Section(LocalStrings.current.routesTitle) {
+        DocumentEditorView(SettingsDocument.ROUTES, state, viewModel)
+    }
+}
+
+/** yaml 원문 편집기, 저장·다시 불러오기, 검사 결과. 거부된 줄은 편집기 안에서도 붉게 보인다. */
+@Composable
+private fun DocumentEditorView(
+    document: SettingsDocument,
+    state: SettingsState,
+    viewModel: SettingsViewModel
+) {
+    val strings = LocalStrings.current
+    val editor = state.document(document)
+    LineEditor(
+        editor.text,
+        editor.issuesByLine,
+        onEdit = { viewModel.setText(document, it) },
+        onEditing = {},
+        modifier = Modifier.fillMaxWidth()
+            .heightIn(min = 160.dp)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(4.dp))
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = { viewModel.save(document) }, enabled = editor.canSave) {
+            Text(strings.save)
+        }
+        OutlinedButton(onClick = { viewModel.reload(document) }) { Text(strings.reload) }
+    }
+    DocumentStatusLine(editor.status)
+}
+
+@Composable
+private fun Hint(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun DocumentStatusLine(status: DocumentStatus) {
     val strings = LocalStrings.current
     val error = MaterialTheme.colorScheme.error
     when (status) {
-        RoutesStatus.Loading, RoutesStatus.Editing -> Unit
+        DocumentStatus.Loading, DocumentStatus.Editing -> Unit
 
-        RoutesStatus.Saving -> Text(strings.saving)
+        DocumentStatus.Saving -> Text(strings.saving)
 
-        RoutesStatus.Saved -> Text(strings.saved, color = MaterialTheme.colorScheme.primary)
+        DocumentStatus.Saved -> Text(strings.saved, color = MaterialTheme.colorScheme.primary)
 
-        is RoutesStatus.Error -> Text(status.message, color = error)
+        is DocumentStatus.Error -> Text(status.message, color = error)
 
-        is RoutesStatus.Invalid -> {
+        is DocumentStatus.Invalid -> {
             Text(strings.invalid, color = error)
             for (issue in status.issues) {
                 val where = listOfNotNull(issue.path, issue.line?.let { "line $it" })

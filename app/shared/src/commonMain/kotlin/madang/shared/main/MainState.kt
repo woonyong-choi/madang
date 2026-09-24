@@ -89,7 +89,8 @@ data class MainState(
     val expandAll: Boolean = false,
     val toggled: Set<String> = emptySet(),
     val activeRuns: Map<String, ActiveRun> = emptyMap(),
-    val unknownFilesOpen: Boolean = false
+    val unknownFilesOpen: Boolean = false,
+    val sidebar: Sidebar = Sidebar()
 ) {
     val projectRows: List<ProjectRow> get() = projectRows(projects, expandedProjects, focusProject)
 

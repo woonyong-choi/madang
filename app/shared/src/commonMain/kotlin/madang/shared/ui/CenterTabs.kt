@@ -295,9 +295,9 @@ private fun ColumnScope.RunDrawer(run: RunRecord, events: List<RunStreamEvent>?)
         val parts = input.parts
         listOf(
             "system" to parts.systemEst,
-            "root" to parts.root,
-            "project" to parts.project,
-            "state" to parts.state,
+            "profile" to parts.profile,
+            "brief" to parts.brief,
+            "ledger" to parts.ledger,
             "contract" to parts.contract,
             "target" to parts.target,
             "request" to parts.request

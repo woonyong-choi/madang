@@ -337,7 +337,7 @@ class PageEventsTest {
         viewModel.toggleMemory()
         runCurrent()
         assertTrue(viewModel.memory.state.value.isOpen)
-        event("memory.updated", """{"layer":"root","tokens":20}""")
+        event("memory.updated", """{"layer":"profile","tokens":20}""")
         runCurrent()
 
         assertEquals(2, mock.requests.count { it.first == "GET /pages/resume/memory" })
@@ -375,7 +375,7 @@ class PageEventsTest {
 
     private companion object {
         const val PARTS_JSON =
-            """{"system_est":24600,"root":110,"project":1840,"state":1320,"contract":420,"target":900,"request":40}"""
+            """{"system_est":24600,"profile":110,"brief":1840,"ledger":1320,"contract":420,"target":900,"request":40}"""
 
         const val PREVIEW_JSON =
             """{"kind":"small","tier":1,"runner":"codex","model":"gpt-6-luna","parts":$PARTS_JSON,"total_est":29230}"""
@@ -387,8 +387,8 @@ class PageEventsTest {
             """{"decision":{"id":"q1","run":2,"question":{"kind":"choice","prompt":"어떻게 할까요?","options":["retry","next_tier","stop"]}}}"""
 
         const val MEMORY_JSON = """{
-            "root":{"layer":"root","path":"root.md","content":"# 나\n","tokens":3},
-            "project":{"layer":"project","path":"projects/jobs/project.md","content":"지원\n","tokens":2},
-            "state":{"layer":"state","path":"state.md","content":"---\nstatus: review\n---\n","tokens":9,"token_limit":2000}}"""
+            "profile":{"layer":"profile","path":"profile.md","content":"# 나\n","tokens":3},
+            "brief":{"layer":"brief","path":"projects/jobs/brief.md","content":"지원\n","tokens":2},
+            "ledger":{"layer":"ledger","path":"ledger.md","content":"---\nstatus: review\n---\n","tokens":9,"token_limit":2000}}"""
     }
 }

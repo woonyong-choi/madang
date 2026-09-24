@@ -95,7 +95,7 @@
       "changed_files": [
         "blocks/b04-cause.md",
         "blocks/b05-incidents.json",
-        "state.md"
+        "ledger.md"
       ],
       "unknown_files": [],
       "verify": {

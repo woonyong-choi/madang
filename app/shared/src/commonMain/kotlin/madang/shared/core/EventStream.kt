@@ -12,27 +12,34 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
+import madang.api.model.AskCreatedEvent
 import madang.api.model.BlockAddedEvent
 import madang.api.model.BlockDeletedEvent
 import madang.api.model.BlockUpdatedEvent
 import madang.api.model.EventEnvelope
 import madang.api.model.EventType
 import madang.api.model.FlowWaitingEvent
+import madang.api.model.GitChangedEvent
 import madang.api.model.MemoryUpdatedEvent
 import madang.api.model.PageCreatedEvent
 import madang.api.model.PageDeletedEvent
 import madang.api.model.PageUnknownFilesEvent
 import madang.api.model.PageUpdatedEvent
+import madang.api.model.PortsChangedEvent
 import madang.api.model.ProjectCreatedEvent
 import madang.api.model.ProjectDeletedEvent
 import madang.api.model.ProjectUpdatedEvent
+import madang.api.model.PublishDoneEvent
 import madang.api.model.RunAssembledEvent
 import madang.api.model.RunFailedEvent
 import madang.api.model.RunFallbackEvent
 import madang.api.model.RunFinishedEvent
+import madang.api.model.RunLogEvent
 import madang.api.model.RunProgressEvent
 import madang.api.model.RunStartedEvent
 import madang.api.model.RunnerAvailabilityEvent
+import madang.api.model.RunsOpenedEvent
+import madang.api.model.ViewerChangedEvent
 
 /**
  * core 이벤트 하나.
@@ -152,4 +159,11 @@ private fun serializerFor(type: EventType): KSerializer<out Any> = when (type) {
     EventType.FLOW_PERIOD_WAITING -> FlowWaitingEvent.serializer()
     EventType.MEMORY_PERIOD_UPDATED -> MemoryUpdatedEvent.serializer()
     EventType.RUNNER_PERIOD_AVAILABILITY -> RunnerAvailabilityEvent.serializer()
+    EventType.ASK_PERIOD_CREATED -> AskCreatedEvent.serializer()
+    EventType.RUN_PERIOD_LOG -> RunLogEvent.serializer()
+    EventType.RUNS_PERIOD_OPENED -> RunsOpenedEvent.serializer()
+    EventType.PORTS_PERIOD_CHANGED -> PortsChangedEvent.serializer()
+    EventType.GIT_PERIOD_CHANGED -> GitChangedEvent.serializer()
+    EventType.PUBLISH_PERIOD_DONE -> PublishDoneEvent.serializer()
+    EventType.VIEWER_PERIOD_CHANGED -> ViewerChangedEvent.serializer()
 }

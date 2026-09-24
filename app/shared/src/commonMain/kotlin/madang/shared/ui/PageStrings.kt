@@ -2,8 +2,9 @@ package madang.shared.ui
 
 import madang.api.model.MemoryLayer
 import madang.api.model.UnknownFileAction
+import madang.shared.main.SideTab
 
-/** 입력창, 메모리 패널, 미등록 파일, 사람 결정, 최근 삭제, 페이지 검색 문구. */
+/** 입력창, 오른쪽 사이드바와 메모리 탭, 미등록 파일, 사람 결정, 최근 삭제, 페이지 검색 문구. */
 data class PageStrings(
     val toPage: String,
     val inputPlaceholder: String,
@@ -17,6 +18,11 @@ data class PageStrings(
     val memoryLoading: String,
     val memorySaved: String,
     val memoryRejected: (Int) -> String,
+    val memoryRaw: String,
+    val memoryNoPage: String,
+    val memoryEmptyBody: String,
+    val sideTab: (SideTab) -> String,
+    val sideTabPending: String,
     val lineLabel: (Int) -> String,
     val unknownFilesTitle: String,
     val unknownFileRun: (Int) -> String,
@@ -47,15 +53,29 @@ val KoreanPageStrings = PageStrings(
     memory = "메모리",
     memoryLayer = {
         when (it) {
-            MemoryLayer.ROOT -> "root"
-            MemoryLayer.PROJECT -> "project"
-            MemoryLayer.STATE -> "state"
+            MemoryLayer.PROFILE -> "Profile"
+            MemoryLayer.BRIEF -> "Brief"
+            MemoryLayer.LEDGER -> "Ledger"
         }
     },
     memoryTokens = { tokens, limit -> if (limit != null) "$tokens / $limit 토큰" else "$tokens 토큰" },
     memoryLoading = "불러오는 중",
     memorySaved = "저장했습니다",
     memoryRejected = { "core 검사에서 거부되었습니다 (${it}건)" },
+    memoryRaw = "원문",
+    memoryNoPage = "페이지를 열면 그 페이지가 쓰는 Profile / Brief / Ledger가 보입니다.",
+    memoryEmptyBody = "(본문 없음)",
+    sideTab = {
+        when (it) {
+            SideTab.NOW -> "지금"
+            SideTab.FILES -> "파일"
+            SideTab.MEMORY -> "메모리"
+            SideTab.GIT -> "git"
+            SideTab.PORTS -> "포트"
+            SideTab.HISTORY -> "기록"
+        }
+    },
+    sideTabPending = "이 탭은 아직 비어 있습니다.",
     lineLabel = { "${it}행" },
     unknownFilesTitle = "등록되지 않은 파일",
     unknownFileRun = { "run $it" },
@@ -100,6 +120,20 @@ val EnglishPageStrings = KoreanPageStrings.copy(
     memoryLoading = "Loading",
     memorySaved = "Saved",
     memoryRejected = { "Rejected by core validation ($it)" },
+    memoryRaw = "Source",
+    memoryNoPage = "Open a page to see the Profile / Brief / Ledger it uses.",
+    memoryEmptyBody = "(no body)",
+    sideTab = {
+        when (it) {
+            SideTab.NOW -> "Now"
+            SideTab.FILES -> "Files"
+            SideTab.MEMORY -> "Memory"
+            SideTab.GIT -> "Git"
+            SideTab.PORTS -> "Ports"
+            SideTab.HISTORY -> "History"
+        }
+    },
+    sideTabPending = "This tab is empty for now.",
     lineLabel = { "line $it" },
     unknownFilesTitle = "Unregistered files",
     unknownFileAction = {

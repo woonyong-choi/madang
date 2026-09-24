@@ -23,13 +23,15 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import madang.api.model.Issue
+import madang.api.model.ValidationFailure
 import madang.shared.core.EventTransport
 
 /**
  * 개발용 가짜 core(`MADANG_FAKE_CORE=1`).
  *
- * 계약에 있는 경로는 계약 예시로 답한다. 설정 경로(`/home`, `/config/routes`)는 메모리
- * 상태로 흉내 낸다. 전역 설정은 처음에 없는 상태로 시작한다([homeReady]가 거짓일 때).
+ * 계약에 있는 경로는 계약 예시로 답한다. 설정 경로(`/home`, `/config/routes`, `/config`,
+ * `/projects/{p}/config`)는 메모리 상태로 흉내 낸다. 전역 설정은 처음에 없는 상태로 시작한다([homeReady]가 거짓일 때).
  *
  * [fixture]가 있으면 프로젝트·페이지·블록 경로는 픽스처 앱 홈으로 답하고, 이벤트도 픽스처의
  * 것을 보낸다.
@@ -42,6 +44,7 @@ class FakeCore(
 
     private var home = HomeState(path = "~/.madang", initialized = homeReady)
     private var routes = SAMPLE_ROUTES
+    private val config = FakeConfig()
 
     val engine: HttpClientEngine = MockEngine { request -> handle(request) }
 
@@ -73,6 +76,13 @@ class FakeCore(
             path == "/config/routes" && request.method == HttpMethod.Get -> json(routesJson())
 
             path == "/config/routes" && request.method == HttpMethod.Put -> saveRoutes(body)
+
+            path == "/config" && request.method == HttpMethod.Get -> json(textJson(config.global()))
+
+            path == "/config" && request.method == HttpMethod.Put ->
+                saveConfig(body) { config.saveGlobal(it) to config.global() }
+
+            PROJECT_CONFIG.matches(path) -> projectConfig(request.method, path, body)
 
             else -> fixture?.handle(request.method.value, path, body, query(request))
                 ?.let { fixtureResponse(it) }
@@ -128,7 +138,40 @@ class FakeCore(
         return json(routesJson())
     }
 
-    private fun routesJson() = buildJsonObject { put("text", routes) }
+    private fun routesJson() = textJson(routes)
+
+    private fun textJson(text: String) = buildJsonObject { put("text", text) }
+
+    private fun MockRequestHandleScope.projectConfig(
+        method: HttpMethod,
+        path: String,
+        body: String?
+    ): HttpResponseData {
+        val id = checkNotNull(PROJECT_CONFIG.matchEntire(path)).groupValues[1]
+        return when (method) {
+            HttpMethod.Get -> json(textJson(config.project(id)))
+            HttpMethod.Put -> saveConfig(body) { config.saveProject(id, it) to config.project(id) }
+            else -> error(HttpStatusCode.MethodNotAllowed, "invalid", "$method $path")
+        }
+    }
+
+    /** 설정 원문을 [save]로 검사해 저장한다. [save]는 문제 목록과 저장 뒤 원문을 돌려준다. */
+    private fun MockRequestHandleScope.saveConfig(
+        body: String?,
+        save: (String) -> Pair<List<Issue>, String>
+    ): HttpResponseData {
+        val text =
+            body?.let { Json.parseToJsonElement(it).jsonObject["text"]?.jsonPrimitive?.content }
+                ?: return error(HttpStatusCode.BadRequest, "invalid", "missing text")
+        val (issues, saved) = save(text)
+        if (issues.isEmpty()) return json(textJson(saved))
+        val failure = ValidationFailure(
+            error = ValidationFailure.Error.INVALID,
+            message = "config.yaml failed validation",
+            issues = issues
+        )
+        return json(Json.encodeToJsonElement(ValidationFailure.serializer(), failure), BAD_REQUEST)
+    }
 
     private fun validationFailure(missing: List<String>) = buildJsonObject {
         put("error", "invalid")
@@ -177,6 +220,8 @@ class FakeCore(
     private companion object {
         val EVENT_INTERVAL = 700.milliseconds
         val REQUIRED_ROUTE_KEYS = listOf("kinds", "default_kind", "tiers")
+        val PROJECT_CONFIG = Regex("^/projects/([^/]+)/config$")
+        val BAD_REQUEST = HttpStatusCode.BadRequest
 
         val SAMPLE_ROUTES = """
             kinds: [design, build, small, review, explore]
