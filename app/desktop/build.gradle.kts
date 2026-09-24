@@ -16,6 +16,10 @@ dependencies {
     implementation(libs.kotlinx.coroutines.swing)
 }
 
+sourceSets.main {
+    resources.srcDir("icons")
+}
+
 compose.desktop {
     application {
         mainClass = "madang.desktop.MainKt"
@@ -24,6 +28,16 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
             packageName = "Madang"
             packageVersion = "1.0.0"
+
+            macOS {
+                iconFile.set(project.file("icons/icon.icns"))
+            }
+            windows {
+                iconFile.set(project.file("icons/icon.ico"))
+            }
+            linux {
+                iconFile.set(project.file("icons/icon.png"))
+            }
         }
     }
 }

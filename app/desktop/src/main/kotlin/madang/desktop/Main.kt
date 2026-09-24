@@ -2,6 +2,7 @@ package madang.desktop
 
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -17,6 +18,7 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "Madang",
+        icon = painterResource("icon.png"),
         state = rememberWindowState(size = DpSize(1280.dp, 800.dp))
     ) {
         MadangApp()
