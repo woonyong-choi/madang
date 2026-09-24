@@ -1,0 +1,12 @@
+# 영수증 코드 설정. 앱(core)이 읽는다. 에이전트는 이 파일을 받지 않는다.
+
+# .madang/을 git에 넣지 않는다(.git/info/exclude에 더한다).
+track: false
+
+# 정책: 선언한 테스트가 통과하고 충돌이 없으면 페이지 브랜치를 자동으로
+# 머지한다.
+policy:
+  auto_merge:
+    require_tests: true
+    require_no_conflict: true
+    test: python3 -m unittest -q
