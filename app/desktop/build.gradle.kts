@@ -18,6 +18,7 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.mock)
     implementation(libs.snakeyaml)
+    implementation(libs.kcef)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
@@ -51,6 +52,14 @@ tasks.test {
 compose.desktop {
     application {
         mainClass = "madang.desktop.MainKt"
+
+        // 브라우저 탭 엔진(KCEF)이 AWT 내부에 접근한다.
+        jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED")
+        jvmArgs("--add-opens", "java.desktop/java.awt.peer=ALL-UNNAMED")
+        if (System.getProperty("os.name").lowercase().contains("mac")) {
+            jvmArgs("--add-opens", "java.desktop/sun.lwawt=ALL-UNNAMED")
+            jvmArgs("--add-opens", "java.desktop/sun.lwawt.macosx=ALL-UNNAMED")
+        }
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi)

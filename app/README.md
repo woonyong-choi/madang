@@ -67,13 +67,38 @@ mermaid는 코드 블록으로 보인다.
 
 ## 가운데 열 탭
 
-- 첫 탭 "페이지"는 블록 흐름이며 닫을 수 없다. 흐름에서 doc·data 블록이나 run 카드를 클릭하면 같은
-  이름의 탭이 열리고, 이미 열려 있으면 그 탭으로 간다. view·code·term·site 블록은 흐름에만 보인다.
-- 탭 안 오른쪽 서랍(접을 수 있음): doc은 미리보기/원본, data는 표/원본, run은 입력 구성·사용량·바뀐
+- 탭 종류는 여섯 가지로 고정이다: 문서 · 터미널 · 채팅 · 브라우저 · 디프 · 데이터. 터미널과 채팅은
+  아직 자리만 있다. 종류는 열기 요청과 파일 확장자로만 정하고 내용을 보고 짐작하지 않는다
+  (`main/TabKinds.kt`의 표 하나):
+
+  | 연 것 | 탭 |
+  |---|---|
+  | `.md` 파일 | 문서 |
+  | `.json` · `.yaml` · `.yml` · `.csv` 파일 | 데이터 |
+  | `.html` 파일, URL | 브라우저(파일은 `file://`) |
+  | git diff | 디프 |
+  | PTY / kind=chat 페이지 | 터미널 / 채팅(아직 열리지 않음) |
+  | 그 밖의 파일 | 문서 탭의 코드 보기(편집 없음, "외부 편집기로 열기") |
+
+- 더블클릭 = 열기, 항상. 첫 탭 "페이지"는 블록 흐름이며 닫을 수 없다. 흐름에서 블록이나 run 카드를
+  더블클릭하면 그 종류의 탭이 열리고, 이미 열려 있으면 그 탭으로 간다. doc·data·view 블록은 블록 파일의
+  확장자, site 블록은 `url`, code 블록은 `path`(core가 알려 준 작업 폴더 기준, `GET /projects/{p}/git/status`의
+  `folder`)를 연다. term 블록은 터미널 탭이 생길 때까지 열리지 않는다. run 탭과 페이지 탭은 문서 탭이다.
+- 탭 안 오른쪽 서랍(접을 수 있음): 문서는 미리보기/원본, 데이터는 표/트리/원문, run은 입력 구성·사용량·바뀐
   파일·이벤트 로그(`GET /pages/{p}/runs/{n}/events`). run 탭 본문에는 그 run을 일으킨 요청과 run이
   남긴 메시지가 보인다.
+- 데이터 탭: JSON·YAML·CSV를 표(최상위 목록·매핑)와 트리로 본다. 블록 파일은 "원문"에서 줄 번호
+  편집기로 고쳐 저장한다(`PUT /pages/{p}/blocks/{b}`). core가 거부하면 이유를 그 줄 옆에 보인다. 작업
+  폴더 파일은 읽기만 한다.
+- 디프 탭: 페이지 제목 옆 "디프"로 연다. `GET /projects/{p}/git/diff?page=`의 통합 diff를 파일별로
+  접고 펼친다. `git.changed` 이벤트가 오면 다시 받는다. git 저장소가 아니면(409 `no_repo`) 그렇다고만
+  보인다. 줄 댓글은 아직 없다.
+- 브라우저 탭: KCEF(Chromium) 웹 화면. 로컬 파일과 localhost URL을 연다. core가 `runs.opened`를 보내면
+  열린 페이지가 그 프로젝트일 때 그 URL을 브라우저 탭으로 연다. 엔진 번들은 브라우저 탭을 처음 열 때
+  앱 설정 폴더의 `kcef-bundle/`에 내려받고(진행률 표시), 캐시는 `kcef-cache/`에 둔다. 다시 시작하라고 하면
+  앱을 다시 띄운다.
 - 탭 세트는 페이지마다 앱 설정(`pageTabs`)에 저장되어 재시작 뒤에도 되살아난다. 페이지를 바꾸면 탭
-  세트가 통째로 바뀐다. 탭을 닫아도 블록은 남는다.
+  세트가 통째로 바뀐다. 탭을 닫아도 블록·파일은 남는다.
 
 ## 가운데 열 아래 입력창과 페이지 도구
 
@@ -97,8 +122,8 @@ mermaid는 코드 블록으로 보인다.
   페이지·블록을 최신순으로 보고 복구한다.
 - 시작 화면에서 core에 연결하지 못하면 그 자리에서 core 주소를 고쳐 다시 연결할 수 있다.
 
-앱은 앱 홈과 프로젝트의 `.madang/` 파일을 읽거나 쓰지 않는다(`core.port` 읽기만 예외). 앱이 쓰는 파일은 앱 설정
-`settings.json` 하나다(macOS `~/Library/Application Support/Madang`, Windows `%APPDATA%\Madang`,
+앱은 앱 홈과 프로젝트의 `.madang/` 파일을 읽거나 쓰지 않는다(`core.port` 읽기만 예외). 작업 폴더 파일은
+파일 탭(코드 보기·데이터)에서 읽기만 한다. 앱이 쓰는 파일은 앱 설정 `settings.json`과 브라우저 엔진 번들·캐시다(macOS `~/Library/Application Support/Madang`, Windows `%APPDATA%\Madang`,
 그 밖 `~/.config/madang`, `MADANG_APP_CONFIG_DIR`로 변경).
 
 ## 명령
@@ -152,7 +177,10 @@ router·agent 메시지와 run 기록을 붙이고 미등록 파일(`blocks/scra
 `./gradlew :desktop:test`는 이 픽스처로 메인 화면을 화면 밖에서 그려
 `desktop/build/screenshots/`에 `wide.png`(3열), `narrow.png`(2열), `page.png`(1열)를 남긴다.
 메시지를 보내 run 카드가 붙는 과정(`message-running.png`, `message-done.png`)과 사람 결정 카드·메모리
-검사 오류(`decision-memory.png`), 메모리 탭의 세 층과 머리부 폼 검사 오류(`memory-tab.png`)도 남긴다.
+검사 오류(`decision-memory.png`), 메모리 탭의 세 층과 머리부 폼 검사 오류(`memory-tab.png`), 데이터 탭의 표
+(`tabs-data.png`), 디프 탭(`tabs-diff.png`), 엔진을 처음 내려받는 브라우저 탭(`tabs-browser.png`)도 남긴다.
+픽스처의 `git/<프로젝트 id>.diff`가 그 프로젝트의 작업 트리 diff이고, 그 파일이 없는 프로젝트는 git 저장소가
+아니다. 블록 원문 저장은 `.json` 블록이면 JSON 문법을 검사해 거부한다.
 
 앱 홈 상태(`GET/POST /home`), 라우팅 표(`GET/PUT /config/routes`), 앱 설정(`GET/PUT /config`),
 프로젝트 설정(`GET/PUT /projects/{p}/config`)도 생성 클라이언트(`SetupApi`)로 부른다. 가짜 core는 설정

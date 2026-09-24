@@ -1,5 +1,7 @@
 package madang.shared.ui
 
+import madang.shared.main.DiffFile
+
 /** 가운데 열 탭과 탭 서랍 문구. */
 data class TabStrings(
     val pageTab: String,
@@ -26,7 +28,33 @@ data class TabStrings(
     val changedFiles: String,
     val none: String,
     val eventLog: String,
-    val noEvents: String
+    val noEvents: String,
+    val tree: String,
+    val save: String,
+    val saving: String,
+    val discard: String,
+    val editHint: String,
+    val readOnly: String,
+    val notParsed: (String) -> String,
+    val notTable: String,
+    val cannotRead: (String?) -> String,
+    val codeView: String,
+    val openInEditor: String,
+    val openInBrowser: String,
+    val reload: String,
+    val browserDownloading: (Int?) -> String,
+    val browserFirstRun: String,
+    val browserInstalling: String,
+    val browserRestart: String,
+    val browserFailed: (String?) -> String,
+    val browserUnavailable: String,
+    val openDiff: String,
+    val diffSummary: (files: Int, added: Int, removed: Int) -> String,
+    val noRepository: String,
+    val noChanges: String,
+    val binaryFile: String,
+    val renamedFrom: (String) -> String,
+    val change: (DiffFile.Change) -> String
 )
 
 val KoreanTabStrings = TabStrings(
@@ -54,7 +82,42 @@ val KoreanTabStrings = TabStrings(
     changedFiles = "바뀐 파일",
     none = "없음",
     eventLog = "이벤트 로그",
-    noEvents = "이벤트가 없습니다"
+    noEvents = "이벤트가 없습니다",
+    tree = "트리",
+    save = "저장",
+    saving = "저장 중",
+    discard = "되돌리기",
+    editHint = "원문을 고쳐 저장하면 core가 형식을 검사합니다",
+    readOnly = "작업 폴더 파일은 읽기만 합니다",
+    notParsed = { "$it 형식으로 읽을 수 없어 원문을 보입니다" },
+    notTable = "표로 볼 수 없는 모양이라 트리로 보입니다",
+    cannotRead = { "파일을 읽을 수 없습니다" + (it?.let { m -> ": $m" } ?: "") },
+    codeView = "코드 보기",
+    openInEditor = "외부 편집기로 열기",
+    openInBrowser = "외부 브라우저로 열기",
+    reload = "새로 고침",
+    browserDownloading = { p ->
+        "브라우저 엔진을 내려받는 중" + (p?.let { " $it%" } ?: "")
+    },
+    browserFirstRun = "처음 한 번만 내려받습니다",
+    browserInstalling = "브라우저 엔진을 준비하는 중",
+    browserRestart = "브라우저 엔진을 설치했습니다. 앱을 다시 시작하면 쓸 수 있습니다",
+    browserFailed = { "브라우저 엔진을 준비하지 못했습니다" + (it?.let { m -> ": $m" } ?: "") },
+    browserUnavailable = "이 환경에는 앱 안 브라우저가 없습니다",
+    openDiff = "디프",
+    diffSummary = { files, added, removed -> "파일 ${files}개 · +$added −$removed" },
+    noRepository = "git 저장소가 아니라 디프가 없습니다",
+    noChanges = "바뀐 것이 없습니다",
+    binaryFile = "바이너리 파일",
+    renamedFrom = { "$it 에서 이름 바꿈" },
+    change = {
+        when (it) {
+            DiffFile.Change.ADDED -> "새 파일"
+            DiffFile.Change.DELETED -> "지움"
+            DiffFile.Change.RENAMED -> "이름 바꿈"
+            DiffFile.Change.MODIFIED -> "고침"
+        }
+    }
 )
 
 val EnglishTabStrings = TabStrings(
@@ -82,5 +145,38 @@ val EnglishTabStrings = TabStrings(
     changedFiles = "Changed files",
     none = "None",
     eventLog = "Event log",
-    noEvents = "No events"
+    noEvents = "No events",
+    tree = "Tree",
+    save = "Save",
+    saving = "Saving",
+    discard = "Revert",
+    editHint = "Edit the source and save; core checks the format",
+    readOnly = "Work folder files are read-only",
+    notParsed = { "Cannot read as $it; showing the source" },
+    notTable = "Not a table shape; showing a tree",
+    cannotRead = { "Cannot read the file" + (it?.let { m -> ": $m" } ?: "") },
+    codeView = "Code view",
+    openInEditor = "Open in external editor",
+    openInBrowser = "Open in external browser",
+    reload = "Reload",
+    browserDownloading = { p -> "Downloading the browser engine" + (p?.let { " $it%" } ?: "") },
+    browserFirstRun = "This happens only once",
+    browserInstalling = "Preparing the browser engine",
+    browserRestart = "The browser engine is installed. Restart the app to use it",
+    browserFailed = { "Could not prepare the browser engine" + (it?.let { m -> ": $m" } ?: "") },
+    browserUnavailable = "No in-app browser on this platform",
+    openDiff = "Diff",
+    diffSummary = { files, added, removed -> "$files files · +$added −$removed" },
+    noRepository = "Not a git repository, so there is no diff",
+    noChanges = "No changes",
+    binaryFile = "Binary file",
+    renamedFrom = { "renamed from $it" },
+    change = {
+        when (it) {
+            DiffFile.Change.ADDED -> "added"
+            DiffFile.Change.DELETED -> "deleted"
+            DiffFile.Change.RENAMED -> "renamed"
+            DiffFile.Change.MODIFIED -> "modified"
+        }
+    }
 )

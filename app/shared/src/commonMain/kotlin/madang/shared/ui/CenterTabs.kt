@@ -23,10 +23,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Difference
 import androidx.compose.material.icons.outlined.PlayCircleOutline
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.TableChart
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -51,10 +56,14 @@ import madang.api.model.BlockType
 import madang.api.model.PageDetail
 import madang.api.model.RunRecord
 import madang.api.model.RunStreamEvent
-import madang.shared.main.BlockTab
+import madang.shared.main.CenterTab
+import madang.shared.main.Load
 import madang.shared.main.OpenPage
+import madang.shared.main.TabKind
 import madang.shared.main.TabSet
-import madang.shared.main.dataPreview
+import madang.shared.main.dataFormatOf
+import madang.shared.main.isCodeView
+import madang.shared.main.kindOf
 import madang.shared.main.tabName
 
 /**
@@ -62,12 +71,25 @@ import madang.shared.main.tabName
  *
  * @property activate 탭을 고른다. null은 페이지 탭.
  * @property drawerOpen 탭 안 오른쪽 서랍이 펼쳐져 있다. 모든 블록 탭이 함께 쓴다.
+ * @property openExternally 파일이나 URL을 운영체제의 기본 앱으로 연다.
+ * @property onEditing 원문 편집기에 포커스가 들어오고 나간다(단축키를 끄고 켠다).
  */
 class TabActions(
-    val activate: (BlockTab?) -> Unit,
-    val close: (BlockTab) -> Unit,
+    val activate: (CenterTab?) -> Unit,
+    val close: (CenterTab) -> Unit,
     val drawerOpen: Boolean,
-    val toggleDrawer: () -> Unit
+    val toggleDrawer: () -> Unit,
+    val data: DataActions = DataActions(),
+    val openExternally: (String) -> Unit = {},
+    val reloadDiff: () -> Unit = {},
+    val onEditing: (Boolean) -> Unit = {}
+)
+
+/** 데이터 탭의 원문 편집. 블록 id로 부른다. */
+class DataActions(
+    val edit: (String, String) -> Unit = { _, _ -> },
+    val save: (String) -> Unit = {},
+    val discard: (String) -> Unit = {}
 )
 
 /** 탭 줄. 첫 탭 "페이지"는 닫기 단추가 없다. 활성 탭 위에 색 막대가 붙는다. */
@@ -145,41 +167,116 @@ private fun TabHeader(
     VerticalDivider()
 }
 
-private fun tabIcon(tab: BlockTab, page: PageDetail): ImageVector = when (tab) {
-    is BlockTab.Run -> Icons.Outlined.PlayCircleOutline
+/** 탭 머리의 아이콘. 탭 종류를 따르고, run 탭과 코드 보기만 따로 구분한다. */
+private fun tabIcon(tab: CenterTab, page: PageDetail): ImageVector = when {
+    tab is CenterTab.Run -> Icons.Outlined.PlayCircleOutline
 
-    is BlockTab.Block -> when (page.blocks.firstOrNull { it.id == tab.id }?.type) {
-        BlockType.DATA -> Icons.Outlined.TableChart
-        else -> Icons.Outlined.Description
+    tab is CenterTab.File && isCodeView(tab.path) -> Icons.Outlined.Code
+
+    else -> when (kindOf(tab, page)) {
+        TabKind.DOCUMENT -> Icons.Outlined.Description
+        TabKind.DATA -> Icons.Outlined.TableChart
+        TabKind.BROWSER -> Icons.Outlined.Public
+        TabKind.DIFF -> Icons.Outlined.Difference
+        TabKind.TERMINAL -> Icons.Outlined.Terminal
+        TabKind.CHAT -> Icons.AutoMirrored.Outlined.Chat
     }
 }
 
-/** 블록 탭 내용: 왼쪽에 블록, 오른쪽에 접을 수 있는 서랍. */
+/** 페이지 탭이 아닌 탭의 내용. 탭 종류([kindOf])대로 그린다. */
 @Composable
-fun BlockTabContent(open: OpenPage, tab: BlockTab, actions: TabActions, modifier: Modifier) {
+fun CenterTabContent(open: OpenPage, tab: CenterTab, actions: TabActions, modifier: Modifier) {
     when (tab) {
-        is BlockTab.Block -> {
-            val block = open.detail.blocks.firstOrNull { it.id == tab.id } ?: return
-            val content = open.contents[block.id]
-            if (block.type == BlockType.DATA) {
-                DataTab(block, content, actions, modifier)
-            } else {
-                DocTab(block, content, actions, modifier)
-            }
-        }
+        is CenterTab.Block -> BlockTabContent(open, tab, actions, modifier)
 
-        is BlockTab.Run -> {
+        is CenterTab.Run -> {
             val run = open.detail.runs.firstOrNull { it.n == tab.n } ?: return
             RunTab(open.detail, run, open.runEvents[run.n], actions, modifier)
         }
+
+        is CenterTab.Browser -> BrowserTab(tab.url, actions, modifier)
+
+        CenterTab.Diff -> DiffTab(open.diff, actions, modifier)
+
+        is CenterTab.File -> FileTabContent(tab.path, open.files[tab.path], actions, modifier)
     }
 }
 
-/** doc 탭. 서랍에서 미리보기와 원본을 바꾼다. */
+/** 블록 탭: 블록 파일이 데이터면 데이터 탭(원문 저장 가능), 아니면 문서 탭. */
 @Composable
-private fun DocTab(block: BlockHeader, content: String?, actions: TabActions, modifier: Modifier) {
+private fun BlockTabContent(
+    open: OpenPage,
+    tab: CenterTab.Block,
+    actions: TabActions,
+    modifier: Modifier
+) {
+    val block = open.detail.blocks.firstOrNull { it.id == tab.id } ?: return
+    val content = open.contents[block.id]
+    val format = block.file?.let(::dataFormatOf)
+    if (kindOf(tab, open.detail) == TabKind.DATA && format != null) {
+        DataTab(
+            key = block.id,
+            content = content,
+            format = format,
+            edit = DataEdit(block.id, open.drafts[block.id]),
+            actions = actions,
+            modifier = modifier
+        ) { BlockFacts(block, content) }
+    } else {
+        DocTab(block.id, content, actions, modifier) { BlockFacts(block, content) }
+    }
+}
+
+/**
+ * 작업 폴더 파일 탭. 데이터 파일은 데이터 탭, `.md`는 문서 탭, 그 밖은 문서 탭의 코드 보기다. 모두
+ * 읽기만 한다.
+ */
+@Composable
+private fun FileTabContent(
+    path: String,
+    loaded: Load<String>?,
+    actions: TabActions,
+    modifier: Modifier
+) {
     val strings = LocalStrings.current.tabs
-    var source by remember(block.id) { mutableStateOf(false) }
+    val content = (loaded as? Load.Ready)?.value
+    if (loaded is Load.Failed) {
+        TabFrame(
+            modifier,
+            actions,
+            main = { Placeholder(strings.cannotRead(loaded.message)) },
+            drawer = { FileFacts(path, null, actions) }
+        )
+        return
+    }
+    val format = dataFormatOf(path)
+    when {
+        format != null -> DataTab(
+            key = path,
+            content = content,
+            format = format,
+            edit = null,
+            actions = actions,
+            modifier = modifier
+        ) { FileFacts(path, content, actions) }
+
+        isCodeView(path) -> CodeTab(path, content, actions, modifier)
+
+        else -> DocTab(path, content, actions, modifier) { FileFacts(path, content, actions) }
+    }
+}
+
+/** 문서 탭. 서랍에서 미리보기와 원본을 바꾼다. */
+@Composable
+private fun DocTab(
+    key: String,
+    content: String?,
+    actions: TabActions,
+    modifier: Modifier,
+    facts: @Composable ColumnScope.() -> Unit
+) {
+    val strings = LocalStrings.current.tabs
+    var source by remember(key) { mutableStateOf(false) }
     TabFrame(
         modifier,
         actions,
@@ -192,46 +289,72 @@ private fun DocTab(block: BlockHeader, content: String?, actions: TabActions, mo
         },
         drawer = {
             ModeToggle(strings.preview, strings.source, source) { source = it }
-            BlockFacts(block, content)
+            facts()
         }
     )
 }
 
-/** data 탭. 서랍에서 표와 원본을 바꾼다. 편집은 아직 없다. */
+/** 문서 탭의 코드 보기. 줄 번호와 원문만 보이고 고치지 않는다. 고치려면 외부 편집기로 연다. */
 @Composable
-private fun DataTab(block: BlockHeader, content: String?, actions: TabActions, modifier: Modifier) {
+private fun CodeTab(path: String, content: String?, actions: TabActions, modifier: Modifier) {
     val strings = LocalStrings.current.tabs
-    var source by remember(block.id) { mutableStateOf(false) }
-    val table = content?.let {
-        dataPreview(
-            it,
-            csv = block.format == BlockHeader.Format.CSV,
-            maxRows = Int.MAX_VALUE,
-            maxColumns = Int.MAX_VALUE
-        )
-    }
     TabFrame(
         modifier,
         actions,
         main = {
-            when {
-                content == null -> Placeholder(strings.loading)
-
-                source || table == null -> SourceText(content)
-
-                else -> Column(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    TableRow(table.columns, header = true)
-                    table.rows.forEach { TableRow(it, header = false) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    strings.codeView,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { actions.openExternally(path) }) {
+                    Text(strings.openInEditor)
                 }
             }
+            if (content == null) Placeholder(strings.loading) else NumberedSource(content)
         },
-        drawer = {
-            ModeToggle(strings.table, strings.source, source) { source = it }
-            BlockFacts(block, content)
-            block.format?.let { DrawerFact(strings.format, it.value) }
-            table?.let { DrawerFact(LocalStrings.current.navigator.rows(it.rowCount), null) }
-        }
+        drawer = { FileFacts(path, content, actions) }
     )
+}
+
+/** 줄 번호를 붙인 원문. 줄바꿈하지 않고 가로로 스크롤한다. */
+@Composable
+private fun NumberedSource(content: String) {
+    val lines = content.lines()
+    val width = lines.size.toString().length
+    SelectionContainer {
+        Column(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            lines.forEachIndexed { index, line ->
+                Row {
+                    Text(
+                        (index + 1).toString().padStart(width),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        softWrap = false
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileFacts(path: String, content: String?, actions: TabActions) {
+    val strings = LocalStrings.current.tabs
+    DrawerFact(strings.file, null)
+    MonoLine(path)
+    content?.let { DrawerFact(strings.lines(it.lines().size), null) }
+    DrawerFact(strings.readOnly, null)
+    TextButton(onClick = { actions.openExternally(path) }) { Text(strings.openInEditor) }
 }
 
 /**
@@ -342,7 +465,7 @@ fun eventLine(event: RunStreamEvent): String {
 
 /** 블록 탭의 틀: 위 머리줄(서랍 토글), 왼쪽 본문, 오른쪽 서랍. */
 @Composable
-private fun TabFrame(
+internal fun TabFrame(
     modifier: Modifier,
     actions: TabActions,
     main: @Composable ColumnScope.() -> Unit,
@@ -395,7 +518,7 @@ private fun ModeToggle(
 }
 
 @Composable
-private fun BlockFacts(block: BlockHeader, content: String?) {
+internal fun BlockFacts(block: BlockHeader, content: String?) {
     val strings = LocalStrings.current.tabs
     block.file?.let { DrawerFact(strings.file, it) }
     block.createdBy?.let { DrawerFact(strings.createdBy, it) }
@@ -403,7 +526,7 @@ private fun BlockFacts(block: BlockHeader, content: String?) {
 }
 
 @Composable
-private fun DrawerSection(title: String) {
+internal fun DrawerSection(title: String) {
     Text(
         title,
         style = MaterialTheme.typography.labelLarge,
@@ -413,7 +536,7 @@ private fun DrawerSection(title: String) {
 
 /** 서랍의 한 줄. [value]가 없으면 [label]만 보인다. */
 @Composable
-private fun DrawerFact(label: String, value: String?) {
+internal fun DrawerFact(label: String, value: String?) {
     Row(modifier = Modifier.fillMaxWidth()) {
         Text(
             label,
@@ -426,7 +549,7 @@ private fun DrawerFact(label: String, value: String?) {
 }
 
 @Composable
-private fun MonoLine(text: String) {
+internal fun MonoLine(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelSmall,
@@ -436,7 +559,7 @@ private fun MonoLine(text: String) {
 }
 
 @Composable
-private fun SourceText(content: String) {
+internal fun SourceText(content: String) {
     SelectionContainer {
         Text(
             content,
@@ -447,7 +570,7 @@ private fun SourceText(content: String) {
 }
 
 @Composable
-private fun Placeholder(text: String) {
+internal fun Placeholder(text: String) {
     Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

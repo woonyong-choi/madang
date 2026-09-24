@@ -21,12 +21,16 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import madang.api.model.Block
+import madang.api.model.BlockContent
 import madang.api.model.BlockHeader
 import madang.api.model.BlockType
 import madang.api.model.DecisionAnswer
 import madang.api.model.FlowWaitingData
+import madang.api.model.GitDiff
+import madang.api.model.GitStatus
 import madang.api.model.InputParts
 import madang.api.model.InputPreview
+import madang.api.model.Issue
 import madang.api.model.Memory
 import madang.api.model.MemoryContent
 import madang.api.model.MemoryFile
@@ -66,8 +70,10 @@ data class FixtureResponse(val status: Int, val body: String?)
  * 폴더에 담긴 픽스처로 프로젝트·페이지·블록 경로에 답한다.
  *
  * 폴더 구성: `projects.json`(등록한 Project 배열), `pages/<id>.json`(PageDetail),
- * `blocks/<페이지 id>/<블록 id>.<확장자>`(doc·data 내용), 선택 `events.jsonl`(연결되면 보낼 이벤트).
+ * `blocks/<페이지 id>/<블록 id>.<확장자>`(doc·data 내용), 선택 `events.jsonl`(연결되면 보낼 이벤트),
+ * 선택 `git/<프로젝트 id>.diff`(그 프로젝트의 작업 트리 diff, [FixtureGit]).
  * 카드와 프로젝트의 페이지 수는 페이지에서 계산한다. 바꾸는 요청은 메모리에만 반영하고 이벤트를 낸다.
+ * 블록 원문 저장은 `.json` 블록이면 JSON 문법을 검사한다.
  *
  * 메시지를 받으면 run 하나를 흉내 낸다. [runStep]마다 `run.*` 이벤트를 내고, 끝나면 router·agent
  * 메시지와 run 기록을 붙이고 미등록 파일 하나를 남긴다. 문장에 "결정"이 있으면 도중에
@@ -97,6 +103,8 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
 
     private val memory = FixtureMemory()
     private val trash = FixtureTrash()
+    private val git = FixtureGit(dir)
+    private val blockEdits = mutableMapOf<Pair<String, String>, String>()
     private val waitingRuns = mutableMapOf<String, FixtureRun>()
     private val runScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -155,6 +163,12 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
 
             parts.size == 4 && parts[0] == "pages" && parts[2] == "blocks" && method == "GET" ->
                 blockContent(parts[1], parts[3])
+
+            parts.size == 4 && parts[0] == "pages" && parts[2] == "blocks" && method == "PUT" ->
+                replaceBlock(parts[1], parts[3], body)
+
+            parts.size == 4 && parts[0] == "projects" && parts[2] == "git" && method == "GET" ->
+                gitRequest(parts[1], parts[3])
 
             parts.size == 5 && parts[0] == "pages" && parts[2] == "runs" && parts[4] == "cancel" ->
                 cancelRun(parts[1], parts[3].toIntOrNull())
@@ -297,11 +311,64 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
             page.blocks.firstOrNull { it.id == blockId } ?: return notFound("block $blockId")
         val content = if (header.type == BlockType.MESSAGE) {
             header.text.orEmpty()
+        } else if (pageId to blockId in blockEdits) {
+            blockEdits.getValue(pageId to blockId)
         } else {
             File(dir, "blocks/$pageId").listFiles { f -> f.nameWithoutExtension == blockId }
                 ?.firstOrNull()?.readText().orEmpty()
         }
         return ok(json.encodeToString(Block.serializer(), Block(header, content)))
+    }
+
+    /** 블록 원문을 바꾼다. `.json` 블록은 JSON으로 읽히지 않으면 400으로 거부한다. */
+    private fun replaceBlock(pageId: String, blockId: String, body: String?): FixtureResponse {
+        val page = pages[pageId] ?: return notFound("page $pageId")
+        val header =
+            page.blocks.firstOrNull { it.id == blockId } ?: return notFound("block $blockId")
+        val content = decode(body, BlockContent.serializer()).content
+        if (header.file?.endsWith(".json") == true) {
+            jsonIssue(content)?.let { issue ->
+                val failure = ValidationFailure(
+                    error = ValidationFailure.Error.INVALID,
+                    message = "block content failed validation",
+                    issues = listOf(issue)
+                )
+                return FixtureResponse(
+                    400,
+                    json.encodeToString(ValidationFailure.serializer(), failure)
+                )
+            }
+        }
+        blockEdits[pageId to blockId] = content
+        emitBlock(page, blockId, type = "block.updated")
+        return ok(json.encodeToString(Block.serializer(), Block(header, content)))
+    }
+
+    /** JSON 문법 오류. 파서가 알려 준 위치를 줄 번호로 바꾼다. 문제가 없으면 null. */
+    private fun jsonIssue(content: String): Issue? {
+        val error = runCatching { json.parseToJsonElement(content) }.exceptionOrNull()
+            ?: return null
+        val offset = JSON_OFFSET.find(error.message.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+        val line = offset?.let { content.take(it).count { c -> c == '\n' } + 1 }
+        return Issue(
+            code = "invalid-json",
+            message = error.message.orEmpty().lineSequence().first(),
+            line = line
+        )
+    }
+
+    private fun gitRequest(projectId: String, action: String): FixtureResponse? {
+        val project = projects.firstOrNull { it.id == projectId }
+            ?: return notFound("project $projectId")
+        return when (action) {
+            "status" -> ok(json.encodeToString(GitStatus.serializer(), git.status(project)))
+
+            "diff" -> git.diff(projectId)?.let {
+                ok(json.encodeToString(GitDiff.serializer(), GitDiff(it)))
+            } ?: error(409, "no_repo", "$projectId is not a git repository")
+
+            else -> null
+        }
     }
 
     private fun cancelRun(pageId: String, run: Int?): FixtureResponse {
@@ -594,10 +661,15 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         return "b" + (last + 1 + offset).toString().padStart(2, '0')
     }
 
-    private fun emitBlock(page: PageDetail, blockId: String, run: Int? = null) {
+    private fun emitBlock(
+        page: PageDetail,
+        blockId: String,
+        run: Int? = null,
+        type: String = "block.added"
+    ) {
         val header = page.blocks.first { it.id == blockId }
         emit(
-            "block.added",
+            type,
             page.project,
             page.id,
             buildJsonObject {
@@ -703,6 +775,8 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         const val SYSTEM_TOKENS = 24600
         const val CONTRACT_TOKENS = 420
         const val OUTPUT_TOKENS = 640
+
+        val JSON_OFFSET = Regex("""at offset (\d+)""")
 
         val ROUTES = mapOf(
             "design" to Route("design", "claude", "claude-opus-5-5"),

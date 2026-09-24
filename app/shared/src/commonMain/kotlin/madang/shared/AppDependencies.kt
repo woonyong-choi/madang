@@ -17,6 +17,8 @@ import madang.shared.settings.AppSettingsStore
  * @property launcher core를 띄우는 방법. core를 띄울 수 없는 플랫폼은 null.
  * @property eventTransport 연결에서 이벤트를 받는 방법.
  * @property folderPicker 프로젝트 폴더를 고르는 대화상자.
+ * @property localFiles 코드 보기가 작업 폴더 파일을 읽고 외부 앱으로 여는 곳.
+ * @property browser 브라우저 탭의 웹 엔진.
  */
 class AppDependencies(
     val settings: AppSettingsStore,
@@ -27,5 +29,7 @@ class AppDependencies(
     val eventTransport: (CoreClient) -> EventTransport = {
         WebSocketEventTransport(it.http, it.baseUrl)
     },
-    val folderPicker: FolderPicker = NoFolderPicker
+    val folderPicker: FolderPicker = NoFolderPicker,
+    val localFiles: LocalFiles = NoLocalFiles,
+    val browser: BrowserEngine = NoBrowserEngine
 )

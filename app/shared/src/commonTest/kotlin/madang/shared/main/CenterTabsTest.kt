@@ -134,7 +134,7 @@ class CenterTabsTest {
         state.value.page!!.flowItems.first { it.key == key }
 
     @Test
-    fun clickingDocDataAndRunOpensOneTabEach() = runTest {
+    fun openingBlocksAndRunsMakesOneTabEach() = runTest {
         val (viewModel, _) = viewModel()
         open(viewModel, "resume")
 
@@ -146,8 +146,11 @@ class CenterTabsTest {
         runCurrent()
 
         val state = viewModel.state.value
-        assertEquals(listOf(BlockTab.Block("b02"), BlockTab.Run(1)), state.tabs.tabs)
-        assertEquals(BlockTab.Block("b02"), state.tabs.active)
+        assertEquals(
+            listOf(CenterTab.Block("b02"), CenterTab.Block("b04"), CenterTab.Run(1)),
+            state.tabs.tabs
+        )
+        assertEquals(CenterTab.Block("b02"), state.tabs.active)
         assertEquals(listOf("text", "done"), state.page?.runEvents?.get(1)?.map { it.type.value })
     }
 
@@ -155,8 +158,8 @@ class CenterTabsTest {
     fun tabKeysCloseAndCycleButKeepThePageTab() = runTest {
         val (viewModel, _) = viewModel()
         open(viewModel, "resume")
-        viewModel.openTab(BlockTab.Block("b02"))
-        viewModel.openTab(BlockTab.Block("b03"))
+        viewModel.openTab(CenterTab.Block("b02"))
+        viewModel.openTab(CenterTab.Block("b03"))
 
         viewModel.onTabKey(TabKey.NEXT)
         assertNull(viewModel.state.value.tabs.active)
@@ -164,16 +167,16 @@ class CenterTabsTest {
         assertEquals(2, viewModel.state.value.tabs.tabs.size)
 
         viewModel.onTabKey(TabKey.PREVIOUS)
-        assertEquals(BlockTab.Block("b03"), viewModel.state.value.tabs.active)
+        assertEquals(CenterTab.Block("b03"), viewModel.state.value.tabs.active)
         viewModel.onTabKey(TabKey.CLOSE)
         assertEquals(
-            TabSet(listOf(BlockTab.Block("b02")), BlockTab.Block("b02")),
+            TabSet(listOf(CenterTab.Block("b02")), CenterTab.Block("b02")),
             viewModel.state.value.tabs
         )
 
         viewModel.onTabKey(TabKey.PAGE)
         assertNull(viewModel.state.value.tabs.active)
-        viewModel.closeTab(BlockTab.Block("b02"))
+        viewModel.closeTab(CenterTab.Block("b02"))
         assertEquals(TabSet(), viewModel.state.value.tabs)
     }
 
@@ -181,15 +184,15 @@ class CenterTabsTest {
     fun eachPageKeepsItsOwnTabSetAcrossRestarts() = runTest {
         val (viewModel, _) = viewModel()
         open(viewModel, "resume")
-        viewModel.openTab(BlockTab.Block("b03"))
-        viewModel.openTab(BlockTab.Run(1))
+        viewModel.openTab(CenterTab.Block("b03"))
+        viewModel.openTab(CenterTab.Run(1))
 
         open(viewModel, "cover")
         assertEquals(TabSet(), viewModel.state.value.tabs)
-        viewModel.openTab(BlockTab.Block("b01"))
+        viewModel.openTab(CenterTab.Block("b01"))
 
         open(viewModel, "resume")
-        val restored = TabSet(listOf(BlockTab.Block("b03"), BlockTab.Run(1)), BlockTab.Run(1))
+        val restored = TabSet(listOf(CenterTab.Block("b03"), CenterTab.Run(1)), CenterTab.Run(1))
         assertEquals(restored, viewModel.state.value.tabs)
         assertEquals(setOf("resume", "cover"), settings.load().pageTabs.keys)
 
@@ -197,14 +200,14 @@ class CenterTabsTest {
         open(restarted, "resume")
         assertEquals(restored, restarted.state.value.tabs)
         open(restarted, "cover")
-        assertEquals(BlockTab.Block("b01"), restarted.state.value.tabs.active)
+        assertEquals(CenterTab.Block("b01"), restarted.state.value.tabs.active)
     }
 
     @Test
     fun deletedPageForgetsItsTabs() = runTest {
         val (viewModel, _) = viewModel()
         open(viewModel, "resume")
-        viewModel.openTab(BlockTab.Block("b02"))
+        viewModel.openTab(CenterTab.Block("b02"))
 
         events.send(
             """{"type":"page.deleted","ts":"t","project":"jobs","page":"resume","data":{"id":"resume"}}"""
@@ -222,7 +225,7 @@ class CenterTabsTest {
         assertEquals(SendTarget("resume"), viewModel.composer.state.value.target)
 
         viewModel.composer.setText("표를 정리해줘")
-        viewModel.openTab(BlockTab.Block("b03"))
+        viewModel.openTab(CenterTab.Block("b03"))
         runCurrent()
         val onData = viewModel.composer.state.value
         assertEquals(SendTarget("resume", "b03", "base.json"), onData.target)
@@ -237,7 +240,7 @@ class CenterTabsTest {
         val body = mock.requests.last { it.first == "POST /pages/resume/messages" }.second
         assertEquals("""{"text":"표를 정리해줘","target":{"block":"b03"}}""", body)
 
-        viewModel.openTab(BlockTab.Run(1))
+        viewModel.openTab(CenterTab.Run(1))
         runCurrent()
         assertEquals(SendTarget("resume"), viewModel.composer.state.value.target)
         viewModel.onTabKey(TabKey.PAGE)

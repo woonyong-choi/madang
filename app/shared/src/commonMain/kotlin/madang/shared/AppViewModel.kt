@@ -45,6 +45,9 @@ class AppViewModel(private val deps: AppDependencies, private val scope: Corouti
     /** 화면이 프로젝트 폴더를 고를 때 쓰는 플랫폼 대화상자. */
     val folderPicker: FolderPicker get() = deps.folderPicker
 
+    /** 브라우저 탭이 쓰는 플랫폼 웹 엔진. */
+    val browser: BrowserEngine get() = deps.browser
+
     private val _screen = MutableStateFlow<Screen>(newStart())
     val screen: StateFlow<Screen> = _screen.asStateFlow()
 
@@ -90,7 +93,14 @@ class AppViewModel(private val deps: AppDependencies, private val scope: Corouti
         val core = client ?: return
         val events = EventStream(deps.eventTransport(core))
         val newPageTitle = stringsFor(_language.value).navigator.untitledPage
-        val viewModel = MainViewModel(core, events, sessionScope, newPageTitle, deps.settings)
+        val viewModel = MainViewModel(
+            core,
+            events,
+            sessionScope,
+            newPageTitle,
+            deps.settings,
+            files = deps.localFiles
+        )
         main = viewModel
         _screen.value = Screen.Main(viewModel)
     }

@@ -46,7 +46,7 @@ import madang.shared.main.RunActivity
 import madang.shared.main.Sidebar
 import madang.shared.main.foldedKeys
 import madang.shared.main.isFoldable
-import madang.shared.main.tabFor
+import madang.shared.main.openTargetFor
 
 /** 가운데 열 조작. */
 class PageActions(
@@ -57,6 +57,7 @@ class PageActions(
     val cancelRun: () -> Unit,
     val back: (() -> Unit)?,
     val toggleMemory: () -> Unit,
+    val openDiff: () -> Unit,
     val showUnknownFiles: () -> Unit,
     val answer: (String) -> Unit,
     val composer: ComposerActions,
@@ -65,7 +66,7 @@ class PageActions(
 
 /**
  * 가운데 열: 위에 탭 줄, 가운데 활성 탭 내용, 아래 입력창 하나. 첫 탭 "페이지"는 문서 흐름이고,
- * 흐름에서 doc·data·run을 클릭하면 같은 이름의 탭이 열린다. 사이드바가 열리면 오른쪽에
+ * 흐름에서 블록·run을 더블클릭하면 그 종류의 탭이 열린다. 사이드바가 열리면 오른쪽에
  * 붙는다.
  */
 @Composable
@@ -116,7 +117,7 @@ private fun CenterColumn(
         val content = Modifier.weight(1f).fillMaxWidth()
         when (val tab = state.tabs.active) {
             null -> PageTab(state, open, actions, content)
-            else -> BlockTabContent(open, tab, actions.tabs, content)
+            else -> CenterTabContent(open, tab, actions.tabs, content)
         }
         HorizontalDivider()
         ComposerBar(composer, actions.composer)
@@ -145,6 +146,9 @@ private fun PageTab(state: MainState, open: OpenPage, actions: PageActions, modi
             }
             TextButton(onClick = actions.toggleExpandAll) {
                 Text(if (state.expandAll) strings.foldByRule else strings.expandAll)
+            }
+            TextButton(onClick = actions.openDiff) {
+                Text(LocalStrings.current.tabs.openDiff)
             }
             TextButton(onClick = actions.toggleMemory) {
                 Text(LocalStrings.current.page.memory)
@@ -187,10 +191,10 @@ private fun PageTab(state: MainState, open: OpenPage, actions: PageActions, modi
                         open.contents[item.header.id],
                         isFolded,
                         toggle,
-                        onOpen = openTab.takeIf { tabFor(item) != null }
+                        onOpen = openTab.takeIf { openTargetFor(item) != null }
                     )
 
-                    is FlowItem.Run -> RunItem(item.record, isFolded, openTab)
+                    is FlowItem.Run -> RunItem(item.record, isFolded, toggle, openTab)
 
                     is FlowItem.Pending -> PendingMessageItem(item.message.text)
                 }

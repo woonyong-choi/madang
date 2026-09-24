@@ -29,12 +29,19 @@ private val smokeMode = System.getenv("MADANG_SMOKE") == "1"
 /** MADANG_FAKE_CORE=1이면 계약 예시로 답하는 가짜 core에 붙는다. */
 private val fakeCoreMode = System.getenv("MADANG_FAKE_CORE") == "1"
 
+/** 브라우저 탭 엔진. 번들은 앱 설정 폴더 아래에 받는다. */
+private val browser = KcefBrowserEngine(DesktopPaths.appConfigDir().resolve("kcef-bundle"))
+
 fun main() = application {
     val icon = remember { windowIcon() }
     val scope = rememberCoroutineScope()
     val app = remember { AppViewModel(dependencies(), scope) }
+    val exit = {
+        browser.dispose()
+        exitApplication()
+    }
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = exit,
         title = "Madang",
         icon = icon,
         state = rememberWindowState(size = DpSize(1280.dp, 800.dp))
@@ -47,7 +54,7 @@ fun main() = application {
                 println("madang: first frame rendered, exiting in 3s (MADANG_SMOKE=1)")
                 delay(3_000)
                 println("madang: screen at exit: ${app.screen.value::class.simpleName}")
-                exitApplication()
+                exit()
             }
         }
     }
@@ -60,7 +67,9 @@ private fun dependencies(): AppDependencies {
         claudeProbe = CommandClaudeProbe(),
         portFile = { CorePortFile(DesktopPaths.appHome(it)) },
         launcher = { ProcessCoreLauncher(it) },
-        folderPicker = DesktopFolderPicker()
+        folderPicker = DesktopFolderPicker(),
+        localFiles = DesktopLocalFiles(),
+        browser = browser
     )
 }
 
@@ -84,7 +93,9 @@ private fun fakeDependencies(): AppDependencies {
         launcher = null,
         connect = { CoreClient(it, fake.engine) },
         eventTransport = { fake.events },
-        folderPicker = DesktopFolderPicker()
+        folderPicker = DesktopFolderPicker(),
+        localFiles = DesktopLocalFiles(),
+        browser = browser
     )
 }
 

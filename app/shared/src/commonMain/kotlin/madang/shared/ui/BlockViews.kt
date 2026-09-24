@@ -3,6 +3,7 @@ package madang.shared.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,12 +52,14 @@ import madang.api.model.BlockHeader
 import madang.api.model.BlockType
 import madang.api.model.MessageRole
 import madang.api.model.RunRecord
+import madang.shared.main.DataFormat
+import madang.shared.main.dataFormatOf
 import madang.shared.main.dataPreview
 import madang.shared.main.instantOrNull
 
 /**
  * 본문의 블록 하나. 접힌 메시지는 한 줄로 줄고, 클릭하면 펼쳐진다. [onOpen]이 있으면 블록을
- * 클릭해 탭으로 연다.
+ * 더블클릭해 그 종류의 탭으로 연다.
  */
 @Composable
 fun BlockItem(
@@ -77,9 +80,9 @@ fun BlockItem(
 
         BlockType.DATA -> DataBlock(block, content, onOpen)
 
-        BlockType.VIEW -> ViewBlock(block)
+        BlockType.VIEW -> ViewBlock(block, onOpen)
 
-        else -> OtherBlock(block)
+        else -> OtherBlock(block, onOpen)
     }
 }
 
@@ -208,7 +211,8 @@ private fun DocBlock(block: BlockHeader, content: String?, onOpen: (() -> Unit)?
 @Composable
 private fun DataBlock(block: BlockHeader, content: String?, onOpen: (() -> Unit)?) {
     val strings = LocalStrings.current.navigator
-    val preview = content?.let { dataPreview(it, csv = block.format == BlockHeader.Format.CSV) }
+    val format = block.file?.let(::dataFormatOf) ?: DataFormat.JSON
+    val preview = content?.let { dataPreview(it, format) }
     BlockFrame(Icons.Outlined.TableChart, block.title ?: block.file ?: block.id, onOpen) {
         if (preview == null) {
             Text(
@@ -250,9 +254,9 @@ fun TableRow(cells: List<String>, header: Boolean) {
 }
 
 @Composable
-private fun ViewBlock(block: BlockHeader) {
+private fun ViewBlock(block: BlockHeader, onOpen: (() -> Unit)?) {
     val strings = LocalStrings.current.navigator
-    BlockFrame(Icons.Outlined.Dashboard, block.title ?: block.id) {
+    BlockFrame(Icons.Outlined.Dashboard, block.title ?: block.id, onOpen) {
         Box(
             modifier = Modifier.fillMaxWidth().height(120.dp)
                 .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp)),
@@ -276,9 +280,9 @@ private fun ViewBlock(block: BlockHeader) {
 }
 
 @Composable
-private fun OtherBlock(block: BlockHeader) {
+private fun OtherBlock(block: BlockHeader, onOpen: (() -> Unit)?) {
     val strings = LocalStrings.current.navigator
-    BlockFrame(Icons.Outlined.Description, block.title ?: block.id) {
+    BlockFrame(Icons.Outlined.Description, block.title ?: block.id, onOpen) {
         Text(
             listOfNotNull(strings.blockType(block.type), block.path ?: block.cmd ?: block.url)
                 .joinToString(" · "),
@@ -287,11 +291,12 @@ private fun OtherBlock(block: BlockHeader) {
     }
 }
 
+/** 블록 카드의 틀. [onOpen]이 있으면 더블클릭으로 연다. */
 @Composable
 private fun BlockFrame(
     icon: ImageVector,
     title: String,
-    onClick: (() -> Unit)? = null,
+    onOpen: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     val shape = RoundedCornerShape(8.dp)
@@ -299,10 +304,8 @@ private fun BlockFrame(
         modifier = Modifier.fillMaxWidth()
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .then(
-                if (onClick !=
-                    null
-                ) {
-                    Modifier.clip(shape).clickable(onClick = onClick)
+                if (onOpen != null) {
+                    Modifier.clip(shape).combinedClickable(onDoubleClick = onOpen, onClick = {})
                 } else {
                     Modifier
                 }
@@ -329,15 +332,18 @@ private fun BlockFrame(
     }
 }
 
-/** run 한 줄 카드. 펼치면 종류·등급·바뀐 파일·커밋을 보인다. 클릭하면 run 탭을 연다. */
+/**
+ * run 한 줄 카드. 펼치면 종류·등급·바뀐 파일·커밋을 보인다. 클릭하면 접고 펼치고, 더블클릭하면
+ * run 탭을 연다.
+ */
 @Composable
-fun RunItem(run: RunRecord, folded: Boolean, onOpen: () -> Unit) {
+fun RunItem(run: RunRecord, folded: Boolean, onToggle: () -> Unit, onOpen: () -> Unit) {
     val strings = LocalStrings.current.navigator
     val colors = MaterialTheme.colorScheme
     Column(
         modifier = Modifier.fillMaxWidth()
             .background(colors.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-            .clickable(onClick = onOpen)
+            .combinedClickable(onDoubleClick = onOpen, onClick = onToggle)
             .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

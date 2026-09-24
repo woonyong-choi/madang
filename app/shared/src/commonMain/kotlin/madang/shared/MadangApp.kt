@@ -24,7 +24,8 @@ fun MadangApp(viewModel: AppViewModel) {
     LaunchedEffect(viewModel) { viewModel.start() }
     CompositionLocalProvider(
         LocalStrings provides stringsFor(language),
-        LocalFolderPicker provides viewModel.folderPicker
+        LocalFolderPicker provides viewModel.folderPicker,
+        LocalBrowserEngine provides viewModel.browser
     ) {
         MaterialTheme {
             Surface(modifier = Modifier.fillMaxSize()) {

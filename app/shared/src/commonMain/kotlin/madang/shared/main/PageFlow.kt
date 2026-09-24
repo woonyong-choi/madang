@@ -1,11 +1,5 @@
 package madang.shared.main
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import madang.api.model.BlockHeader
 import madang.api.model.BlockType
 import madang.api.model.MessageRole
@@ -83,70 +77,3 @@ private fun foldsByRule(item: FlowItem, old: Boolean): Boolean = when (item) {
 
 private fun BlockHeader.isMessage(role: MessageRole) =
     type == BlockType.MESSAGE && this.role == role
-
-/** data 블록 표 미리보기. [rowCount]는 전체 행 수, [rows]는 앞쪽 일부. */
-data class DataPreview(val columns: List<String>, val rows: List<List<String>>, val rowCount: Int)
-
-/**
- * data 블록 내용을 표로 만든다.
- *
- * JSON 최상위 배열은 항목이 행(객체면 키가 열), 최상위 객체는 키·값 두 열이다. CSV는 첫 줄이
- * 열 이름이다. 해석할 수 없으면 null.
- */
-fun dataPreview(
-    content: String,
-    csv: Boolean = false,
-    maxRows: Int = PREVIEW_ROWS,
-    maxColumns: Int = PREVIEW_COLUMNS
-): DataPreview? {
-    if (csv) return csvPreview(content, maxRows, maxColumns)
-    val root = runCatching { Json.parseToJsonElement(content) }.getOrNull() ?: return null
-    return when (root) {
-        is JsonArray -> arrayPreview(root, maxRows, maxColumns)
-
-        is JsonObject -> DataPreview(
-            columns = listOf(KEY_COLUMN, VALUE_COLUMN),
-            rows = root.entries.take(maxRows).map { (key, value) -> listOf(key, cellText(value)) },
-            rowCount = root.size
-        )
-
-        else -> null
-    }
-}
-
-private fun arrayPreview(array: JsonArray, maxRows: Int, maxColumns: Int): DataPreview {
-    val objects = array.filterIsInstance<JsonObject>()
-    if (objects.size != array.size || objects.isEmpty()) {
-        return DataPreview(
-            columns = listOf(VALUE_COLUMN),
-            rows = array.take(maxRows).map { listOf(cellText(it)) },
-            rowCount = array.size
-        )
-    }
-    val columns = objects.flatMap { it.keys }.distinct().take(maxColumns)
-    val rows = objects.take(maxRows).map { row -> columns.map { cellText(row[it]) } }
-    return DataPreview(columns, rows, array.size)
-}
-
-private fun csvPreview(content: String, maxRows: Int, maxColumns: Int): DataPreview? {
-    val lines = content.lines().filter { it.isNotBlank() }
-    val header = lines.firstOrNull() ?: return null
-    val columns = header.split(',').map { it.trim() }.take(maxColumns)
-    val body = lines.drop(1)
-    val rows = body.take(maxRows).map { line ->
-        line.split(',').map { it.trim() }.take(columns.size)
-    }
-    return DataPreview(columns, rows, body.size)
-}
-
-private fun cellText(value: JsonElement?): String = when (value) {
-    null, JsonNull -> ""
-    is JsonPrimitive -> value.content
-    is JsonArray -> "[${value.size}]"
-    is JsonObject -> "{${value.size}}"
-}
-
-private const val PREVIEW_ROWS = 5
-private const val PREVIEW_COLUMNS = 6
-private const val KEY_COLUMN = "key"
-private const val VALUE_COLUMN = "value"

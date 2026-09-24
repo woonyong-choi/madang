@@ -48,6 +48,7 @@ import madang.shared.main.EventLink
 import madang.shared.main.MainState
 import madang.shared.main.MainViewModel
 import madang.shared.main.NavKey
+import madang.shared.main.OpenRequest
 import madang.shared.main.Pane
 import madang.shared.main.TabKey
 import madang.shared.main.visiblePanes
@@ -157,7 +158,15 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
                                         activate = viewModel::activateTab,
                                         close = viewModel::closeTab,
                                         drawerOpen = drawerOpen,
-                                        toggleDrawer = { drawerOpen = !drawerOpen }
+                                        toggleDrawer = { drawerOpen = !drawerOpen },
+                                        data = DataActions(
+                                            edit = viewModel::editData,
+                                            save = viewModel::saveData,
+                                            discard = viewModel::discardData
+                                        ),
+                                        openExternally = viewModel::openExternally,
+                                        reloadDiff = viewModel::reloadDiff,
+                                        onEditing = { editing = it }
                                     ),
                                     onEditing = { editing = it },
                                     onEscape = { focus.requestFocus() }
@@ -231,6 +240,7 @@ private fun pageActions(
     cancelRun = viewModel::cancelRun,
     back = { viewModel.focusPane(Pane.LIST) }.takeIf { Pane.LIST !in panes },
     toggleMemory = viewModel::toggleMemory,
+    openDiff = { viewModel.open(OpenRequest.Diff) },
     showUnknownFiles = { viewModel.showUnknownFiles(true) },
     answer = viewModel::answer,
     composer = ComposerActions(

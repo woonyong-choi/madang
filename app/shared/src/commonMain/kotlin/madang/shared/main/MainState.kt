@@ -1,6 +1,7 @@
 package madang.shared.main
 
 import kotlin.time.Duration
+import madang.api.model.Issue
 import madang.api.model.PageCard
 import madang.api.model.PageDetail
 import madang.api.model.Project
@@ -23,20 +24,57 @@ sealed interface EventLink {
  */
 data class PendingMessage(val localId: String, val text: String, val messageId: String? = null)
 
+/** 탭이 따로 받아 오는 내용의 상태. */
+sealed interface Load<out T> {
+    data object Loading : Load<Nothing>
+
+    data class Ready<T>(val value: T) : Load<T>
+
+    data class Failed(val message: String?) : Load<Nothing>
+}
+
+/**
+ * 디프 탭 내용.
+ *
+ * @property repository 작업 폴더가 git 저장소다. 아니면 [files]는 비어 있다.
+ */
+data class DiffView(val repository: Boolean, val files: List<DiffFile>)
+
+/**
+ * 데이터 탭에서 고치는 블록 원문. 저장은 core가 검사한다.
+ *
+ * @property issues 마지막 저장에서 core가 거부한 이유.
+ */
+data class DataDraft(
+    val text: String,
+    val saving: Boolean = false,
+    val issues: List<Issue> = emptyList(),
+    val error: String? = null
+) {
+    val issuesByLine: Map<Int, List<Issue>>
+        get() = issues.filter { it.line != null }.groupBy { checkNotNull(it.line) }
+}
+
 /**
  * 3열에 열린 페이지.
  *
- * @property contents doc·data 블록 id별 파일 내용.
+ * @property contents 블록 탭으로 여는 블록(doc·data·view) id별 파일 내용.
  * @property runEvents run 탭에서 읽은 run 번호별 이벤트 로그.
  * @property pending 낙관적으로 붙인 메시지. core 페이지에 같은 블록이 생기면 빠진다.
  * @property answered 답을 보낸 사람 결정 id. flow가 다시 돌거나 새 질문이 오면 지운다.
+ * @property files 파일 탭의 절대 경로별 내용.
+ * @property diff 디프 탭 내용. 디프 탭을 연 적이 없으면 null.
+ * @property drafts 데이터 탭에서 고치는 중인 블록 id별 원문.
  */
 data class OpenPage(
     val detail: PageDetail,
     val contents: Map<String, String> = emptyMap(),
     val runEvents: Map<Int, List<RunStreamEvent>> = emptyMap(),
     val pending: List<PendingMessage> = emptyList(),
-    val answered: String? = null
+    val answered: String? = null,
+    val files: Map<String, Load<String>> = emptyMap(),
+    val diff: Load<DiffView>? = null,
+    val drafts: Map<String, DataDraft> = emptyMap()
 ) {
     /** 블록 흐름 끝에 아직 core에 없는 메시지를 붙인 것. */
     val flowItems: List<FlowItem>

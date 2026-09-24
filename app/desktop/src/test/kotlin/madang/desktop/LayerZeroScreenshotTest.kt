@@ -2,8 +2,10 @@ package madang.desktop
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
 import java.io.File
 import kotlin.test.AfterTest
@@ -19,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -27,17 +30,27 @@ import madang.api.model.MemoryLayer
 import madang.desktop.fake.ContractExamples
 import madang.desktop.fake.FakeCore
 import madang.desktop.fake.FixtureHome
+import madang.shared.BrowserEngine
+import madang.shared.BrowserStatus
+import madang.shared.LocalBrowserEngine
+import madang.shared.NoBrowserEngine
 import madang.shared.core.CoreClient
 import madang.shared.core.EventStream
-import madang.shared.main.BlockTab
+import madang.shared.main.CenterTab
+import madang.shared.main.DiffView
 import madang.shared.main.FlowItem
 import madang.shared.main.ListSource
+import madang.shared.main.Load
 import madang.shared.main.MEMORY_ORDER
 import madang.shared.main.MainState
 import madang.shared.main.MainViewModel
 import madang.shared.main.MemoryDraft
+import madang.shared.main.OpenRequest
 import madang.shared.main.Pane
 import madang.shared.main.SideTab
+import madang.shared.main.TAB_BLOCK_TYPES
+import madang.shared.main.TabKind
+import madang.shared.main.kindOf
 import madang.shared.main.placeIssues
 import madang.shared.main.splitMemory
 import madang.shared.ui.KoreanStrings
@@ -89,11 +102,15 @@ class LayerZeroScreenshotTest {
     }
 
     private fun docAndDataCount(state: MainState): Int =
-        state.page?.detail?.blocks?.count { it.type.value == "doc" || it.type.value == "data" } ?: 0
+        state.page?.detail?.blocks?.count { it.type in TAB_BLOCK_TYPES } ?: 0
 
     /** 화면 밖 장면 하나. 프레임을 흘려 보내고 지금 화면을 PNG로 남긴다. */
-    private inner class OffscreenMain(widthDp: Int, heightDp: Int, viewModel: MainViewModel) :
-        AutoCloseable {
+    private inner class OffscreenMain(
+        widthDp: Int,
+        heightDp: Int,
+        viewModel: MainViewModel,
+        browser: BrowserEngine = NoBrowserEngine
+    ) : AutoCloseable {
         private val density = 2f
         private val scene = ImageComposeScene(
             width = (widthDp * density).toInt(),
@@ -102,7 +119,8 @@ class LayerZeroScreenshotTest {
         ) {
             CompositionLocalProvider(
                 LocalStrings provides KoreanStrings,
-                LocalListClock provides clock
+                LocalListClock provides clock,
+                LocalBrowserEngine provides browser
             ) {
                 MaterialTheme { Surface { MainScreen(viewModel) {} } }
             }
@@ -127,11 +145,16 @@ class LayerZeroScreenshotTest {
         override fun close() = scene.close()
     }
 
-    private fun render(name: String, widthDp: Int, heightDp: Int, viewModel: MainViewModel): File =
-        OffscreenMain(widthDp, heightDp, viewModel).use {
-            it.settle()
-            it.save(name)
-        }
+    private fun render(
+        name: String,
+        widthDp: Int,
+        heightDp: Int,
+        viewModel: MainViewModel,
+        browser: BrowserEngine = NoBrowserEngine
+    ): File = OffscreenMain(widthDp, heightDp, viewModel, browser).use {
+        it.settle()
+        it.save(name)
+    }
 
     @Test
     fun rendersWideNarrowAndSinglePageLayouts() {
@@ -254,15 +277,75 @@ class LayerZeroScreenshotTest {
 
         viewModel.openItem(flow.first { it.key == "run-2" })
         val withEvents = viewModel.await { it.page?.runEvents?.get(2)?.isNotEmpty() == true }
-        assertEquals(listOf(BlockTab.Block("b05"), BlockTab.Run(2)), withEvents.tabs.tabs)
-        assertEquals(BlockTab.Run(2), withEvents.tabs.active)
+        assertEquals(listOf(CenterTab.Block("b05"), CenterTab.Run(2)), withEvents.tabs.tabs)
+        assertEquals(CenterTab.Run(2), withEvents.tabs.active)
         val run = render("tabs-run", 1440, 900, viewModel)
 
         for (file in listOf(page, run)) assertTrue(file.length() > 10_000, file.path)
     }
 
+    @Test
+    fun dataTabShowsTheBlockAsATable() {
+        val viewModel = viewModel()
+        viewModel.await { it.loaded }
+        viewModel.show("auth-svc", SESSION_BUG, Pane.PAGE)
+        val flow = checkNotNull(viewModel.state.value.page).flowItems
+        viewModel.openItem(flow.first { it.key == "b05" })
+
+        val state = viewModel.state.value
+        assertEquals(TabKind.DATA, kindOf(state.tabs.active, checkNotNull(state.page).detail))
+        val file = render("tabs-data", 1440, 900, viewModel)
+        assertTrue(file.length() > 10_000, file.path)
+    }
+
+    @Test
+    fun diffTabShowsCoreDiffByFile() {
+        val viewModel = viewModel()
+        viewModel.await { it.loaded }
+        viewModel.show("auth-svc", SESSION_BUG, Pane.PAGE)
+        viewModel.open(OpenRequest.Diff)
+
+        val loaded = viewModel.await { it.page?.diff is Load.Ready }
+        val diff = assertIs<Load.Ready<DiffView>>(loaded.page?.diff).value
+        assertEquals(
+            listOf("src/session/refresh.ts", "src/session/lock.ts", "src/session/legacy-retry.ts"),
+            diff.files.map { it.path }
+        )
+        val file = render("tabs-diff", 1440, 900, viewModel)
+        assertTrue(file.length() > 10_000, file.path)
+    }
+
+    @Test
+    fun browserTabShowsTheFirstRunDownload() {
+        val viewModel = viewModel()
+        viewModel.await { it.loaded }
+        viewModel.show("jobs", RESUME, Pane.PAGE)
+        viewModel.open(OpenRequest.Url("http://localhost:5173"))
+        val engine = DownloadingEngine()
+
+        assertEquals(CenterTab.Browser("http://localhost:5173"), viewModel.state.value.tabs.active)
+        val file = render("tabs-browser", 1440, 900, viewModel, engine)
+        assertTrue(engine.prepared)
+        assertTrue(file.length() > 10_000, file.path)
+    }
+
+    /** 첫 실행에서 엔진 번들을 내려받는 중인 엔진. 웹 화면은 그리지 않는다. */
+    private class DownloadingEngine : BrowserEngine {
+        var prepared = false
+
+        override val status = MutableStateFlow<BrowserStatus>(BrowserStatus.Downloading(42f))
+
+        override fun prepare() {
+            prepared = true
+        }
+
+        @Composable
+        override fun Page(url: String, reload: Int, modifier: Modifier) = Unit
+    }
+
     private companion object {
         const val RESUME = "2026-09-24-resume"
+        const val SESSION_BUG = "2026-09-24-session-bug"
 
         const val FRAMES = 8
         const val FRAME_GAP_MS = 150L

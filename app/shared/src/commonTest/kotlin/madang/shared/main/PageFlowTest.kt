@@ -113,7 +113,7 @@ class PageFlowTest {
 
     @Test
     fun csvAndInvalidContent() {
-        val csv = dataPreview("a,b\n1,2\n3,4\n", csv = true)!!
+        val csv = dataPreview("a,b\n1,2\n3,4\n", DataFormat.CSV)!!
         assertEquals(listOf("a", "b"), csv.columns)
         assertEquals(2, csv.rowCount)
 

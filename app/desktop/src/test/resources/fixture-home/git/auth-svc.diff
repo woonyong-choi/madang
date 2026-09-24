@@ -1,0 +1,54 @@
+diff --git a/src/session/refresh.ts b/src/session/refresh.ts
+index 3f2a1c0..9b7e4d2 100644
+--- a/src/session/refresh.ts
++++ b/src/session/refresh.ts
+@@ -1,14 +1,19 @@
+ import { TokenStore } from "./store"
++import { refreshLock } from "./lock"
+ 
+ export async function refresh(store: TokenStore, userId: string) {
+-  const current = await store.get(userId)
+-  if (!current || current.expiresAt > Date.now()) {
+-    return current
+-  }
+-  const next = await issue(current.refreshToken)
+-  await store.put(userId, next)
+-  return next
++  return refreshLock.run(userId, async () => {
++    const current = await store.get(userId)
++    if (!current || current.expiresAt > Date.now()) {
++      return current
++    }
++    const next = await issue(current.refreshToken)
++    await store.put(userId, next)
++    return next
++  })
+ }
+ 
+ async function issue(refreshToken: string) {
+   const response = await fetch("/oauth/token", {
+diff --git a/src/session/lock.ts b/src/session/lock.ts
+new file mode 100644
+index 0000000..4c1d2e7
+--- /dev/null
++++ b/src/session/lock.ts
+@@ -0,0 +1,9 @@
++import { Mutex } from "./mutex"
++
++/** 사용자마다 갱신을 하나씩만 돌린다. 5초가 지나면 락을 푼다. */
++export const refreshLock = new Mutex({ ttlMs: 5_000 })
++
++export function lockKey(userId: string): string {
++  return `refresh:${userId}`
++}
++
+diff --git a/src/session/legacy-retry.ts b/src/session/legacy-retry.ts
+deleted file mode 100644
+index 71a0b3e..0000000
+--- a/src/session/legacy-retry.ts
++++ /dev/null
+@@ -1,4 +0,0 @@
+-export async function retryOnce<T>(task: () => Promise<T>): Promise<T> {
+-  try { return await task() }
+-  catch { return await task() }
+-}
