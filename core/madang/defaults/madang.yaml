@@ -1,0 +1,13 @@
+home_remote: null   # optional, e.g. git@github.com:<user>/madang-home.git
+core:
+  port: 7470
+  bind: 127.0.0.1
+agents:
+  claude_settings: ~/.claude/settings.json
+  codex_config: ~/.codex/config.toml
+limits:
+  state_tokens: 2000
+  block_input_tokens: 4000
+  run_timeout_minutes: {design: 30, build: 20, small: 5, review: 10, explore: 5}
+ui:
+  language: ko

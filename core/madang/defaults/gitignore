@@ -1,0 +1,4 @@
+scratch/
+secrets.yaml
+core.db
+core.port

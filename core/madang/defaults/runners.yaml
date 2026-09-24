@@ -1,0 +1,9 @@
+claude:
+  bin: claude
+  args: ["-p", "--output-format", "stream-json", "--verbose", "--model", "{model}", "--effort", "{effort}"]
+  auth: subscription            # subscription | api
+  cache_ttl: 1h
+codex:
+  bin: codex
+  args: ["exec", "--json", "-m", "{model}", "-c", "model_reasoning_effort={effort}"]
+  auth: subscription
