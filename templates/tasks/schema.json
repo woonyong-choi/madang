@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "state": {
+    "type": "object",
+    "required": ["tasks"],
+    "properties": {
+      "tasks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "title", "status"],
+          "properties": {
+            "id": { "type": "string" },
+            "title": { "type": "string" },
+            "status": { "type": "string", "examples": ["todo", "doing", "blocked", "done"] },
+            "due": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

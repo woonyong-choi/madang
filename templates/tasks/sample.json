@@ -1,0 +1,12 @@
+{
+  "state": {
+    "tasks": [
+      { "id": "T1", "title": "원인 분석", "status": "done" },
+      { "id": "T2", "title": "갱신 잠금", "status": "doing", "due": "2026-09-26" },
+      { "id": "T3", "title": "통합 테스트 보강", "status": "todo", "due": "2026-09-28" },
+      { "id": "T4", "title": "부하 테스트 환경 확보", "status": "blocked" },
+      { "id": "T5", "title": "배포 체크리스트 작성", "status": "todo" },
+      { "id": "T6", "title": "재현 스크립트 작성", "status": "done" }
+    ]
+  }
+}

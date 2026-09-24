@@ -1,0 +1,14 @@
+{
+  "name": "madang-templates-tests",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Browser tests and preview generation for the built-in templates",
+  "scripts": {
+    "test": "playwright test",
+    "preview": "node preview.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "ajv": "^8.20.0"
+  }
+}

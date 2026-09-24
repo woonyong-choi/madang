@@ -1,0 +1,46 @@
+{
+  "state": {
+    "decisions": [
+      {
+        "id": "D1",
+        "topic": "갱신 경합 해결",
+        "choice": "refresh-lock",
+        "options": ["refresh-lock", "sliding-session", "client-retry"],
+        "by": "claude/opus-5-5",
+        "run": 3,
+        "state": "confirmed",
+        "supersedes": null
+      },
+      {
+        "id": "D2",
+        "topic": "세션 저장소",
+        "choice": "redis",
+        "options": ["redis", "postgres"],
+        "by": "codex/gpt-6-sol",
+        "run": 4,
+        "state": "proposed",
+        "supersedes": null
+      },
+      {
+        "id": "D3",
+        "topic": "토큰 만료 시간",
+        "choice": "15m",
+        "options": ["5m", "15m", "60m"],
+        "by": "user",
+        "run": 2,
+        "state": "deferred",
+        "supersedes": null
+      },
+      {
+        "id": "D0",
+        "topic": "갱신 경합 해결 (초안)",
+        "choice": "client-retry",
+        "options": ["client-retry", "refresh-lock"],
+        "by": "claude/opus-5-5",
+        "run": 1,
+        "state": "superseded",
+        "supersedes": null
+      }
+    ]
+  }
+}

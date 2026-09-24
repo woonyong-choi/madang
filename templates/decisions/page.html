@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>결정 사항</title>
+<style>
+  :root { --color-accent: #3a5bd9; --color-text: #1d2330; --color-muted: #6b7280; --font-size: 14px;
+          --font-family: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; background: #f6f7f9; color: var(--color-text); font: var(--font-size)/1.5 var(--font-family); }
+  h1 { margin: 0 0 18px; font-size: 1.35em; }
+  section { margin-bottom: 22px; }
+  h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: .95em; }
+  h2::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--dot); }
+  .confirmed { --dot: #16a34a; }
+  .proposed { --dot: #d97706; }
+  .deferred { --dot: #6b7280; }
+  .superseded { --dot: #9ca3af; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid var(--dot); border-radius: 6px; padding: 12px 14px; }
+  .superseded .card { opacity: .6; }
+  .superseded .choice { text-decoration: line-through; }
+  .head { display: flex; gap: 8px; align-items: baseline; }
+  .id { font-weight: 700; color: var(--color-accent); font-family: ui-monospace, Menlo, monospace; font-size: .9em; }
+  .topic { font-weight: 600; }
+  .choice { display: inline-block; margin: 8px 0 6px; padding: 2px 10px; border-radius: 4px; background: var(--color-accent); color: #fff; font-family: ui-monospace, Menlo, monospace; font-size: .9em; }
+  .options { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .options li { padding: 1px 8px; border: 1px solid #d1d5db; border-radius: 4px; color: var(--color-muted); font-size: .85em; font-family: ui-monospace, Menlo, monospace; }
+  .meta { margin-top: 8px; color: var(--color-muted); font-size: .82em; }
+</style>
+</head>
+<body>
+<main data-madang-root>
+  <h1>결정 사항</h1>
+  <section class="confirmed">
+    <h2>확정</h2>
+    <div class="cards">
+      <article class="card" data-each="state.decisions" data-where="state=confirmed">
+        <div class="head"><span class="id" data-bind=".id"></span><span class="topic" data-bind=".topic"></span></div>
+        <div class="choice" data-bind=".choice"></div>
+        <ul class="options"><li data-each=".options" data-bind="."></li></ul>
+        <div class="meta"><span data-bind=".by"></span> · run <span data-bind=".run"></span></div>
+      </article>
+    </div>
+  </section>
+  <section class="proposed">
+    <h2>제안</h2>
+    <div class="cards">
+      <article class="card" data-each="state.decisions" data-where="state=proposed">
+        <div class="head"><span class="id" data-bind=".id"></span><span class="topic" data-bind=".topic"></span></div>
+        <div class="choice" data-bind=".choice"></div>
+        <ul class="options"><li data-each=".options" data-bind="."></li></ul>
+        <div class="meta"><span data-bind=".by"></span> · run <span data-bind=".run"></span></div>
+      </article>
+    </div>
+  </section>
+  <section class="deferred">
+    <h2>보류</h2>
+    <div class="cards">
+      <article class="card" data-each="state.decisions" data-where="state=deferred">
+        <div class="head"><span class="id" data-bind=".id"></span><span class="topic" data-bind=".topic"></span></div>
+        <div class="choice" data-bind=".choice"></div>
+        <ul class="options"><li data-each=".options" data-bind="."></li></ul>
+        <div class="meta"><span data-bind=".by"></span> · run <span data-bind=".run"></span></div>
+      </article>
+    </div>
+  </section>
+  <section class="superseded">
+    <h2>대체됨</h2>
+    <div class="cards">
+      <article class="card" data-each="state.decisions" data-where="state=superseded">
+        <div class="head"><span class="id" data-bind=".id"></span><span class="topic" data-bind=".topic"></span></div>
+        <div class="choice" data-bind=".choice"></div>
+        <ul class="options"><li data-each=".options" data-bind="."></li></ul>
+        <div class="meta"><span data-bind=".by"></span> · run <span data-bind=".run"></span><span data-if=".supersedes"> · 대체: <span data-bind=".supersedes"></span></span></div>
+      </article>
+    </div>
+  </section>
+</main>
+</body>
+</html>

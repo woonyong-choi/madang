@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이력서</title>
+<style>
+  :root { --color-accent: #3a5bd9; --color-text: #1d2330; --color-muted: #6b7280; --font-size: 15px;
+          --font-family: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f4f5f7; color: var(--color-text); font: var(--font-size)/1.6 var(--font-family); }
+  main { max-width: 780px; margin: 32px auto; padding: 40px 48px; background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  header { border-bottom: 3px solid var(--color-accent); padding-bottom: 16px; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 2em; letter-spacing: -.01em; }
+  .headline { margin: 4px 0 10px; color: var(--color-accent); font-weight: 600; font-size: 1.1em; }
+  .contact { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 0; list-style: none; color: var(--color-muted); font-size: .9em; }
+  .contact a { color: inherit; }
+  h2 { margin: 28px 0 10px; font-size: .85em; letter-spacing: .12em; text-transform: uppercase; color: var(--color-accent); }
+  .summary { margin: 0; }
+  .job { margin-bottom: 18px; }
+  .job-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .company { font-weight: 700; font-size: 1.05em; }
+  .role { color: var(--color-muted); }
+  .period { color: var(--color-muted); font-size: .9em; white-space: nowrap; }
+  .job ul { margin: 6px 0 0; padding-left: 20px; }
+  .skills { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .skills li { padding: 2px 10px; border: 1px solid var(--color-accent); border-radius: 999px; color: var(--color-accent); font-size: .9em; }
+</style>
+</head>
+<body>
+<main data-madang-root>
+  <header>
+    <h1 data-bind="base.name"></h1>
+    <p class="headline" data-bind="base.title"></p>
+    <ul class="contact">
+      <li data-if="base.contact.email" data-bind="base.contact.email"></li>
+      <li data-if="base.contact.phone" data-bind="base.contact.phone"></li>
+      <li data-if="base.contact.location" data-bind="base.contact.location"></li>
+      <li data-each="base.contact.links"><a data-attr-href=".url" data-bind=".label"></a></li>
+    </ul>
+  </header>
+  <section data-if="base.summary">
+    <h2>요약</h2>
+    <p class="summary" data-bind="base.summary"></p>
+  </section>
+  <section data-if="base.work">
+    <h2>경력</h2>
+    <article class="job" data-each="base.work">
+      <div class="job-head">
+        <div><span class="company" data-bind=".company"></span> · <span class="role" data-bind=".role"></span></div>
+        <span class="period" data-bind=".period"></span>
+      </div>
+      <ul data-if=".highlights">
+        <li data-each=".highlights" data-bind="."></li>
+      </ul>
+    </article>
+  </section>
+  <section data-if="base.skills">
+    <h2>기술</h2>
+    <ul class="skills">
+      <li data-each="base.skills" data-bind="."></li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

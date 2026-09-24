@@ -1,0 +1,9 @@
+name: resume
+version: 1
+title: 이력서
+slots:
+  base:    {schema: "#/base",    required: true,  label: 기본 데이터}
+  overlay: {schema: "#/overlay", required: false, label: 덮어쓰기}
+editable:
+  text: true
+  style: [color.accent, font.size]

@@ -1,0 +1,37 @@
+{
+  "templates": [
+    {
+      "name": "table",
+      "version": 1,
+      "title": "표",
+      "slots": [
+        { "name": "data", "schema": "#/data", "required": true, "label": "표 데이터" }
+      ]
+    },
+    {
+      "name": "decisions",
+      "version": 1,
+      "title": "결정 사항",
+      "slots": [
+        { "name": "state", "schema": "#/state", "required": true, "label": "페이지 상태" }
+      ]
+    },
+    {
+      "name": "tasks",
+      "version": 1,
+      "title": "할 일",
+      "slots": [
+        { "name": "state", "schema": "#/state", "required": true, "label": "페이지 상태" }
+      ]
+    },
+    {
+      "name": "resume",
+      "version": 1,
+      "title": "이력서",
+      "slots": [
+        { "name": "base", "schema": "#/base", "required": true, "label": "기본 데이터" },
+        { "name": "overlay", "schema": "#/overlay", "required": false, "label": "덮어쓰기" }
+      ]
+    }
+  ]
+}

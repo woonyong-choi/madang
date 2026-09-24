@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>할 일</title>
+<style>
+  :root { --color-accent: #3a5bd9; --color-text: #1d2330; --color-muted: #6b7280; --font-size: 14px;
+          --font-family: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; background: #f6f7f9; color: var(--color-text); font: var(--font-size)/1.5 var(--font-family); }
+  h1 { margin: 0 0 18px; font-size: 1.35em; }
+  .board { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; align-items: start; }
+  .column { background: #eceef2; border-radius: 8px; padding: 10px; min-height: 120px; }
+  .column h2 { margin: 2px 4px 10px; font-size: .9em; color: var(--color-muted); border-top: 3px solid var(--bar); padding-top: 8px; }
+  .todo { --bar: #9ca3af; }
+  .doing { --bar: var(--color-accent); }
+  .blocked { --bar: #dc2626; }
+  .done { --bar: #16a34a; }
+  .card { background: #fff; border-radius: 6px; padding: 9px 11px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .done .card .title { color: var(--color-muted); text-decoration: line-through; }
+  .id { font-family: ui-monospace, Menlo, monospace; font-size: .8em; color: var(--color-accent); font-weight: 700; margin-right: 6px; }
+  .due { margin-top: 4px; font-size: .8em; color: var(--color-muted); }
+</style>
+</head>
+<body>
+<main data-madang-root>
+  <h1>할 일</h1>
+  <div class="board">
+    <section class="column todo">
+      <h2>할 일</h2>
+      <div class="card" data-each="state.tasks" data-where="status!=doing|blocked|done">
+        <span class="id" data-bind=".id"></span><span class="title" data-bind=".title"></span>
+        <div class="due" data-if=".due">기한 <span data-bind=".due"></span></div>
+      </div>
+    </section>
+    <section class="column doing">
+      <h2>진행 중</h2>
+      <div class="card" data-each="state.tasks" data-where="status=doing">
+        <span class="id" data-bind=".id"></span><span class="title" data-bind=".title"></span>
+        <div class="due" data-if=".due">기한 <span data-bind=".due"></span></div>
+      </div>
+    </section>
+    <section class="column blocked">
+      <h2>막힘</h2>
+      <div class="card" data-each="state.tasks" data-where="status=blocked">
+        <span class="id" data-bind=".id"></span><span class="title" data-bind=".title"></span>
+        <div class="due" data-if=".due">기한 <span data-bind=".due"></span></div>
+      </div>
+    </section>
+    <section class="column done">
+      <h2>완료</h2>
+      <div class="card" data-each="state.tasks" data-where="status=done">
+        <span class="id" data-bind=".id"></span><span class="title" data-bind=".title"></span>
+        <div class="due" data-if=".due">기한 <span data-bind=".due"></span></div>
+      </div>
+    </section>
+  </div>
+</main>
+</body>
+</html>

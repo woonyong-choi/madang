@@ -1,0 +1,8 @@
+name: table
+version: 1
+title: 표
+slots:
+  data: {schema: "#/data", required: true, label: 표 데이터}
+editable:
+  text: true
+  style: [color.accent, font.size]

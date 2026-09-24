@@ -1,0 +1,8 @@
+name: decisions
+version: 1
+title: 결정 사항
+slots:
+  state: {schema: "#/state", required: true, label: 페이지 상태}
+editable:
+  text: true
+  style: [color.accent, font.size]

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "state": {
+    "type": "object",
+    "required": ["decisions"],
+    "properties": {
+      "decisions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "topic", "choice", "state"],
+          "properties": {
+            "id": { "type": "string" },
+            "topic": { "type": "string" },
+            "choice": { "type": "string" },
+            "options": { "type": "array", "items": { "type": "string" } },
+            "by": { "type": "string" },
+            "run": { "type": "integer" },
+            "state": { "enum": ["proposed", "confirmed", "superseded", "deferred"] },
+            "supersedes": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  }
+}
