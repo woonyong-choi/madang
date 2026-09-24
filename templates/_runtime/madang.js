@@ -741,18 +741,25 @@
   // ---------------------------------------------------------------- 마크다운
 
   /**
-   * 마크다운 블록을 대상 요소에 그린다. setMarkdownRenderer()로 렌더러를
-   * 붙이기 전에는 원문을 서식 없는 텍스트로 보여 준다.
+   * 마크다운 블록을 대상 요소에 그린다. setMarkdownRenderer()로 붙인
+   * 렌더러가 먼저, 그다음 문서 렌더러(document.js)가 그린다. 둘 다 없으면
+   * 원문을 서식 없는 텍스트로 보여 준다.
    *
    * @param {string} source 마크다운 원문.
-   * @param {{target: (?Element|undefined)}=} options 대상 요소. 기본은
-   *     렌더 루트. 렌더러에도 전달한다.
+   * @param {{target: (?Element|undefined), context: (!Object|undefined)}=}
+   *     options 대상 요소(기본은 렌더 루트)와 문서 렌더러 context.
+   *     렌더러에도 전달한다.
    * @return {boolean} 렌더 성공 여부.
    */
   function renderMarkdown(source, options) {
     options = options || {};
     const target = options.target || rootElement();
     try {
+      if (!state.markdownRenderer && global.madangDocument) {
+        global.madangDocument.mountDocument(
+            target, String(source || ''), options.context);
+        return true;
+      }
       let out;
       if (state.markdownRenderer) {
         out = state.markdownRenderer(String(source || ''), options);
@@ -779,6 +786,27 @@
    */
   function setMarkdownRenderer(fn) {
     state.markdownRenderer = typeof fn === 'function' ? fn : null;
+  }
+
+  /**
+   * 문서 렌더러(document.js)로 마크다운을 HTML로 그린다. 게시와 같은
+   * 함수이며 DOM을 바꾸지 않는다.
+   *
+   * @param {string} markdown 마크다운 원문.
+   * @param {!Object=} context madangDocument.renderDocument()와 같다.
+   * @return {?Object} renderDocument()의 결과. 렌더러가 없거나 실패하면
+   *     null이고 호스트에 "error" 메시지로 알린다.
+   */
+  function renderDocument(markdown, context) {
+    try {
+      if (!global.madangDocument) {
+        throw new Error('document renderer (document.js) is not loaded');
+      }
+      return global.madangDocument.renderDocument(markdown, context);
+    } catch (err) {
+      reportError(err);
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------- 스타일
@@ -831,6 +859,7 @@
     clearSelection: clearSelection,
     patchData: patchData,
     renderMarkdown: renderMarkdown,
+    renderDocument: renderDocument,
     setMarkdownRenderer: setMarkdownRenderer,
     setBridge: setBridge,
     sourceOf: (path) => sourceOf(path),

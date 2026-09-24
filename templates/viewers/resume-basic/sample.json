@@ -1,0 +1,51 @@
+{
+  "name": "김마당",
+  "title": "백엔드 엔지니어",
+  "contact": {
+    "email": "madang@example.com",
+    "phone": "010-0000-0000",
+    "location": "서울",
+    "links": [
+      {
+        "label": "github.com/madang",
+        "url": "https://github.com/madang"
+      }
+    ]
+  },
+  "summary": "대규모 트래픽 서비스의 인증·세션 계층을 설계하고 운영해 온 8년 차 백엔드 엔지니어입니다.",
+  "work": [
+    {
+      "company": "한빛소프트",
+      "role": "시니어 백엔드 엔지니어",
+      "period": "2022.03 – 현재",
+      "highlights": [
+        "세션 갱신 경합 제거로 로그인 오류율 92% 감소",
+        "인증 서버 무중단 이전 주도"
+      ]
+    },
+    {
+      "company": "펄어비스",
+      "role": "게임 서버 엔지니어",
+      "period": "2019.01 – 2022.02",
+      "highlights": [
+        "동시 접속 30만 매치메이킹 서버 개발",
+        "Kotlin 코루틴 기반 비동기 파이프라인 도입"
+      ]
+    },
+    {
+      "company": "스타트업 A",
+      "role": "백엔드 개발자",
+      "period": "2017.02 – 2018.12",
+      "highlights": [
+        "결제 모듈 초기 설계와 구현"
+      ]
+    }
+  ],
+  "skills": [
+    "Kotlin",
+    "TypeScript",
+    "PostgreSQL",
+    "Redis",
+    "Kubernetes"
+  ]
+}

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이력서</title>
+<style>
+  /* 앱 토큰(--app-*)은 렌더러가 주입한다. 여기서는 읽기만 한다. */
+  :root { --muted: #6b7280; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--app-bg, #f4f5f7); color: var(--app-text, #1d2330);
+         font: 15px/1.6 var(--app-font, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', sans-serif); }
+  main { max-width: 780px; margin: 24px auto; padding: 40px 48px; background: #fff;
+         border-radius: var(--app-radius, 6px); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  header { border-bottom: 3px solid var(--app-accent, #3a5bd9); padding-bottom: 16px; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 2em; letter-spacing: -.01em; }
+  .headline { margin: 4px 0 10px; color: var(--app-accent, #3a5bd9); font-weight: 600; font-size: 1.1em; }
+  .contact { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: .9em; }
+  .contact a { color: inherit; }
+  h2 { margin: 28px 0 10px; font-size: .85em; letter-spacing: .12em; text-transform: uppercase; color: var(--app-accent, #3a5bd9); }
+  .summary { margin: 0; }
+  .job { margin-bottom: 18px; }
+  .job-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .company { font-weight: 700; font-size: 1.05em; }
+  .role, .period { color: var(--muted); }
+  .period { font-size: .9em; white-space: nowrap; }
+  .job ul { margin: 6px 0 0; padding-left: 20px; }
+  .skills { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .skills li { padding: 2px 10px; border: 1px solid var(--app-accent, #3a5bd9); border-radius: 999px;
+               color: var(--app-accent, #3a5bd9); font-size: .9em; }
+</style>
+</head>
+<body>
+<main id="resume"></main>
+<script>
+  // 렌더러가 넣은 #madang-view-data(JSON)로 이력서를 그린다. 글자는 모두 textContent로 넣는다.
+  (function() {
+    const source = document.getElementById('madang-view-data');
+    const data = source ? JSON.parse(source.textContent) || {} : {};
+    const root = document.getElementById('resume');
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined && text !== null) node.textContent = String(text);
+      return node;
+    }
+
+    function safeHref(url) {
+      return /^(https?:|mailto:)/i.test(String(url).trim()) ? url : null;
+    }
+
+    function section(title, body) {
+      const s = el('section');
+      s.appendChild(el('h2', null, title));
+      s.appendChild(body);
+      root.appendChild(s);
+    }
+
+    const header = el('header');
+    header.appendChild(el('h1', null, data.name));
+    if (data.title) header.appendChild(el('p', 'headline', data.title));
+    const contact = el('ul', 'contact');
+    const info = data.contact || {};
+    ['email', 'phone', 'location'].forEach((key) => {
+      if (info[key]) contact.appendChild(el('li', null, info[key]));
+    });
+    (info.links || []).forEach((link) => {
+      const a = el('a', null, link.label);
+      const href = safeHref(link.url);
+      if (href) a.href = href;
+      const li = el('li');
+      li.appendChild(a);
+      contact.appendChild(li);
+    });
+    header.appendChild(contact);
+    root.appendChild(header);
+
+    if (data.summary) section('요약', el('p', 'summary', data.summary));
+
+    if (data.work && data.work.length) {
+      const list = el('div');
+      data.work.forEach((job) => {
+        const article = el('article', 'job');
+        const head = el('div', 'job-head');
+        const who = el('div');
+        who.appendChild(el('span', 'company', job.company));
+        if (job.role) {
+          who.appendChild(document.createTextNode(' · '));
+          who.appendChild(el('span', 'role', job.role));
+        }
+        head.appendChild(who);
+        if (job.period) head.appendChild(el('span', 'period', job.period));
+        article.appendChild(head);
+        if (job.highlights && job.highlights.length) {
+          const ul = el('ul');
+          job.highlights.forEach((h) => ul.appendChild(el('li', null, h)));
+          article.appendChild(ul);
+        }
+        list.appendChild(article);
+      });
+      section('경력', list);
+    }
+
+    if (data.skills && data.skills.length) {
+      const ul = el('ul', 'skills');
+      data.skills.forEach((skill) => ul.appendChild(el('li', null, skill)));
+      section('기술', ul);
+    }
+  })();
+</script>
+</body>
+</html>

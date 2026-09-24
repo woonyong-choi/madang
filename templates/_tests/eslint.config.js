@@ -13,6 +13,7 @@ const RUNTIME_API = [
   'clearSelection',
   'patchData',
   'renderMarkdown',
+  'renderDocument',
   'setMarkdownRenderer',
   'setBridge',
   'sourceOf',
@@ -63,7 +64,13 @@ const style = {
 };
 
 module.exports = [
-  {ignores: ['node_modules/', 'test-results/', 'playwright-report/']},
+  // vendor/는 외부 라이브러리 원본을 그대로 둔다.
+  {ignores: [
+    'node_modules/',
+    'test-results/',
+    'playwright-report/',
+    'vendor/',
+  ]},
   js.configs.recommended,
   jsdoc.configs['flat/recommended-error'],
   {

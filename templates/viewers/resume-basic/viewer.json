@@ -1,0 +1,6 @@
+{
+  "name": "resume/basic",
+  "version": "1.0.0",
+  "schema": "schema.json",
+  "entry": "index.html"
+}

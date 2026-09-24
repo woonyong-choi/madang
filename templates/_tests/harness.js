@@ -42,16 +42,12 @@ function theme(name) {
 }
 
 /**
- * 호스트 WebView가 하듯 런타임을 주입하고(페이지 CSP 바깥), 브리지 메시지와
- * 로컬이 아닌 요청을 모두 기록한다.
+ * 페이지(하위 프레임 포함)가 보내는 로컬이 아닌 요청을 기록한다.
  *
  * @param {!Object} page Playwright 페이지.
- * @param {string} name 템플릿 이름.
- * @param {{data: ?, theme: ?, mode: (string|undefined)}=} opts 샘플 데이터,
- *     테마, 모드를 덮어쓰는 값.
- * @return {!Promise<{external: !Array<string>}>} 로컬이 아닌 요청 URL.
+ * @return {!Array<string>} 요청 URL이 쌓이는 배열.
  */
-async function openTemplate(page, name, opts = {}) {
+function trackExternal(page) {
   const external = [];
   page.on('request', (req) => {
     const url = req.url();
@@ -67,6 +63,21 @@ async function openTemplate(page, name, opts = {}) {
       external.splice(at, 1);
     }
   });
+  return external;
+}
+
+/**
+ * 호스트 WebView가 하듯 런타임을 주입하고(페이지 CSP 바깥), 브리지 메시지와
+ * 로컬이 아닌 요청을 모두 기록한다.
+ *
+ * @param {!Object} page Playwright 페이지.
+ * @param {string} name 템플릿 이름.
+ * @param {{data: ?, theme: ?, mode: (string|undefined)}=} opts 샘플 데이터,
+ *     테마, 모드를 덮어쓰는 값.
+ * @return {!Promise<{external: !Array<string>}>} 로컬이 아닌 요청 URL.
+ */
+async function openTemplate(page, name, opts = {}) {
+  const external = trackExternal(page);
   await page.addInitScript(() => {
     window.__madangEvents = [];
     window.addEventListener('madang', (e) => {
@@ -114,6 +125,7 @@ module.exports = {
   templateEntry,
   sample,
   theme,
+  trackExternal,
   openTemplate,
   events: events_,
 };
