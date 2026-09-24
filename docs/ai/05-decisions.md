@@ -79,6 +79,20 @@
 - **결정.** 로컬은 사용자 본인 구독 CLI, 서비스는 운영자 API 키 + 크레딧. 한 프로세스에서 섞지 않는다.
 - **이유.** 소비자 구독 약관. 앱 구조는 Runner 구현체만 다르다.
 
+## D17. 모노레포 폴더명은 역할 이름(`core/`, `app/`, `templates/`)
+- **결정.** 최상위 폴더는 `core/`, `app/`, `templates/`, `ops/`, `docs/`. 접두 `madang-`을 붙이지 않는다.
+- **이유.** 언어가 다른 큰 덩어리 몇 개뿐이라 역할 이름이 가장 읽기 쉽다. 저장소 이름이 이미 madang이라 접두는 중복이다. `apps/`·`packages/` 묶음 관례는 같은 종류 패키지가 많을 때의 것이다.
+- **패키지 실제 이름.** `core/` → Python 패키지 `madang`(pip, 명령 `madang`). `app/` → Gradle 프로젝트 `madang-app`, 모듈 `shared`·`desktop`·`android`·`ios`.
+
+## D18. 레이어 0 디자인은 Obsidian Notebook Navigator를 100% 따른다
+- **결정.** 3열 화면(탐색 / 목록 / 본문)의 구조, 조작, 세부 기능은 Obsidian 플러그인 Notebook Navigator를 기준으로 하고, 임의로 바꾸지 않는다. 매핑은 앱 스펙 §2.1.
+- **이유.** 검증된 개발자용 문서 탐색 UI이며, 사용자가 이 경험을 지정했다. 디자인 결정을 새로 하지 않아 앱 팀의 재량이 줄고 일관성이 생긴다.
+- **참고.** https://forum.obsidian.md/t/notebook-navigator-is-now-available-meet-your-new-obsidian-interface/105704 , https://github.com/johansan/notebook-navigator
+
+## D19. AI 흔적을 저장소에 남기지 않는다
+- **결정.** 커밋 메시지, 작성자, 트레일러, 코드 주석 어디에도 AI 작성 표시를 남기지 않는다. 작성자는 항상 사용자 git 설정. 커밋 메시지는 사용자의 commit 스킬 형식.
+- **이유.** 사용자 결정. 저장소 이력은 사용자의 것이다. 다만 `docs/ai/`의 초안 표시("AI 작성, 미승인")는 문서 상태이지 이력 표시가 아니므로 유지한다.
+
 ## D16. 라이선스 MIT
 - **결정.** 저장소는 MIT.
 - **이유.** 개발자 도구의 관례. 서비스 부분(Phase F)은 별도 저장소로 갈 수 있다.

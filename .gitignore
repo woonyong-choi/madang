@@ -24,3 +24,5 @@ core.db
 core.port
 secrets.yaml
 scratch/
+ops/reports/*.done
+ops/tasks/*.prompt.md

@@ -10,4 +10,5 @@ AI가 작성한 초안. 승인 전이며, 승인되면 상위 `docs/`로 이동�
 | 03-app-spec.md | 기술 구성, 레이어 0/1/2 화면, 보기/편집 모드, 동작 표, WebView 브리지 |
 | 04-roadmap.md | Phase A~F, 각 완료 기준 |
 | 05-decisions.md | 결정 기록 (ADR) |
+| 06-build-orchestration.md | 오너 에이전트가 Phase A를 빌드하는 루프, 역할, 과업 분해 |
 | reference/ | 토큰 절감 가이드, 화면 목업, 초기 설계서 (HTML) |

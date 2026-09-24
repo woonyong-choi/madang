@@ -31,7 +31,33 @@ app/
 
 세 레이어. 항상 한 가지만 크게 보이고 나머지는 주변에 붙는다.
 
-### 2.1 레이어 0: 페이지 (3열)
+### 2.1 레이어 0: 페이지 (3열) — Notebook Navigator 100% 준수
+
+레이어 0의 구조·조작·세부 기능은 Obsidian 플러그인 **Notebook Navigator**(johansan/notebook-navigator)를 기준으로 그대로 옮긴다(ADR D18). 앱 팀은 이 기준에서 벗어나는 디자인 결정을 하지 않는다. 판단이 필요하면 Notebook Navigator가 어떻게 하는지를 먼저 확인한다.
+
+개념 매핑:
+
+| Notebook Navigator | Madang | 비고 |
+|---|---|---|
+| Vault | 앱 홈 | |
+| Folder (계층) | Space | 하위 공간 허용. 공간 아이콘·색 지정 |
+| Folder note | `space.md` | 공간을 클릭하면 본문 자리에 space.md가 열린다 |
+| Tag (계층 `#a/b`) | Page tag | `page.md`의 tags. 태그 트리로 탐색 |
+| Note | Page | |
+| Note preview text | 페이지 마지막 메시지 한 줄 | |
+| Feature image | 페이지의 첫 view 블록 썸네일 (없으면 없음) | |
+| Note date | `updated` | |
+| Pinned notes | `pinned: true` | 공간별 상단 고정 |
+| Sort order per folder | 공간별 정렬 설정 | 갱신순 / 생성순 / 제목순 |
+| Folder focus | 공간 포커스 | 그 공간과 하위만 표시 |
+| Editor pane | 페이지 본문 (블록 흐름) | Notebook Navigator가 관여하지 않는 영역 |
+| Quick actions on hover | 카드 hover: 고정, 태그, 이동, 삭제 | |
+| Drag & drop | 페이지를 공간으로 끌어 이동, 태그로 끌어 태깅 | |
+| Middle-click → new tab | 페이지를 새 창으로 | Phase B |
+| Single / dual pane 모드 | 좁을 때 2열, 더 좁을 때 1열 | |
+| Keyboard-first navigation | 화살표·Enter·Backspace로 열 이동과 열기 | §7 |
+
+추가 표시 항목(Notebook Navigator에 없는 것)은 카드 안의 **상태 칩**(doing/blocked/review/done)과 **블록 종류 개수**뿐이며, 카드 레이아웃의 다른 부분은 바꾸지 않는다.
 
 ```
 ┌──────────┬────────────────────┬──────────────────────────────┐
