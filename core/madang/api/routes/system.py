@@ -8,8 +8,8 @@ from typing import Annotated
 
 from fastapi import Query, WebSocket, WebSocketDisconnect
 
-from madang import __version__, config
-from madang.api import errors, models, usage
+from madang import __version__, config, usage
+from madang.api import errors, models
 from madang.api.core import Core
 from madang.api.routes import CoreDep, Router
 from madang.store.files import atomic_write
@@ -41,14 +41,16 @@ def get_usage(
         int, Query(ge=1, le=90, description="오늘을 포함해 셀 날 수.")
     ] = usage.DEFAULT_DAYS,
 ) -> models.Usage:
-    """구독 도구의 토큰 사용(Claude Code 대화 기록)."""
+    """구독 도구의 토큰 사용과 사용량 창(Claude Code·Codex 기록)."""
     checked = datetime.now().astimezone().replace(microsecond=0)
     since = checked.date() - timedelta(days=days - 1)
     return models.Usage.model_validate(
         {
             "checked": checked,
             "since": since.isoformat(),
-            "tools": [usage.claude_usage(core.claude_dir, since)],
+            "tools": usage.tool_usages(
+                core.claude_dir, core.codex_dir, since, checked
+            ),
         }
     )
 

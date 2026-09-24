@@ -732,14 +732,28 @@ class DayUsage(UsageTotals):
     date: str
 
 
-class ToolUsage(UsageTotals):
-    """도구 하나의 사용 합계."""
+class UsageWindow(_Out):
+    """지금에서 거슬러 올라간 사용량 창 하나."""
 
-    tool: str
+    name: Literal["5h", "week"]
+    start: datetime
+    end: datetime
+    used_tokens: int
+    limit_tokens: int | None = None
+    percent: float | None = None
+    warn: bool
+
+
+class ToolUsage(UsageTotals):
+    """도구 하나의 사용 합계와 사용량 창."""
+
+    tool: Literal["claude", "codex"]
     available: bool
     sessions: int
     models: list[ModelUsage]
     days: list[DayUsage]
+    windows: list[UsageWindow]
+    warn: bool
 
 
 class Usage(_Out):

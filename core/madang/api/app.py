@@ -56,6 +56,7 @@ def create_app(
     probe: Probe = probe_cli,
     core_url: str | None = None,
     claude_dir: Path | None = None,
+    codex_dir: Path | None = None,
 ) -> FastAPI:
     """앱 홈 하나를 맡는 core API 앱을 만든다.
 
@@ -65,6 +66,7 @@ def create_app(
         probe: 러너 사용 가능 여부 확인.
         core_url: 에이전트에 넘길 core 주소.
         claude_dir: 사용량을 읽을 Claude Code 폴더. 기본은 ``~/.claude``.
+        codex_dir: 사용량을 읽을 Codex 폴더. 기본은 ``~/.codex``.
 
     Returns:
         FastAPI 앱. ``app.state.core``에 ``Core``가 있다.
@@ -82,6 +84,7 @@ def create_app(
         probe=probe,
         core_url=core_url,
         claude_dir=claude_dir,
+        codex_dir=codex_dir,
     )
     app.add_middleware(LocalOnly)
     errors.install(app)

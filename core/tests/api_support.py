@@ -189,7 +189,14 @@ def script() -> Script:
 
 @pytest.fixture
 def client(home: Path, script: Script):
-    app = create_app(home, runners=script.runner, probe=lambda name, spec: None)
+    # 사용량은 실제 기록 대신 비어 있는 임시 폴더를 읽는다.
+    app = create_app(
+        home,
+        runners=script.runner,
+        probe=lambda name, spec: None,
+        claude_dir=home / "no-claude",
+        codex_dir=home / "no-codex",
+    )
     with TestClient(app, base_url=LOCAL) as test_client:
         yield test_client
 

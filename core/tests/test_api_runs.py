@@ -102,8 +102,15 @@ def test_start_opens_logs_ports_and_stop(
     contract.check(client.post(f"{BASE}/runs/web/start"), 409)
     opened = until(lambda: [e for e in events if e["type"] == "runs.opened"])
     assert opened[0]["data"] == {"name": "web", "url": url}
-    changed = [e for e in events if e["type"] == "ports.changed"]
-    assert port in [p["port"] for p in changed[0]["data"]["ports"]]
+    # ports.changed는 runs.opened 뒤에 다른 스레드에서 오므로 기다린다.
+    until(
+        lambda: [
+            e
+            for e in events
+            if e["type"] == "ports.changed"
+            and port in [p["port"] for p in e["data"]["ports"]]
+        ]
+    )
 
     ports = contract.check(client.get(f"{BASE}/ports"), 200)
     mine = next(p for p in ports if p["port"] == port)

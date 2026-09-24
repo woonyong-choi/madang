@@ -21,8 +21,9 @@ from madang.runners import make_runner
 from madang.store import blocks, pages, projects, runs, summary
 from madang.store.home import LegacyHomeError, check_layout, is_initialized
 
-# 사용량 기록을 읽을 Claude Code 폴더.
+# 사용량 기록을 읽을 Claude Code·Codex 폴더.
 CLAUDE_DIR = "~/.claude"
+CODEX_DIR = "~/.codex"
 
 
 class Core:
@@ -36,6 +37,7 @@ class Core:
         availability: 러너 사용 가능 여부 캐시.
         supervisor: core가 띄운 실행 대상 프로세스.
         claude_dir: 사용량 기록을 읽을 Claude Code 폴더.
+        codex_dir: 사용량 기록을 읽을 Codex 폴더.
         port: 대기 중인 포트. ``serve``가 정한다.
     """
 
@@ -47,6 +49,7 @@ class Core:
         probe: Probe = probe_cli,
         core_url: str | None = None,
         claude_dir: Path | None = None,
+        codex_dir: Path | None = None,
     ) -> None:
         from madang.api.flows import Flows
 
@@ -67,6 +70,7 @@ class Core:
             lambda kind, payload: relay_run_event(self, kind, payload)
         )
         self.claude_dir = claude_dir or Path(CLAUDE_DIR).expanduser()
+        self.codex_dir = codex_dir or Path(CODEX_DIR).expanduser()
         self.port: int | None = None
 
     # 설정과 찾기

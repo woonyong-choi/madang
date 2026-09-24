@@ -89,10 +89,18 @@ paths:
       operationId: getUsage
       summary: 구독 도구의 토큰 사용량.
       description: |
-        Claude Code가 `~/.claude/projects/`에 남긴 대화 기록의 `usage`만
-        센다. 인증·설정 파일은 읽지 않는다. 한 응답이 여러 줄로 나뉘어도
-        `message.id`와 `requestId`로 한 번만 센다. 기록 폴더가 없으면 도구의
+        Claude Code가 `~/.claude/projects/`·`~/.claude/transcripts/`에 남긴
+        대화 기록의 `usage`와, Codex가 `~/.codex/sessions/`에 남긴 기록의
+        `token_count` 이벤트만 센다. 인증·설정 파일은 읽지 않는다. 한 응답이
+        여러 줄로 되풀이되면(Claude는 `message.id`와 `requestId`, Codex는
+        시각과 사용량 값으로) 한 번만 센다. 기록 폴더가 없으면 그 도구의
         `available`이 거짓이다.
+
+        도구마다 사용량 창(`windows`) 둘을 준다: 지금까지 5시간(`5h`)과
+        7일(`week`). 창은 지금에서 거슬러 올라간 구간이며 구독의 초기화
+        시각과 맞춘 것이 아니다. 플랜별 토큰 한도의 근거가 없으므로
+        `limit_tokens`와 `percent`는 비어 있고 `warn`은 거짓이다. 비율을 알
+        때는 80% 이상이면 `warn`이 참이다.
       parameters:
         - name: days
           in: query
@@ -3787,14 +3795,52 @@ components:
       examples:
         - {date: "2026-09-24", messages: 12, input_tokens: 300, output_tokens: 9000, cache_read_tokens: 600000, cache_creation_tokens: 20000}
 
+    UsageWindow:
+      type: object
+      description: |
+        지금에서 거슬러 올라간 사용량 창 하나. 한도를 모르면 `limit_tokens`와
+        `percent`가 없다.
+      required: [name, start, end, used_tokens, warn]
+      properties:
+        name:
+          type: string
+          description: 창 이름. `5h`는 5시간, `week`는 7일.
+          enum: ["5h", week]
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+          description: 창의 끝. 사용량을 확인한 시각이다.
+        used_tokens:
+          type: integer
+          description: 창 안의 입력·출력·캐시 읽기·캐시 쓰기 토큰 합.
+        limit_tokens:
+          type: integer
+          description: 창의 토큰 한도. 근거가 있을 때만.
+        percent:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: 한도 대비 사용 비율. 한도를 알 때만.
+        warn:
+          type: boolean
+          description: 사용 비율이 80% 이상이면 참. 비율을 모르면 거짓.
+      examples:
+        - {name: "5h", start: "2026-09-24T05:00:00+09:00", end: "2026-09-24T10:00:00+09:00", used_tokens: 820000, warn: false}
+
     ToolUsage:
       type: object
-      description: 도구 하나(지금은 claude)의 사용 합계.
-      required: [tool, available, sessions, models, days, messages, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens]
+      description: |
+        도구 하나(claude, codex)의 사용 합계와 사용량 창. `input_tokens`는
+        캐시에서 읽지 않은 입력이다. Codex는 추론 토큰이 `output_tokens`에
+        들어 있고 캐시 쓰기는 0이다.
+      required: [tool, available, sessions, models, days, windows, warn, messages, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens]
       properties:
         tool:
           type: string
-          enum: [claude]
+          enum: [claude, codex]
         available:
           type: boolean
           description: 사용 기록 폴더가 있으면 참.
@@ -3819,6 +3865,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DayUsage"
+        windows:
+          type: array
+          description: 5시간 창과 7일 창.
+          items:
+            $ref: "#/components/schemas/UsageWindow"
+        warn:
+          type: boolean
+          description: 경고 중인 창이 하나라도 있으면 참.
       examples:
         - tool: claude
           available: true
@@ -3832,6 +3886,10 @@ components:
             - {model: claude-opus-5-5, messages: 42, input_tokens: 1200, output_tokens: 38000, cache_read_tokens: 2100000, cache_creation_tokens: 90000}
           days:
             - {date: "2026-09-24", messages: 42, input_tokens: 1200, output_tokens: 38000, cache_read_tokens: 2100000, cache_creation_tokens: 90000}
+          windows:
+            - {name: "5h", start: "2026-09-24T05:00:00+09:00", end: "2026-09-24T10:00:00+09:00", used_tokens: 820000, warn: false}
+            - {name: week, start: "2026-09-17T10:00:00+09:00", end: "2026-09-24T10:00:00+09:00", used_tokens: 2229200, warn: false}
+          warn: false
 
     Usage:
       type: object
@@ -3862,6 +3920,24 @@ components:
               cache_creation_tokens: 0
               models: []
               days: []
+              windows:
+                - {name: "5h", start: "2026-09-24T05:00:00+09:00", end: "2026-09-24T10:00:00+09:00", used_tokens: 0, warn: false}
+                - {name: week, start: "2026-09-17T10:00:00+09:00", end: "2026-09-24T10:00:00+09:00", used_tokens: 0, warn: false}
+              warn: false
+            - tool: codex
+              available: false
+              sessions: 0
+              messages: 0
+              input_tokens: 0
+              output_tokens: 0
+              cache_read_tokens: 0
+              cache_creation_tokens: 0
+              models: []
+              days: []
+              windows:
+                - {name: "5h", start: "2026-09-24T05:00:00+09:00", end: "2026-09-24T10:00:00+09:00", used_tokens: 0, warn: false}
+                - {name: week, start: "2026-09-17T10:00:00+09:00", end: "2026-09-24T10:00:00+09:00", used_tokens: 0, warn: false}
+              warn: false
 
     # 파일 트리
 

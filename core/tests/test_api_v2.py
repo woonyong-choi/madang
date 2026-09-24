@@ -106,8 +106,10 @@ def test_usage_counts_each_response_once(
     core = client.app.state.core
     core.claude_dir = claude
     empty = contract.check(client.get("/usage"), 200)
+    assert [t["tool"] for t in empty["tools"]] == ["claude", "codex"]
     assert empty["tools"][0]["available"] is False
     assert empty["tools"][0]["messages"] == 0
+    assert [w["name"] for w in empty["tools"][0]["windows"]] == ["5h", "week"]
 
     folder = claude / "projects" / "-work"
     folder.mkdir(parents=True)
@@ -139,6 +141,10 @@ def test_usage_counts_each_response_once(
         "claude-opus-5-5",
         "claude-sonnet-5",
     ]
+    five_hours = tool["windows"][0]
+    assert five_hours["used_tokens"] == 10 + 5 + 100 + 7 + 1 + 2
+    assert "limit_tokens" not in five_hours and "percent" not in five_hours
+    assert five_hours["warn"] is False and tool["warn"] is False
     contract.check(client.get("/usage", params={"days": 0}), 400)
 
 
