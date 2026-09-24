@@ -19,6 +19,7 @@ import madang.shared.settings.AppSettingsStore
  * @property folderPicker 프로젝트 폴더를 고르는 대화상자.
  * @property localFiles 코드 보기가 작업 폴더 파일을 읽고 외부 앱으로 여는 곳.
  * @property browser 브라우저 탭의 웹 엔진.
+ * @property notifier run 완료·묻는 블록을 알리는 시스템 알림.
  */
 class AppDependencies(
     val settings: AppSettingsStore,
@@ -31,5 +32,6 @@ class AppDependencies(
     },
     val folderPicker: FolderPicker = NoFolderPicker,
     val localFiles: LocalFiles = NoLocalFiles,
-    val browser: BrowserEngine = NoBrowserEngine
+    val browser: BrowserEngine = NoBrowserEngine,
+    val notifier: Notifier = NoNotifier
 )

@@ -22,7 +22,6 @@ data class PageStrings(
     val memoryNoPage: String,
     val memoryEmptyBody: String,
     val sideTab: (SideTab) -> String,
-    val sideTabPending: String,
     val lineLabel: (Int) -> String,
     val unknownFilesTitle: String,
     val unknownFileRun: (Int) -> String,
@@ -75,7 +74,6 @@ val KoreanPageStrings = PageStrings(
             SideTab.HISTORY -> "기록"
         }
     },
-    sideTabPending = "이 탭은 아직 비어 있습니다.",
     lineLabel = { "${it}행" },
     unknownFilesTitle = "등록되지 않은 파일",
     unknownFileRun = { "run $it" },
@@ -133,7 +131,6 @@ val EnglishPageStrings = KoreanPageStrings.copy(
             SideTab.HISTORY -> "History"
         }
     },
-    sideTabPending = "This tab is empty for now.",
     lineLabel = { "line $it" },
     unknownFilesTitle = "Unregistered files",
     unknownFileAction = {

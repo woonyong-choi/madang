@@ -56,6 +56,7 @@ import madang.shared.main.DataFormat
 import madang.shared.main.dataFormatOf
 import madang.shared.main.dataPreview
 import madang.shared.main.instantOrNull
+import madang.shared.main.resultGlyph
 
 /**
  * 본문의 블록 하나. 접힌 메시지는 한 줄로 줄고, 클릭하면 펼쳐진다. [onOpen]이 있으면 블록을
@@ -347,6 +348,7 @@ fun RunItem(run: RunRecord, folded: Boolean, onToggle: () -> Unit, onOpen: () ->
             .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            StatusGlyph(resultGlyph(run.resultStatus), Modifier.padding(end = 6.dp))
             RunnerChip("${run.runner.orEmpty()}/${run.model.orEmpty()}")
             Text(
                 runSummary(run, strings),

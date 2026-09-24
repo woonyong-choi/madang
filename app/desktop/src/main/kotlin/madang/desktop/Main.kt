@@ -32,12 +32,16 @@ private val fakeCoreMode = System.getenv("MADANG_FAKE_CORE") == "1"
 /** 브라우저 탭 엔진. 번들은 앱 설정 폴더 아래에 받는다. */
 private val browser = KcefBrowserEngine(DesktopPaths.appConfigDir().resolve("kcef-bundle"))
 
+/** run 완료·묻는 블록 시스템 알림. */
+private val notifier = TrayNotifier()
+
 fun main() = application {
     val icon = remember { windowIcon() }
     val scope = rememberCoroutineScope()
     val app = remember { AppViewModel(dependencies(), scope) }
     val exit = {
         browser.dispose()
+        notifier.dispose()
         exitApplication()
     }
     Window(
@@ -69,7 +73,8 @@ private fun dependencies(): AppDependencies {
         launcher = { ProcessCoreLauncher(it) },
         folderPicker = DesktopFolderPicker(),
         localFiles = DesktopLocalFiles(),
-        browser = browser
+        browser = browser,
+        notifier = notifier
     )
 }
 
@@ -95,7 +100,8 @@ private fun fakeDependencies(): AppDependencies {
         eventTransport = { fake.events },
         folderPicker = DesktopFolderPicker(),
         localFiles = DesktopLocalFiles(),
-        browser = browser
+        browser = browser,
+        notifier = notifier
     )
 }
 

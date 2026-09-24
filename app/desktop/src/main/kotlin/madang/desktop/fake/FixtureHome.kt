@@ -25,9 +25,16 @@ import madang.api.model.BlockContent
 import madang.api.model.BlockHeader
 import madang.api.model.BlockType
 import madang.api.model.DecisionAnswer
+import madang.api.model.FileLens
+import madang.api.model.FileTree
 import madang.api.model.FlowWaitingData
+import madang.api.model.GitBranches
+import madang.api.model.GitCommitCreate
 import madang.api.model.GitDiff
+import madang.api.model.GitLogEntry
+import madang.api.model.GitStage
 import madang.api.model.GitStatus
+import madang.api.model.GitWorktree
 import madang.api.model.InputParts
 import madang.api.model.InputPreview
 import madang.api.model.Issue
@@ -38,21 +45,25 @@ import madang.api.model.MemoryLayer
 import madang.api.model.MessageAccepted
 import madang.api.model.MessageCreate
 import madang.api.model.MessageRole
+import madang.api.model.ObservedPort
 import madang.api.model.PageCard
 import madang.api.model.PageCreate
 import madang.api.model.PageDetail
 import madang.api.model.PageStatus
 import madang.api.model.PageUpdate
 import madang.api.model.PendingDecision
+import madang.api.model.PortDeclare
 import madang.api.model.Project
 import madang.api.model.ProjectCreate
 import madang.api.model.ProjectSort
 import madang.api.model.ProjectUpdate
 import madang.api.model.Question
+import madang.api.model.RepoCommitResult
 import madang.api.model.RunInput
 import madang.api.model.RunRecord
 import madang.api.model.RunRef
 import madang.api.model.RunResultStatus
+import madang.api.model.RunTargetStatus
 import madang.api.model.RunTrigger
 import madang.api.model.RunUsage
 import madang.api.model.RunVerify
@@ -60,6 +71,7 @@ import madang.api.model.TrashEntry
 import madang.api.model.TrashRestore
 import madang.api.model.UnknownFile
 import madang.api.model.UnknownFileAction
+import madang.api.model.Usage
 import madang.api.model.ValidationFailure
 import madang.shared.core.CoreClient
 
@@ -71,7 +83,8 @@ data class FixtureResponse(val status: Int, val body: String?)
  *
  * 폴더 구성: `projects.json`(등록한 Project 배열), `pages/<id>.json`(PageDetail),
  * `blocks/<페이지 id>/<블록 id>.<확장자>`(doc·data 내용), 선택 `events.jsonl`(연결되면 보낼 이벤트),
- * 선택 `git/<프로젝트 id>.diff`(그 프로젝트의 작업 트리 diff, [FixtureGit]).
+ * 선택 `git/<프로젝트 id>.diff`(그 프로젝트의 작업 트리 diff, [FixtureGit]), 선택 `files/`·`ports.json`·
+ * `usage.json`(사이드바의 파일·포트·사용량, [FixtureSidebar]).
  * 카드와 프로젝트의 페이지 수는 페이지에서 계산한다. 바꾸는 요청은 메모리에만 반영하고 이벤트를 낸다.
  * 블록 원문 저장은 `.json` 블록이면 JSON 문법을 검사한다.
  *
@@ -104,6 +117,7 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
     private val memory = FixtureMemory()
     private val trash = FixtureTrash()
     private val git = FixtureGit(dir)
+    private val sidebar = FixtureSidebar(dir)
     private val blockEdits = mutableMapOf<Pair<String, String>, String>()
     private val waitingRuns = mutableMapOf<String, FixtureRun>()
     private val runScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -167,8 +181,21 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
             parts.size == 4 && parts[0] == "pages" && parts[2] == "blocks" && method == "PUT" ->
                 replaceBlock(parts[1], parts[3], body)
 
-            parts.size == 4 && parts[0] == "projects" && parts[2] == "git" && method == "GET" ->
-                gitRequest(parts[1], parts[3])
+            parts.size == 4 && parts[0] == "projects" && parts[2] == "git" ->
+                gitRequest(method, parts[1], parts[3], body, query)
+
+            parts == listOf("usage") && method == "GET" ->
+                sidebar.usage()?.let { ok(json.encodeToString(Usage.serializer(), it)) }
+
+            parts.size == 3 && parts[0] == "projects" && parts[2] == "files" && method == "GET" ->
+                filesRequest(parts[1], query)
+
+            parts.size == 3 && parts[0] == "projects" && parts[2] == "ports" && method == "GET" ->
+                ok(json.encodeToString(portsSerializer, sidebar.ports(parts[1])))
+
+            parts.size == 5 && parts[0] == "projects" && parts[2] == "ports" &&
+                parts[4] == "declare" && method == "POST" ->
+                declarePort(parts[1], parts[3].toIntOrNull(), body)
 
             parts.size == 5 && parts[0] == "pages" && parts[2] == "runs" && parts[4] == "cancel" ->
                 cancelRun(parts[1], parts[3].toIntOrNull())
@@ -357,18 +384,131 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
         )
     }
 
-    private fun gitRequest(projectId: String, action: String): FixtureResponse? {
+    private fun gitRequest(
+        method: String,
+        projectId: String,
+        action: String,
+        body: String?,
+        query: Map<String, String>
+    ): FixtureResponse? {
         val project = projects.firstOrNull { it.id == projectId }
             ?: return notFound("project $projectId")
+        if (method == "POST") return gitAction(project, action, body)
+        if (action == "status") {
+            return ok(json.encodeToString(GitStatus.serializer(), git.status(project)))
+        }
+        if (!git.isRepository(projectId)) {
+            return error(409, "no_repo", "$projectId is not a git repository")
+        }
         return when (action) {
-            "status" -> ok(json.encodeToString(GitStatus.serializer(), git.status(project)))
+            "diff" -> ok(
+                json.encodeToString(GitDiff.serializer(), GitDiff(git.diff(projectId).orEmpty()))
+            )
 
-            "diff" -> git.diff(projectId)?.let {
-                ok(json.encodeToString(GitDiff.serializer(), GitDiff(it)))
-            } ?: error(409, "no_repo", "$projectId is not a git repository")
+            "branches" -> ok(json.encodeToString(GitBranches.serializer(), git.branches(projectId)))
+
+            "worktrees" -> ok(
+                json.encodeToString(
+                    ListSerializer(GitWorktree.serializer()),
+                    git.worktrees(project)
+                )
+            )
+
+            "log" -> ok(
+                json.encodeToString(
+                    ListSerializer(GitLogEntry.serializer()),
+                    git.log(projectId, query["limit"]?.toIntOrNull() ?: GIT_LOG_DEFAULT)
+                )
+            )
 
             else -> null
         }
+    }
+
+    /** 스테이지·커밋·푸시·풀·git 시작을 메모리에 반영하고 `git.changed`를 낸다. */
+    private fun gitAction(project: Project, action: String, body: String?): FixtureResponse? {
+        if (action == "init") {
+            if (!git.init(project.id)) return error(409, "conflict", "already a repository")
+            emitGitChanged(project, action)
+            return FixtureResponse(
+                201,
+                json.encodeToString(GitStatus.serializer(), git.status(project))
+            )
+        }
+        if (!git.isRepository(project.id)) {
+            return error(409, "no_repo", "${project.id} is not a git repository")
+        }
+        val response = when (action) {
+            "stage" -> {
+                git.stage(project, decode(body, GitStage.serializer()).paths)
+                ok(json.encodeToString(GitStatus.serializer(), git.status(project)))
+            }
+
+            "commit" -> {
+                val hash = git.commit(project, decode(body, GitCommitCreate.serializer()).message)
+                    ?: return error(409, "conflict", "nothing is staged")
+                ok(json.encodeToString(RepoCommitResult.serializer(), RepoCommitResult(hash)))
+            }
+
+            "pull" -> ok(json.encodeToString(GitStatus.serializer(), git.status(project)))
+
+            "push" -> return error(409, "conflict", "no remote named origin")
+
+            else -> return null
+        }
+        emitGitChanged(project, action)
+        return response
+    }
+
+    private fun emitGitChanged(project: Project, action: String) = emit(
+        "git.changed",
+        project.id,
+        null,
+        buildJsonObject {
+            put("folder", project.path)
+            put("action", action)
+        }
+    )
+
+    /** 파일 트리. 변경됨 렌즈인데 저장소가 아니면 409 `no_repo`. */
+    private fun filesRequest(projectId: String, query: Map<String, String>): FixtureResponse {
+        val project = projects.firstOrNull { it.id == projectId }
+            ?: return notFound("project $projectId")
+        val lens = query["lens"]?.let(FileLens::decode) ?: FileLens.ALL
+        val page = query["page"]?.takeIf { it.isNotEmpty() }
+        if (lens == FileLens.PAGE &&
+            page == null
+        ) {
+            return error(400, "invalid", "lens=page needs page")
+        }
+        val tree = sidebar.files(project, lens, page, git.status(project))
+            ?: return error(409, "no_repo", "$projectId is not a git repository")
+        return ok(json.encodeToString(FileTree.serializer(), tree))
+    }
+
+    /** 관찰한 포트를 선언으로 저장하고 `ports.changed`를 낸다. */
+    private fun declarePort(projectId: String, port: Int?, body: String?): FixtureResponse {
+        val name = decode(body, PortDeclare.serializer()).name
+        val observed = port?.let { sidebar.declare(projectId, it, name) }
+            ?: return notFound("port $port")
+        emit(
+            "ports.changed",
+            projectId,
+            null,
+            buildJsonObject {
+                put("name", name)
+                put("ports", json.encodeToJsonElement(portsSerializer, sidebar.ports(projectId)))
+            }
+        )
+        val target = RunTargetStatus(
+            name = name,
+            command = observed.command.orEmpty(),
+            cwd = observed.cwd ?: ".",
+            running = false,
+            ports = listOf(observed),
+            opens = "http://localhost:${observed.port}"
+        )
+        return FixtureResponse(201, json.encodeToString(RunTargetStatus.serializer(), target))
     }
 
     private fun cancelRun(pageId: String, run: Int?): FixtureResponse {
@@ -771,6 +911,8 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
     private data class Route(val kind: String, val runner: String, val model: String)
 
     private companion object {
+        const val GIT_LOG_DEFAULT = 50
+        val portsSerializer = ListSerializer(ObservedPort.serializer())
         const val DECISION_WORD = "결정"
         const val SYSTEM_TOKENS = 24600
         const val CONTRACT_TOKENS = 420

@@ -5,6 +5,7 @@ import madang.api.model.RunAssembledEvent
 import madang.api.model.RunFailedEvent
 import madang.api.model.RunFallbackEvent
 import madang.api.model.RunFinishedEvent
+import madang.api.model.RunInput
 import madang.api.model.RunProgressEvent
 import madang.api.model.RunStartedEvent
 import madang.api.model.RunStreamEvent
@@ -20,14 +21,22 @@ sealed interface RunActivity {
     data class Fallback(val from: String, val to: String) : RunActivity
 }
 
-/** 진행 중인 run 하나. [startedAt]은 앱이 시작 이벤트를 받은 때다(경과 시간용). */
+/**
+ * 진행 중인 run 하나. [startedAt]은 앱이 시작 이벤트를 받은 때다(경과 시간용).
+ *
+ * @property started core가 적은 시작 시각(ISO 8601).
+ * @property input `run.assembled`로 받은 입력 구성. 받기 전에는 null.
+ */
 data class ActiveRun(
     val page: String,
     val n: Int,
     val runner: String,
     val model: String,
     val startedAt: TimeMark,
-    val last: RunActivity
+    val last: RunActivity,
+    val project: String = "",
+    val started: String? = null,
+    val input: RunInput? = null
 )
 
 /**
@@ -41,7 +50,7 @@ fun Map<String, ActiveRun>.withRunEvent(payload: Any, now: () -> TimeMark): Map<
 
         is RunAssembledEvent -> update(payload.page, payload.run) {
             RunActivity.Assembled(payload.data.totalEst)
-        }
+        }.withInput(payload.page, payload.run, payload.data)
 
         is RunProgressEvent -> update(payload.page, payload.run) {
             RunActivity.Progress(payload.data)
@@ -64,8 +73,13 @@ private fun startedRun(event: RunStartedEvent, at: TimeMark) = ActiveRun(
     runner = event.data.runner,
     model = event.data.model,
     startedAt = at,
-    last = RunActivity.Started
+    last = RunActivity.Started,
+    project = event.project,
+    started = event.ts
 )
+
+private fun Map<String, ActiveRun>.withInput(page: String, n: Int, input: RunInput) =
+    this[page]?.takeIf { it.n == n }?.let { this + (page to it.copy(input = input)) } ?: this
 
 private fun Map<String, ActiveRun>.update(
     page: String,

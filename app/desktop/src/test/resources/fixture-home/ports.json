@@ -1,0 +1,9 @@
+{
+  "jobs": [
+    {"port": 5173, "host": "127.0.0.1", "pid": 48213, "command": "node /Users/me/Documents/jobs/resume/site/node_modules/.bin/vite", "cwd": "resume/site", "run": "이력서 사이트"},
+    {"port": 8080, "host": "127.0.0.1", "pid": 51022, "command": "python3 -m http.server 8080", "cwd": "resume"}
+  ],
+  "auth-svc": [
+    {"port": 3000, "host": "127.0.0.1", "pid": 60311, "command": "node dist/server.js", "cwd": "."}
+  ]
+}

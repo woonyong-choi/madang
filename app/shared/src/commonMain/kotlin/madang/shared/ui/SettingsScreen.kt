@@ -19,11 +19,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import madang.shared.settings.DocumentStatus
@@ -55,6 +57,8 @@ fun SettingsScreen(viewModel: SettingsViewModel, onClose: () -> Unit) {
         RunnersSection(state, viewModel::refreshRunners)
         HorizontalDivider()
         LanguageSection(state.language, viewModel::setLanguage)
+        HorizontalDivider()
+        NotificationsSection(state.notifications, viewModel::setNotifications)
     }
 }
 
@@ -215,6 +219,17 @@ private fun LanguageSection(current: Language, onSelect: (Language) -> Unit) {
                 onClick = { onSelect(Language.EN) },
                 label = { Text("English") }
             )
+        }
+    }
+}
+
+@Composable
+private fun NotificationsSection(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    val strings = LocalStrings.current.side
+    Section(strings.notificationsTitle) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = enabled, onCheckedChange = onChange)
+            Text(strings.notificationsLabel, modifier = Modifier.padding(start = 12.dp))
         }
     }
 }

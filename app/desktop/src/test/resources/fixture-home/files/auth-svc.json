@@ -1,0 +1,21 @@
+{
+  "entries": [
+    {"path": ".madang", "type": "dir"},
+    {"path": ".madang/brief.md", "type": "file"},
+    {"path": ".madang/config.yaml", "type": "file"},
+    {"path": "docs", "type": "dir"},
+    {"path": "docs/rotation.md", "type": "file"},
+    {"path": "src", "type": "dir"},
+    {"path": "src/session", "type": "dir"},
+    {"path": "src/session/legacy-retry.ts", "type": "file"},
+    {"path": "src/session/lock.ts", "type": "file"},
+    {"path": "src/session/refresh.ts", "type": "file"},
+    {"path": "src/index.ts", "type": "file"},
+    {"path": "README.md", "type": "file"},
+    {"path": "package.json", "type": "file"}
+  ],
+  "runs": ["api 서버"],
+  "pages": {
+    "2026-09-24-session-bug": ["src/session/lock.ts", "src/session/refresh.ts"]
+  }
+}

@@ -109,8 +109,34 @@ mermaid는 코드 블록으로 보인다.
   `GET /pages/{p}/preview-input`으로 다음 호출의 입력 토큰과 도구/모델을 받아 오른쪽에 보인다.
 - 보낸 메시지는 core 응답 전에 본문 끝에 흐리게 붙고, core 페이지에 같은 메시지 블록이 생기면
   그 블록으로 바뀐다. 보내기에 실패하면 빠지고 입력창에 문장이 되돌아온다.
-- 오른쪽 사이드바(페이지 제목 옆 "메모리" 또는 M): 지금 · 파일 · 메모리 · git · 포트 · 기록 탭 자리가 있고,
-  지금은 메모리 탭만 내용이 있다. 메모리 탭은 Profile / Brief / Ledger를 언제나 이 순서로 위에서 아래로
+- 오른쪽 사이드바(페이지 제목 옆 "메모리" 또는 M): 지금 · 파일 · 메모리 · git · 포트 · 기록 탭. 보이는 탭
+  하나만 core에서 내용을 받는다. 지금 탭 밖의 탭은 열린 페이지(없으면 고른 프로젝트)를 따른다.
+- 상태 글리프 하나를 카드·run 카드·지금 탭이 함께 쓴다: 스피너 실행 중, 호박색 물음표 사람 필요(`flow.waiting`·
+  `ask.created`), 초록 체크 완료, 빨간 점 실패(`error`·`cancelled`·`blocked`), 회색 점 유휴(run 없음). 열려 있지
+  않은 페이지에서 run이 끝나면 그 카드 제목이 굵어지고, 페이지를 열면 풀린다.
+- 지금 탭: 위에 구독 사용량(`GET /usage`, 도구별 5시간·7일 창). core가 한도 비율을 주면 막대와 비율을, 주지
+  않으면 쓴 토큰만 보인다. 경고는 core의 `warn`만 쓴다. 아래에 모든 프로젝트의 진행 중 run(최근에 시작한 것부터),
+  사람을 기다리는 페이지, 30분 안에 끝난 run(최근 것부터)이다. 앱이 켜진 뒤 끝난 run은 이벤트의 끝난 시각, 그 전
+  것은 카드의 마지막 run과 갱신 시각으로 판단한다. 줄을 누르면 마지막 호출의 입력 구성(진행 중이면
+  `run.assembled`, 아니면 `GET /pages/{p}/runs/{n}`), "로그"를 누르면 이벤트 로그의 마지막 30줄(진행 중이면
+  `run.progress`가 이어 붙는다)을 펼친다. 두 번 누르면 그 페이지를 연다.
+- 파일 탭: `GET /projects/{p}/files`의 트리(페이지가 열려 있으면 그 워크트리). `.madang/`은 맨 위에 접힌 채로
+  있고 다른 폴더는 펼쳐 있다. 렌즈는 전체 / 이 페이지(페이지가 열려 있을 때) / 변경됨(git 저장소가 아니면 그렇다고만
+  보인다). "실행" 배지는 core가 `runs:` 선언에서 붙인 폴더에만 있고, 누르거나 그 폴더를 두 번 누르면 core가 실행
+  대상을 띄운다(`POST /projects/{p}/runs/{name}/start`, 준비되면 `runs.opened`로 브라우저 탭). 파일을 두 번
+  누르면 가운데 열 탭 규칙대로 연다.
+- git 탭: `GET /projects/{p}/git/status`가 저장소가 아니라고 하면 "git 시작"(`POST .../git/init`) 하나만
+  보인다. 저장소면 브랜치와 풀·푸시, 변경(파일별 스테이지·모두 스테이지)과 스테이지된 파일, 커밋 메시지와 커밋,
+  브랜치 목록, 워크트리와 그 워크트리를 쓰는 페이지, 최근 커밋 20개다. 조작은 모두 core git API이고 core가 거부하면
+  이유를 위에 보인다. `git.changed`가 오면 다시 받는다.
+- 포트 탭: core가 관찰한 열린 포트(`GET /projects/{p}/ports`, `ports.changed`로 갱신). 선언된 실행 대상이 연
+  포트는 그 이름을, 아니면 "선언으로 저장"을 보인다. 이름을 적어 저장하면 `POST .../ports/{port}/declare`로
+  `runs:`에 선언된다. 두 번 누르면 `http://localhost:<포트>`를 브라우저 탭으로 연다.
+- 기록 탭: 열린 페이지의 run, 최근 것부터. 모델, 고른 이유(같은 run의 router 메시지), 입력·출력 토큰, 결과를
+  보이고 누르면 그 run 탭을 연다.
+- 시스템 알림: run 완료·실패와 묻는 블록(`ask.created`, 사람 결정 `flow.waiting`)을 운영체제 알림으로 알린다.
+  같은 질문은 한 번만 알린다. 설정 화면 "알림"에서 끈다(앱 설정 `notifications`).
+- 메모리 탭은 Profile / Brief / Ledger를 언제나 이 순서로 위에서 아래로
   보인다. 층마다 머리부는 최상위 키별 입력칸(값은 `키:` 뒤의 원문, 고친 키의 줄만 바뀐다), 본문은 원문 그대로
   보인다(문서 렌더러가 붙기 전까지). "원문"을 켜면 파일 전체를 줄 번호 편집기로 고친다. 저장은 층마다 하고,
   core 검사기가 거부하면 문제를 그 키 입력칸 아래·본문 아래·원문 편집기의 줄 옆에 붙인다.
@@ -178,9 +204,12 @@ router·agent 메시지와 run 기록을 붙이고 미등록 파일(`blocks/scra
 `desktop/build/screenshots/`에 `wide.png`(3열), `narrow.png`(2열), `page.png`(1열)를 남긴다.
 메시지를 보내 run 카드가 붙는 과정(`message-running.png`, `message-done.png`)과 사람 결정 카드·메모리
 검사 오류(`decision-memory.png`), 메모리 탭의 세 층과 머리부 폼 검사 오류(`memory-tab.png`), 데이터 탭의 표
-(`tabs-data.png`), 디프 탭(`tabs-diff.png`), 엔진을 처음 내려받는 브라우저 탭(`tabs-browser.png`)도 남긴다.
+(`tabs-data.png`), 디프 탭(`tabs-diff.png`), 엔진을 처음 내려받는 브라우저 탭(`tabs-browser.png`), 사이드바의
+지금 탭(`side-now.png`), 파일 탭(`side-files.png`), git 탭(`side-git.png`), 포트 탭(`side-ports.png`)도 남긴다.
 픽스처의 `git/<프로젝트 id>.diff`가 그 프로젝트의 작업 트리 diff이고, 그 파일이 없는 프로젝트는 git 저장소가
-아니다. 블록 원문 저장은 `.json` 블록이면 JSON 문법을 검사해 거부한다.
+아니다. `git/<프로젝트 id>.json`은 브랜치·워크트리·로그, `files/<프로젝트 id>.json`은 파일 트리(전체 렌즈와
+페이지별 이 페이지 렌즈), `ports.json`은 프로젝트별 관찰 포트, `usage.json`은 사용량이다. 스테이지·커밋·git 시작·
+포트 선언은 메모리에만 반영하고 `git.changed`·`ports.changed`를 낸다. 블록 원문 저장은 `.json` 블록이면 JSON 문법을 검사해 거부한다.
 
 앱 홈 상태(`GET/POST /home`), 라우팅 표(`GET/PUT /config/routes`), 앱 설정(`GET/PUT /config`),
 프로젝트 설정(`GET/PUT /projects/{p}/config`)도 생성 클라이언트(`SetupApi`)로 부른다. 가짜 core는 설정

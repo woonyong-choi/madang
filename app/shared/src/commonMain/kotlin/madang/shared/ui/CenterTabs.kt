@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import madang.api.model.BlockHeader
 import madang.api.model.BlockType
 import madang.api.model.PageDetail
+import madang.api.model.RunInput
 import madang.api.model.RunRecord
 import madang.api.model.RunStreamEvent
 import madang.shared.main.CenterTab
@@ -415,17 +416,7 @@ private fun ColumnScope.RunDrawer(run: RunRecord, events: List<RunStreamEvent>?)
     if (input == null) {
         DrawerFact(strings.none, null)
     } else {
-        val parts = input.parts
-        listOf(
-            "system" to parts.systemEst,
-            "profile" to parts.profile,
-            "brief" to parts.brief,
-            "ledger" to parts.ledger,
-            "contract" to parts.contract,
-            "target" to parts.target,
-            "request" to parts.request
-        ).forEach { (name, tokens) -> DrawerFact(name, formatTokens(tokens)) }
-        DrawerFact(strings.inputTotal, formatTokens(input.totalEst))
+        InputFacts(input, strings.inputTotal)
     }
     DrawerSection(strings.usage)
     DrawerFact(strings.usageInput, formatTokens(run.usage.input))
@@ -440,6 +431,22 @@ private fun ColumnScope.RunDrawer(run: RunRecord, events: List<RunStreamEvent>?)
         events.isEmpty() -> DrawerFact(strings.noEvents, null)
         else -> events.forEach { MonoLine(eventLine(it)) }
     }
+}
+
+/** 호출 입력 구성: 부분별 추정 토큰과 합계. */
+@Composable
+internal fun InputFacts(input: RunInput, totalLabel: String) {
+    val parts = input.parts
+    listOf(
+        "system" to parts.systemEst,
+        "profile" to parts.profile,
+        "brief" to parts.brief,
+        "ledger" to parts.ledger,
+        "contract" to parts.contract,
+        "target" to parts.target,
+        "request" to parts.request
+    ).forEach { (name, tokens) -> DrawerFact(name, formatTokens(tokens)) }
+    DrawerFact(totalLabel, formatTokens(input.totalEst))
 }
 
 /** 이벤트 한 줄: 종류와 그 종류의 내용. */

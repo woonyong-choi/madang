@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {"path": ".madang", "type": "dir"},
+    {"path": ".madang/brief.md", "type": "file"},
+    {"path": ".madang/config.yaml", "type": "file"},
+    {"path": "resume", "type": "dir"},
+    {"path": "resume/site", "type": "dir", "runs": ["이력서 사이트"]},
+    {"path": "resume/site/index.html", "type": "file"},
+    {"path": "resume/site/package.json", "type": "file"},
+    {"path": "resume/base.json", "type": "file"},
+    {"path": "postings.csv", "type": "file"}
+  ],
+  "runs": [],
+  "pages": {
+    "2026-09-24-resume": ["resume/base.json"]
+  }
+}

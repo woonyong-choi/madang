@@ -60,7 +60,8 @@ data class Strings(
     val projects: String,
     val navigator: NavigatorStrings,
     val page: PageStrings,
-    val tabs: TabStrings
+    val tabs: TabStrings,
+    val side: SideStrings
 )
 
 val KoreanStrings = Strings(
@@ -128,7 +129,8 @@ val KoreanStrings = Strings(
     projects = "프로젝트",
     navigator = KoreanNavigatorStrings,
     page = KoreanPageStrings,
-    tabs = KoreanTabStrings
+    tabs = KoreanTabStrings,
+    side = KoreanSideStrings
 )
 
 val EnglishStrings = KoreanStrings.copy(
@@ -197,7 +199,8 @@ val EnglishStrings = KoreanStrings.copy(
     projects = "Projects",
     navigator = EnglishNavigatorStrings,
     page = EnglishPageStrings,
-    tabs = EnglishTabStrings
+    tabs = EnglishTabStrings,
+    side = EnglishSideStrings
 )
 
 fun stringsFor(language: Language): Strings = when (language) {

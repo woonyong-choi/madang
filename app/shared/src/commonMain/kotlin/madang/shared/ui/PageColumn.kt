@@ -40,7 +40,6 @@ import madang.shared.main.ActiveRun
 import madang.shared.main.ComposerState
 import madang.shared.main.FlowItem
 import madang.shared.main.MainState
-import madang.shared.main.MemoryState
 import madang.shared.main.OpenPage
 import madang.shared.main.RunActivity
 import madang.shared.main.Sidebar
@@ -73,7 +72,7 @@ class PageActions(
 fun PageColumn(
     state: MainState,
     composer: ComposerState,
-    memory: MemoryState,
+    side: SidebarStates,
     actions: PageActions,
     modifier: Modifier
 ) {
@@ -83,8 +82,8 @@ fun PageColumn(
         if (sidebar.open) {
             VerticalDivider()
             RightSidebar(
-                sidebar,
-                memory,
+                state,
+                side,
                 actions.sidebar,
                 Modifier.width(SIDEBAR_WIDTH).fillMaxHeight()
             )

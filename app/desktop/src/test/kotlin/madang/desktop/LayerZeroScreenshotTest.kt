@@ -11,8 +11,10 @@ import java.io.File
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -26,6 +28,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.TimeZone
+import madang.api.model.FileLens
+import madang.api.model.FileTree
 import madang.api.model.MemoryLayer
 import madang.desktop.fake.ContractExamples
 import madang.desktop.fake.FakeCore
@@ -39,6 +43,7 @@ import madang.shared.core.EventStream
 import madang.shared.main.CenterTab
 import madang.shared.main.DiffView
 import madang.shared.main.FlowItem
+import madang.shared.main.GitView
 import madang.shared.main.ListSource
 import madang.shared.main.Load
 import madang.shared.main.MEMORY_ORDER
@@ -47,6 +52,7 @@ import madang.shared.main.MainViewModel
 import madang.shared.main.MemoryDraft
 import madang.shared.main.OpenRequest
 import madang.shared.main.Pane
+import madang.shared.main.RunGlyph
 import madang.shared.main.SideTab
 import madang.shared.main.TAB_BLOCK_TYPES
 import madang.shared.main.TabKind
@@ -65,7 +71,8 @@ import org.jetbrains.skia.EncodedImageFormat
  *
  * 넓은 창(3열), 좁은 창(목록 + 본문 2열), 더 좁은 창(본문 1열)과, 메시지를 보내 run 카드가 붙고
  * 미등록 파일 띠·사람 결정 카드·메모리 검사 오류가 보이는 화면, 가운데 열의 페이지 탭과 run 탭,
- * 오른쪽 사이드바의 메모리 탭(Profile / Brief / Ledger와 머리부 폼의 검사 오류)을 그린다. 결과는 `madang.screenshotDir`(기본 `build/screenshots`)에 쓴다.
+ * 오른쪽 사이드바의 메모리 탭(Profile / Brief / Ledger와 머리부 폼의 검사 오류)과 지금·파일·git·포트 탭을
+ * 그린다. 결과는 `madang.screenshotDir`(기본 `build/screenshots`)에 쓴다.
  */
 class LayerZeroScreenshotTest {
 
@@ -109,7 +116,8 @@ class LayerZeroScreenshotTest {
         widthDp: Int,
         heightDp: Int,
         viewModel: MainViewModel,
-        browser: BrowserEngine = NoBrowserEngine
+        browser: BrowserEngine = NoBrowserEngine,
+        listClock: ListClock = clock
     ) : AutoCloseable {
         private val density = 2f
         private val scene = ImageComposeScene(
@@ -119,7 +127,7 @@ class LayerZeroScreenshotTest {
         ) {
             CompositionLocalProvider(
                 LocalStrings provides KoreanStrings,
-                LocalListClock provides clock,
+                LocalListClock provides listClock,
                 LocalBrowserEngine provides browser
             ) {
                 MaterialTheme { Surface { MainScreen(viewModel) {} } }
@@ -326,6 +334,126 @@ class LayerZeroScreenshotTest {
         assertEquals(CenterTab.Browser("http://localhost:5173"), viewModel.state.value.tabs.active)
         val file = render("tabs-browser", 1440, 900, viewModel, engine)
         assertTrue(engine.prepared)
+        assertTrue(file.length() > 10_000, file.path)
+    }
+
+    @Test
+    fun nowTabShowsRunningAndUnreadRunsWithUsage() {
+        val viewModel = viewModel(runStep = 300.milliseconds)
+        viewModel.await { it.loaded && it.activeRuns.isNotEmpty() }
+        viewModel.show("jobs", RESUME, Pane.PAGE)
+        viewModel.composer.setText("design: 경력 요약을 한 줄 더 붙여줘")
+        viewModel.send()
+        viewModel.await { it.activeRuns[RESUME] != null }
+        viewModel.show("auth-svc", SESSION_BUG, Pane.PAGE)
+        val done = viewModel.await { it.activeRuns[RESUME] == null && RESUME in it.watch.unread }
+        assertEquals(RunGlyph.DONE, done.glyphOf(RESUME))
+
+        viewModel.selectSideTab(SideTab.NOW)
+        val now = viewModel.side.now.state
+        runBlocking { withTimeout(10.seconds) { now.first { it.usage is Load.Ready } } }
+        val realClock = ListClock(now = { Clock.System.now() }, zone = clock.zone)
+        val items = done.nowItems(realClock.now())
+        assertEquals(RunGlyph.RUNNING, items.first().glyph)
+        val resume = items.first { it.page == RESUME }
+        assertTrue(resume.unread)
+        viewModel.side.now.showInput(resume)
+        viewModel.side.now.toggleLog(items.first())
+        runBlocking {
+            withTimeout(10.seconds) {
+                now.first { it.input?.second is Load.Ready && it.log?.second is Load.Ready }
+            }
+        }
+        val file = OffscreenMain(1440, 900, viewModel, listClock = realClock).use {
+            it.settle()
+            it.save("side-now")
+        }
+        assertTrue(file.length() > 10_000, file.path)
+    }
+
+    @Test
+    fun filesTabShowsTheTreeWithDeclaredRunBadgesOnly() {
+        val viewModel = viewModel()
+        viewModel.await { it.loaded }
+        viewModel.show("auth-svc", SESSION_BUG, Pane.PAGE)
+        viewModel.selectSideTab(SideTab.FILES)
+        val files = viewModel.side.files.state
+        val loaded =
+            runBlocking { withTimeout(10.seconds) { files.first { it.tree is Load.Ready } } }
+        assertEquals(".madang", loaded.rows.first().path)
+        assertFalse(loaded.rows.first().expanded)
+        assertTrue(loaded.rows.all { it.runs.isEmpty() })
+        assertEquals(listOf("api 서버"), assertIs<Load.Ready<FileTree>>(loaded.tree).value.runs)
+
+        val file = render("side-files", 1440, 900, viewModel)
+        assertTrue(file.length() > 10_000, file.path)
+
+        viewModel.side.files.setLens(FileLens.PAGE)
+        val page = runBlocking {
+            withTimeout(10.seconds) {
+                files.first { it.lens == FileLens.PAGE && it.tree is Load.Ready }
+            }
+        }
+        assertEquals(
+            listOf("src", "src/session", "src/session/lock.ts", "src/session/refresh.ts"),
+            page.rows.map { it.path }
+        )
+    }
+
+    @Test
+    fun gitTabShowsTheRepositoryAndOnlyGitInitElsewhere() {
+        val viewModel = viewModel()
+        viewModel.await { it.loaded }
+        viewModel.show("jobs", RESUME, Pane.PAGE)
+        viewModel.selectSideTab(SideTab.GIT)
+        val git = viewModel.side.git.state
+        val plain = runBlocking { withTimeout(10.seconds) { git.first { it.view is Load.Ready } } }
+        assertFalse(assertIs<Load.Ready<GitView>>(plain.view).value.repository)
+
+        viewModel.show("auth-svc", SESSION_BUG, Pane.PAGE)
+        val repo = runBlocking {
+            withTimeout(10.seconds) {
+                git.first { (it.view as? Load.Ready)?.value?.repository == true }
+            }
+        }
+        val view = assertIs<Load.Ready<GitView>>(repo.view).value
+        assertEquals(SESSION_BUG, view.worktrees.last().page)
+        assertEquals(3, view.log.size)
+        viewModel.side.git.stage(listOf("src/session/lock.ts"))
+        runBlocking {
+            withTimeout(10.seconds) {
+                git.first { state ->
+                    val files = (state.view as? Load.Ready)?.value?.status?.files.orEmpty()
+                    files.any { it.path == "src/session/lock.ts" && it.code == "M " }
+                }
+            }
+        }
+        viewModel.side.git.setMessage("fix(session): hold the refresh lock")
+        val file = render("side-git", 1440, 900, viewModel)
+        assertTrue(file.length() > 10_000, file.path)
+    }
+
+    @Test
+    fun portsTabSavesAnObservedPortAsADeclaration() {
+        val viewModel = viewModel()
+        viewModel.await { it.loaded }
+        viewModel.show("jobs", RESUME, Pane.PAGE)
+        viewModel.selectSideTab(SideTab.PORTS)
+        val ports = viewModel.side.ports.state
+        runBlocking { withTimeout(10.seconds) { ports.first { it.ports is Load.Ready } } }
+
+        viewModel.side.ports.toggleDeclare(8080)
+        viewModel.side.ports.setName(8080, "인쇄 미리보기")
+        viewModel.side.ports.declare(8080)
+        val declared = runBlocking {
+            withTimeout(10.seconds) {
+                ports.first { state ->
+                    (state.ports as? Load.Ready)?.value?.any { it.run == "인쇄 미리보기" } == true
+                }
+            }
+        }
+        assertTrue(declared.names.isEmpty())
+        val file = render("side-ports", 1440, 900, viewModel)
         assertTrue(file.length() > 10_000, file.path)
     }
 

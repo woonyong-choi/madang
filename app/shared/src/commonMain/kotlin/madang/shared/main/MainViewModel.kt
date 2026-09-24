@@ -3,7 +3,9 @@ package madang.shared.main
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -14,7 +16,6 @@ import kotlinx.coroutines.launch
 import madang.api.client.BlocksApi
 import madang.api.client.DecisionsApi
 import madang.api.client.GitApi
-import madang.api.client.MemoryApi
 import madang.api.client.MessagesApi
 import madang.api.client.PagesApi
 import madang.api.client.ProjectsApi
@@ -29,7 +30,6 @@ import madang.api.model.FlowWaitingData
 import madang.api.model.FlowWaitingEvent
 import madang.api.model.GitChangedEvent
 import madang.api.model.Issue
-import madang.api.model.MemoryUpdatedEvent
 import madang.api.model.MessageCreate
 import madang.api.model.PageCard
 import madang.api.model.PageCreate
@@ -74,8 +74,11 @@ import madang.shared.settings.InMemorySettingsStore
  *
  * 가운데 열은 페이지 탭과 블록·run·브라우저·디프·파일 탭이다. 무엇을 열지는 열기 요청
  * ([OpenRequest])과 파일 확장자로만 정한다([tabKindOf]). 탭 세트는 페이지마다 앱 설정에 저장해 두고
- * 페이지를 열 때 되살린다. 입력창([composer])은 활성 탭에게 보내고, 오른쪽 사이드바의 메모리
- * 탭([memory])과 최근 삭제([trash])는 열린 페이지를 따라간다.
+ * 페이지를 열 때 되살린다. 입력창([composer])은 활성 탭에게 보내고, 오른쪽 사이드바 탭([side])은
+ * 열린 페이지와 그 프로젝트를 따라간다.
+ *
+ * run 이벤트로 페이지별 실행 상태([MainState.watch])를 따라가고, 앱 설정이 허락하면 run 완료·실패와
+ * 묻는 블록을 [notices]로 알린다.
  *
  * @param newPageTitle 새 페이지의 처음 제목.
  * @param settings 페이지별 탭 세트를 저장하는 앱 설정.
@@ -102,8 +105,15 @@ class MainViewModel(
     private val gitApi = core.api(::GitApi)
     private var pendingCount = 0
 
+    private val _notices = MutableSharedFlow<Notice>(extraBufferCapacity = NOTICE_BUFFER)
+    private val notifiedDecisions = mutableSetOf<String>()
+
+    /** 시스템 알림으로 띄울 것. 앱 설정에서 알림을 끄면 오지 않는다. */
+    val notices: SharedFlow<Notice> = _notices
+
     val composer = ComposerViewModel(messagesApi, scope)
-    val memory = MemoryViewModel(core.api(::MemoryApi), scope)
+    val side = SidebarTabs(core, scope)
+    val memory: MemoryViewModel get() = side.memory
     val trash = TrashViewModel(core.api(::TrashApi), scope, onRestored = ::reloadAll)
 
     init {
@@ -404,14 +414,20 @@ class MainViewModel(
 
     private fun showSidebar(sidebar: Sidebar) {
         _state.update { it.copy(sidebar = sidebar) }
-        syncMemory()
+        syncSidebar()
     }
 
-    /** 메모리 탭이 보이고 페이지가 열려 있을 때만 그 페이지의 메모리를 받는다. */
-    private fun syncMemory() {
+    /** 보이는 사이드바 탭을 열린 페이지(없으면 고른 프로젝트)로 맞춘다. */
+    private fun syncSidebar() {
         val state = _state.value
-        val page = state.page?.detail?.id
-        if (state.sidebar.showsMemory && page != null) memory.open(page) else memory.close()
+        val page = state.page?.detail
+        side.sync(state.sidebar, page?.project ?: state.targetProject, page?.id)
+    }
+
+    /** 지금 탭의 줄을 누르지 않고 두 번 눌렀다: 그 페이지를 연다. */
+    fun showPage(project: String, page: String) {
+        select(ListSource.InProject(project))
+        openPage(page, advance = true)
     }
 
     fun showUnknownFiles(show: Boolean) = _state.update {
@@ -450,7 +466,7 @@ class MainViewModel(
 
     private fun onOpenPageChanged() {
         _state.update { it.copy(unknownFilesOpen = false) }
-        syncMemory()
+        syncSidebar()
     }
 
     private fun onItem(item: EventStreamItem) {
@@ -470,8 +486,13 @@ class MainViewModel(
     private fun applyEvent(event: CoreEvent) {
         val payload = event.payload
         _state.update {
-            it.copy(activeRuns = it.activeRuns.withRunEvent(payload, timeSource::markNow))
+            it.copy(
+                watch = it.watch.withEvent(payload, it.activeRuns, it.page?.detail?.id),
+                activeRuns = it.activeRuns.withRunEvent(payload, timeSource::markNow)
+            )
         }
+        noticeOf(payload, _state.value::pageTitle)?.let(::notify)
+        side.onEvent(payload)
         when (payload) {
             is ProjectCreatedEvent -> upsertProject(payload.data.project)
 
@@ -495,8 +516,6 @@ class MainViewModel(
             is PageUnknownFilesEvent -> setUnknownFiles(payload.page, payload.data.files)
 
             is FlowWaitingEvent -> setWaiting(payload.page, payload.data)
-
-            is MemoryUpdatedEvent -> memory.onUpdated(payload.page, payload.data.layer)
 
             is RunsOpenedEvent -> openInProject(
                 payload.project,
@@ -533,7 +552,8 @@ class MainViewModel(
             state.copy(
                 page = open?.withDetail(detail) ?: OpenPage(detail),
                 tabs = tabs.retainIn(detail),
-                toggled = toggled
+                toggled = toggled,
+                watch = state.watch.read(id).withWaiting(id, detail.waiting != null)
             )
         }.tabs
         saveTabs(id, tabs)
@@ -735,11 +755,20 @@ class MainViewModel(
         }
     }
 
+    /** 알림을 낸다. 같은 결정은 한 번만 알린다(`ask.created`와 `flow.waiting`이 함께 온다). */
+    private fun notify(notice: Notice) {
+        if (!settings.load().notifications) return
+        val decision = notice.decision
+        if (decision != null && !notifiedDecisions.add(decision)) return
+        _notices.tryEmit(notice)
+    }
+
     private fun showError(e: Exception) =
         _state.update { it.copy(loadError = e.message ?: e::class.simpleName) }
 
     private companion object {
         const val HTTP_BAD_REQUEST = 400
         const val NO_REPO = "no_repo"
+        const val NOTICE_BUFFER = 16
     }
 }

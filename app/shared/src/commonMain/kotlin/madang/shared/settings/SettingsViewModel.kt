@@ -65,6 +65,7 @@ data class SettingsState(
     val coreBinary: String = "",
     val connectedUrl: String = "",
     val language: Language = Language.KO,
+    val notifications: Boolean = true,
     val documents: Map<SettingsDocument, DocumentEditor> =
         SettingsDocument.entries.associateWith { DocumentEditor() },
     val projects: List<Project> = emptyList(),
@@ -117,6 +118,12 @@ class SettingsViewModel(
             )
         )
         onReconnect()
+    }
+
+    /** run 완료·실패와 묻는 블록의 시스템 알림을 켜거나 끈다. */
+    fun setNotifications(enabled: Boolean) {
+        store.save(store.load().copy(notifications = enabled))
+        _state.update { it.copy(notifications = enabled) }
     }
 
     fun setLanguage(language: Language) {
@@ -244,6 +251,7 @@ class SettingsViewModel(
             coreBinary = settings.coreBinary.orEmpty(),
             connectedUrl = core.baseUrl,
             language = settings.language,
+            notifications = settings.notifications,
             project = project
         )
     }

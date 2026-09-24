@@ -48,6 +48,9 @@ class AppViewModel(private val deps: AppDependencies, private val scope: Corouti
     /** 브라우저 탭이 쓰는 플랫폼 웹 엔진. */
     val browser: BrowserEngine get() = deps.browser
 
+    /** run 완료·묻는 블록을 알리는 플랫폼 시스템 알림. */
+    val notifier: Notifier get() = deps.notifier
+
     private val _screen = MutableStateFlow<Screen>(newStart())
     val screen: StateFlow<Screen> = _screen.asStateFlow()
 

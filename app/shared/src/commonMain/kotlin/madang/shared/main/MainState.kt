@@ -1,6 +1,8 @@
 package madang.shared.main
 
 import kotlin.time.Duration
+import kotlin.time.Instant
+import kotlinx.coroutines.CancellationException
 import madang.api.model.Issue
 import madang.api.model.PageCard
 import madang.api.model.PageDetail
@@ -31,6 +33,15 @@ sealed interface Load<out T> {
     data class Ready<T>(val value: T) : Load<T>
 
     data class Failed(val message: String?) : Load<Nothing>
+}
+
+/** [block]의 결과를 [Load]로 담는다. 실패하면 원인을 담고, 취소는 그대로 던진다. */
+suspend fun <T> loadOf(block: suspend () -> T): Load<T> = try {
+    Load.Ready(block())
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    Load.Failed(e.message ?: e::class.simpleName)
 }
 
 /**
@@ -106,6 +117,7 @@ data class OpenPage(
  * @property tabs 열린 페이지의 가운데 열 탭 세트.
  * @property toggled 접힘 규칙과 반대로 둔 본문 항목의 key.
  * @property activeRuns 페이지 id별 진행 중인 run.
+ * @property watch 진행 중 밖의 run 상태: 끝난 run, 사람 필요, 읽지 않은 완료.
  * @property unknownFilesOpen 열린 페이지의 미등록 파일 목록을 펼쳤다.
  */
 data class MainState(
@@ -127,6 +139,7 @@ data class MainState(
     val expandAll: Boolean = false,
     val toggled: Set<String> = emptySet(),
     val activeRuns: Map<String, ActiveRun> = emptyMap(),
+    val watch: RunWatch = RunWatch(),
     val unknownFilesOpen: Boolean = false,
     val sidebar: Sidebar = Sidebar()
 ) {
@@ -135,6 +148,16 @@ data class MainState(
     val tagRows: List<TagRow> get() = tagRows(cards, expandedTags)
 
     val listCards: List<PageCard> get() = visibleCards(cards, projects, source, filter)
+
+    /** 페이지 제목. 카드가 없으면 id. */
+    fun pageTitle(page: String): String = cards.firstOrNull { it.id == page }?.title ?: page
+
+    /** 페이지의 실행 상태 글리프. */
+    fun glyphOf(page: String): RunGlyph =
+        glyphOf(page, cards.firstOrNull { it.id == page }, activeRuns, watch)
+
+    /** 지금 탭의 줄. */
+    fun nowItems(now: Instant): List<NowItem> = nowItems(cards, activeRuns, watch, now)
 
     /** 입력창이 보낼 곳. 활성 탭을 따른다. */
     val sendTarget: SendTarget? get() = page?.let { sendTarget(it.detail, tabs) }

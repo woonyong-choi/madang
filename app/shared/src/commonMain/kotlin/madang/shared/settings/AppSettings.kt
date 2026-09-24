@@ -20,6 +20,7 @@ enum class Language {
  * @property coreBinary core 실행 파일 경로. null이면 개발 방식이나 동봉 파일로 띄운다.
  * @property homePath 앱 홈 경로. null이면 core 기본값(`~/.madang`).
  * @property pageTabs 페이지 id별로 가운데 열에 열어 둔 탭. 재시작 뒤에도 페이지마다 되살린다.
+ * @property notifications run 완료·실패와 묻는 블록을 시스템 알림으로 알린다.
  */
 @Serializable
 data class AppSettings(
@@ -27,7 +28,8 @@ data class AppSettings(
     val coreBinary: String? = null,
     val homePath: String? = null,
     val language: Language = Language.KO,
-    val pageTabs: Map<String, TabSet> = emptyMap()
+    val pageTabs: Map<String, TabSet> = emptyMap(),
+    val notifications: Boolean = true
 )
 
 /** 앱 설정을 읽고 쓴다. 플랫폼마다 저장 위치가 다르다. */

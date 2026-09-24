@@ -1,0 +1,12 @@
+{
+  "branches": ["main", "page/2026-09-24-session-bug"],
+  "worktrees": [
+    {"path": "/Users/me/src/auth-svc", "branch": "main", "head": "7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708", "main": true},
+    {"path": "/Users/me/src/auth-svc.wt/2026-09-24-session-bug", "branch": "page/2026-09-24-session-bug", "head": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d", "main": false, "page": "2026-09-24-session-bug"}
+  ],
+  "log": [
+    {"hash": "7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708", "author": "choi", "date": "2026-09-23T18:20:00+09:00", "subject": "docs(session): describe token rotation"},
+    {"hash": "5e6f708192a3b4c5d6e7f8091a2b3c4d7b8c9d0e", "author": "choi", "date": "2026-09-18T11:02:00+09:00", "subject": "feat(session): rotate refresh tokens"},
+    {"hash": "c4d5e6f708192a3b7b8c9d0e1f2a3b4c5d6e7f80", "author": "choi", "date": "2026-09-10T09:41:00+09:00", "subject": "chore: set up the auth service"}
+  ]
+}

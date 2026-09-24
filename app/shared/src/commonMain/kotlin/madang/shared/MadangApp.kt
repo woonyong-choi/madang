@@ -25,7 +25,8 @@ fun MadangApp(viewModel: AppViewModel) {
     CompositionLocalProvider(
         LocalStrings provides stringsFor(language),
         LocalFolderPicker provides viewModel.folderPicker,
-        LocalBrowserEngine provides viewModel.browser
+        LocalBrowserEngine provides viewModel.browser,
+        LocalNotifier provides viewModel.notifier
     ) {
         MaterialTheme {
             Surface(modifier = Modifier.fillMaxSize()) {

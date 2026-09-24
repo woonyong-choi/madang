@@ -1,0 +1,26 @@
+{
+  "checked": "2026-09-24T12:00:00+09:00",
+  "since": "2026-09-18",
+  "tools": [
+    {
+      "tool": "claude", "available": true, "sessions": 5, "messages": 42,
+      "input_tokens": 1200, "output_tokens": 38000, "cache_read_tokens": 2100000, "cache_creation_tokens": 90000,
+      "models": [], "days": [],
+      "windows": [
+        {"name": "5h", "start": "2026-09-24T07:00:00+09:00", "end": "2026-09-24T12:00:00+09:00", "used_tokens": 820000, "warn": false},
+        {"name": "week", "start": "2026-09-17T12:00:00+09:00", "end": "2026-09-24T12:00:00+09:00", "used_tokens": 2229200, "warn": false}
+      ],
+      "warn": false
+    },
+    {
+      "tool": "codex", "available": false, "sessions": 0, "messages": 0,
+      "input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_creation_tokens": 0,
+      "models": [], "days": [],
+      "windows": [
+        {"name": "5h", "start": "2026-09-24T07:00:00+09:00", "end": "2026-09-24T12:00:00+09:00", "used_tokens": 0, "warn": false},
+        {"name": "week", "start": "2026-09-17T12:00:00+09:00", "end": "2026-09-24T12:00:00+09:00", "used_tokens": 0, "warn": false}
+      ],
+      "warn": false
+    }
+  ]
+}

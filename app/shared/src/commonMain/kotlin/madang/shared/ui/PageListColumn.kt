@@ -323,6 +323,7 @@ private fun CardBody(card: PageCard, state: MainState) {
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            StatusGlyph(state.glyphOf(card.id), Modifier.padding(end = 6.dp))
             if (card.pinned) {
                 Icon(
                     Icons.Filled.PushPin,
@@ -334,7 +335,13 @@ private fun CardBody(card: PageCard, state: MainState) {
             Text(
                 card.title,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = if (card.id in
+                    state.watch.unread
+                ) {
+                    FontWeight.Bold
+                } else {
+                    FontWeight.Normal
+                },
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)

@@ -44,6 +44,8 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import madang.shared.LocalFolderPicker
+import madang.shared.LocalNotifier
+import madang.shared.main.CenterTab
 import madang.shared.main.EventLink
 import madang.shared.main.MainState
 import madang.shared.main.MainViewModel
@@ -65,6 +67,12 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val composer by viewModel.composer.state.collectAsState()
     val memory by viewModel.memory.state.collectAsState()
+    val now by viewModel.side.now.state.collectAsState()
+    val files by viewModel.side.files.state.collectAsState()
+    val git by viewModel.side.git.state.collectAsState()
+    val ports by viewModel.side.ports.state.collectAsState()
+    val notifier = LocalNotifier.current
+    val allStrings = LocalStrings.current
     val strings = LocalStrings.current.navigator
     val folderPicker = LocalFolderPicker.current
     val scope = rememberCoroutineScope()
@@ -82,6 +90,11 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
         }
     }
     LaunchedEffect(dialog) { if (dialog == null) focus.requestFocus() }
+    LaunchedEffect(viewModel, notifier, allStrings) {
+        viewModel.notices.collect {
+            notifier.notify(allStrings.side.noticeTitle(it), allStrings.side.noticeBody(it))
+        }
+    }
 
     CompositionLocalProvider(LocalDragDrop provides drag) {
         BoxWithConstraints(
@@ -150,7 +163,7 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
                             Pane.PAGE -> PageColumn(
                                 state,
                                 composer,
-                                memory,
+                                SidebarStates(memory, now, files, git, ports),
                                 pageActions(
                                     viewModel,
                                     panes,
@@ -250,18 +263,55 @@ private fun pageActions(
         onEditing = onEditing,
         onEscape = onEscape
     ),
-    sidebar = SidebarActions(
+    sidebar = sidebarActions(viewModel, onEditing)
+)
+
+private fun sidebarActions(viewModel: MainViewModel, onEditing: (Boolean) -> Unit): SidebarActions {
+    val side = viewModel.side
+    return SidebarActions(
         select = viewModel::selectSideTab,
         close = viewModel::closeSidebar,
         memory = MemoryActions(
-            edit = viewModel.memory::edit,
-            editField = viewModel.memory::editField,
-            toggleRaw = viewModel.memory::toggleRaw,
-            save = viewModel.memory::save,
+            edit = side.memory::edit,
+            editField = side.memory::editField,
+            toggleRaw = side.memory::toggleRaw,
+            save = side.memory::save,
             onEditing = onEditing
-        )
+        ),
+        now = NowActions(
+            showInput = side.now::showInput,
+            toggleLog = side.now::toggleLog,
+            openPage = { viewModel.showPage(it.project, it.page) },
+            refreshUsage = side.now::refreshUsage
+        ),
+        files = FilesActions(
+            setLens = side.files::setLens,
+            toggle = side.files::toggle,
+            reload = side.files::reload,
+            startRun = side.files::startRun,
+            open = { viewModel.open(OpenRequest.File(it)) }
+        ),
+        git = GitActions(
+            setMessage = side.git::setMessage,
+            stage = side.git::stage,
+            commit = side.git::commit,
+            push = side.git::push,
+            pull = side.git::pull,
+            init = side.git::init,
+            reload = side.git::reload,
+            onEditing = onEditing
+        ),
+        ports = PortsActions(
+            reload = side.ports::reload,
+            toggleDeclare = side.ports::toggleDeclare,
+            setName = side.ports::setName,
+            declare = side.ports::declare,
+            openUrl = { viewModel.open(OpenRequest.Url(it)) },
+            onEditing = onEditing
+        ),
+        openRun = { viewModel.openTab(CenterTab.Run(it)) }
     )
-)
+}
 
 private fun listActions(viewModel: MainViewModel, panes: List<Pane>, show: (MainDialog) -> Unit) =
     ListActions(
