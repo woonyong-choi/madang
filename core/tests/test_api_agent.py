@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from api_support import PROJECT, git, page_dir
 
-from madang.store import pages
+from madang.store import pages, worktrees
 
 
 def test_tasks_decisions_and_artifacts(
@@ -126,3 +126,48 @@ def test_repo_commit_and_push(
     git(repo, "remote", "add", "origin", str(remote))
     pushed = contract.check(client.post("/projects/code/repo/push"), 200)
     assert pushed == {"branch": "main", "remote": "origin"}
+
+
+def test_page_kinds_are_accepted_by_default(client, project_root) -> None:
+    for kind in ("doc", "code", "chat"):
+        created = client.post(
+            f"/projects/{PROJECT}/pages",
+            json={"title": f"{kind} 페이지", "kind": kind},
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["kind"] == kind
+
+
+def test_agent_commit_goes_to_page_worktree(
+    client, home, repo: Path, contract
+) -> None:
+    contract.check(
+        client.post("/projects", json={"path": str(repo), "id": "code"}),
+        201,
+    )
+    created = contract.check(
+        client.post(
+            "/projects/code/pages", json={"title": "잠금", "kind": "code"}
+        ),
+        201,
+    )
+    page = created["id"]
+    worktree = worktrees.open_page(page_dir(home, page))
+    assert worktree == repo.parent / "repo.wt" / page
+    (worktree / "lock.ts").write_text("export {}\n")
+
+    result = contract.check(
+        client.post(
+            "/projects/code/repo/commit",
+            json={"message": "feat: lock", "page": page},
+        ),
+        200,
+    )
+
+    assert (
+        result["commit"]
+        == git(worktree, "rev-parse", "--short", "HEAD").strip()
+    )
+    assert git(worktree, "branch", "--show-current").strip() == f"page/{page}"
+    assert git(repo, "rev-parse", "main") == git(repo, "rev-parse", "HEAD")
+    assert "lock.ts" not in git(repo, "ls-files")

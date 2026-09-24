@@ -25,9 +25,11 @@ _HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*#*[ \t]*$")
 
 @lru_cache(maxsize=1)
 def default_kinds() -> tuple[str, ...]:
-    """내장 설정의 ``routes`` 절에 적힌 종류를 반환한다."""
+    """내장 설정의 ``routes`` 절에 적힌 작업 종류와 페이지 종류를 반환한다."""
     data = config.default_data()[config.ROUTES_KEY]
-    return tuple(data.get("kinds") or ())
+    kinds = list(data.get("kinds") or ())
+    kinds += [k for k in data.get("page_kinds") or () if k not in kinds]
+    return tuple(kinds)
 
 
 def _is_int(value: Any) -> bool:

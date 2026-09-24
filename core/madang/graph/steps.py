@@ -197,7 +197,7 @@ def check(page_dir: Path, cfg: config.Config, n: int) -> list[Issue]:
         page_dir,
         repo=project_root(page_dir),
         token_limit=cfg.madang.limits.ledger_tokens,
-        kinds=cfg.routes.kinds,
+        kinds=cfg.routes.accepted_kinds,
     )
     record = runs.read_run(page_dir, n)
     record.state_check = {

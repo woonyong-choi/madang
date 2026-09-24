@@ -24,8 +24,12 @@ ui:
 projects: []
 
 # 라우팅 표: 요청 종류를 고르는 규칙과 종류별 러너·모델 단계
+# kinds는 요청을 나누는 작업 종류로 판정기와 tiers가 쓴다.
+# page_kinds는 페이지가 무엇인지(문서·코드·대화)를 뜻하며 판정에는 쓰이지 않는다.
+# 페이지 머리부의 kind에는 둘 다 쓸 수 있다.
 routes:
   kinds: [design, build, small, review, explore]
+  page_kinds: [doc, code, chat]
   default_kind: build
   prefix_override: true          # "design: …" 접두가 종류를 강제한다
   rules:                          # 키워드 규칙 (첫 번째 판정기)

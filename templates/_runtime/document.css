@@ -2,6 +2,11 @@
  * document.css - 문서 렌더러(document.js) 결과의 기본 모양.
  * 앱 문서 탭과 게시 페이지가 같은 파일을 쓴다. 색·글꼴은 앱 토큰을 따른다.
  */
+
+/* 문서 바깥 화면: 앱 호스트와 게시 껍데기가 같은 여백을 쓴다. */
+html { background: var(--app-bg, #fff); }
+body { margin: 0 auto; max-width: 860px; padding: 16px 24px 32px; }
+
 .madang-document {
   color: var(--app-text, #1d2330);
   background: var(--app-bg, #fff);

@@ -529,7 +529,10 @@ def test_published_site_renders_in_browser(
         assert page["frames"] == 1
         assert page["viewText"] == "목록 items: 2"
         assert page["fallbacks"] == ["missing"]
-        assert page["links"] == ["./other.html"]
+        assert page["links"] == [
+            "./other.html",
+            "./list.json",
+        ]  # 뷰 데이터 링크
         assert page["outside"] == []
         assert page["errors"] == []
     assert index["heading"] == "proj"

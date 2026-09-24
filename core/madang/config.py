@@ -137,15 +137,31 @@ class DeciderSettings(_Model):
 
 
 class RoutesConfig(_Model):
-    """``config.yaml`` ``routes`` 절의 라우팅 표."""
+    """``config.yaml`` ``routes`` 절의 라우팅 표.
+
+    ``kinds``는 요청을 나누는 작업 종류(판정기와 tiers가 쓴다),
+    ``page_kinds``는 페이지가 무엇인지(문서·코드·대화)를 뜻한다. 페이지
+    머리부의 ``kind``는 둘 다 받는다.
+    """
 
     kinds: list[str]
+    page_kinds: list[str] = Field(
+        default_factory=lambda: ["doc", "code", "chat"]
+    )
     default_kind: str
     prefix_override: bool = True
     rules: dict[str, list[str]] = Field(default_factory=dict)
     tiers: dict[str, list[Tier]] = Field(default_factory=dict)
     limits: RouteLimits = Field(default_factory=RouteLimits)
     decider: DeciderSettings = Field(default_factory=DeciderSettings)
+
+    @property
+    def accepted_kinds(self) -> list[str]:
+        """페이지 머리부의 ``kind``로 받아들이는 값: 작업 종류와 페이지 종류."""
+        return [
+            *self.kinds,
+            *(k for k in self.page_kinds if k not in self.kinds),
+        ]
 
 
 # 러너(runners 절)

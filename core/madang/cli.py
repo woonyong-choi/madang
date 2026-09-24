@@ -112,7 +112,7 @@ def validate(
         target,
         repo=repo.expanduser() if repo is not None else None,
         token_limit=cfg.madang.limits.ledger_tokens,
-        kinds=cfg.routes.kinds,
+        kinds=cfg.routes.accepted_kinds,
     )
     if as_json:
         payload = {
@@ -618,8 +618,10 @@ def page_new(
     """프로젝트의 .madang/pages/에 페이지를 만들고 id를 출력한다."""
     cfg = _load(home)
     kind = kind or cfg.routes.default_kind
-    if kind not in cfg.routes.kinds:
-        raise _fail(f"unknown kind '{kind}'; expected {cfg.routes.kinds}")
+    if kind not in cfg.routes.accepted_kinds:
+        raise _fail(
+            f"unknown kind '{kind}'; expected {cfg.routes.accepted_kinds}"
+        )
     try:
         found = projects.get(cfg.home, project)
         page_dir = pages.create_page(

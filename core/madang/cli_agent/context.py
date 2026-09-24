@@ -58,7 +58,7 @@ class PageContext:
         return validate_target(
             self.page_dir,
             token_limit=self.cfg.madang.limits.ledger_tokens,
-            kinds=self.cfg.routes.kinds,
+            kinds=self.cfg.routes.accepted_kinds,
         )
 
 

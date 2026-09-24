@@ -124,7 +124,7 @@ def create_page(
     cfg = core.config()
     found = core.project(project)
     kind = body.kind or cfg.routes.default_kind
-    if kind not in cfg.routes.kinds:
+    if kind not in cfg.routes.accepted_kinds:
         raise errors.invalid(f"unknown kind '{kind}'")
     if not body.title.strip():
         raise errors.invalid("title cannot be empty")

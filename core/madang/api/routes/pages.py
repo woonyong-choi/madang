@@ -376,7 +376,7 @@ def _check_ledger(page_dir: Path, content: str, cfg: Any) -> None:
             probe,
             repo=project_root(page_dir),
             token_limit=cfg.madang.limits.ledger_tokens,
-            kinds=cfg.routes.kinds,
+            kinds=cfg.routes.accepted_kinds,
         )
     finally:
         os.unlink(probe)

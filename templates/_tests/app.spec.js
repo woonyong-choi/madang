@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {pathToFileURL} = require('url');
 const {test, expect} = require('@playwright/test');
@@ -6,6 +7,8 @@ const {TEMPLATES, readJson, trackExternal} = require('./harness');
 const renderer = require('../_runtime/document.js');
 
 const APP_HOST = path.join(TEMPLATES, '_runtime', 'app.html');
+const SHELL = path.join(
+    TEMPLATES, '..', 'core', 'madang', 'publish', 'shell.html');
 const RESUME = path.join(TEMPLATES, 'viewers', 'resume-basic');
 const RESUME_HTML = fs.readFileSync(path.join(RESUME, 'index.html'), 'utf8');
 const RESUME_SAMPLE = readJson(path.join(RESUME, 'sample.json'));
@@ -221,5 +224,63 @@ test.describe('view data link', () => {
     const html = renderer.renderDocument(markdown, {}).html;
     expect(html.match(/madang-view-data/g)).toHaveLength(1);
     expect(html).toContain('href="./base.json" data-open="data"');
+  });
+});
+
+/**
+ * 두 PNG에서 다른 픽셀의 비율을 브라우저 캔버스로 센다.
+ *
+ * @param {!Object} page Playwright 페이지.
+ * @param {!Buffer} a 첫 스크린샷.
+ * @param {!Buffer} b 둘째 스크린샷.
+ * @return {!Promise<number>} 다른 픽셀 비율. 크기가 다르면 1.
+ */
+async function differingRatio(page, a, b) {
+  return page.evaluate(async ([left, right]) => {
+    const load = async (base64) => {
+      const img = new Image();
+      img.src = 'data:image/png;base64,' + base64;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const context = canvas.getContext('2d');
+      context.drawImage(img, 0, 0);
+      return context.getImageData(0, 0, img.width, img.height);
+    };
+    const [x, y] = [await load(left), await load(right)];
+    if (x.width !== y.width || x.height !== y.height) return 1;
+    let differing = 0;
+    for (let i = 0; i < x.data.length; i += 4) {
+      if (x.data[i] !== y.data[i] || x.data[i + 1] !== y.data[i + 1] ||
+          x.data[i + 2] !== y.data[i + 2]) differing++;
+    }
+    return differing / (x.width * x.height);
+  }, [a.toString('base64'), b.toString('base64')]);
+}
+
+test.describe('shared shell', () => {
+  test('app host and published shell look the same', async ({page}) => {
+    const markdown = '# 제목\n\n본문 **문장**이다.\n\n- 하나\n- 둘\n';
+    await openApp(page, {markdown, context: {}});
+    const app = await page.screenshot({fullPage: true});
+
+    const site = fs.mkdtempSync(path.join(os.tmpdir(), 'madang-shell-'));
+    const runtime = path.join(site, '_madang', 'runtime');
+    fs.mkdirSync(path.dirname(runtime), {recursive: true});
+    fs.symlinkSync(path.join(TEMPLATES, '_runtime'), runtime);
+    const shell = fs.readFileSync(SHELL, 'utf8')
+        .replace(/\$\{title\}/g, '문서')
+        .replace(/\$\{base\}/g, '')
+        .replace('${markdown}', () => JSON.stringify(markdown))
+        .replace('${context}', () => '{}');
+    fs.writeFileSync(path.join(site, 'index.html'), shell);
+    await page.goto(pathToFileURL(path.join(site, 'index.html')).href);
+    await expect(page.locator('#madang-page .madang-document')).toBeVisible();
+    const published = await page.screenshot({fullPage: true});
+
+    const ratio = await differingRatio(page, app, published);
+    expect(ratio).toBeLessThanOrEqual(0.001);
+    fs.rmSync(site, {recursive: true, force: true});
   });
 });
