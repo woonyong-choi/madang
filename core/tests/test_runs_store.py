@@ -58,7 +58,7 @@ def test_write_and_read(page_dir: Path) -> None:
     data = json.loads(path.read_text())
     assert data["usage"] == {"input": 29104, "cached": 24310, "output": 612}
     assert data["verify"] == {"cmd": "pytest", "ok": True}
-    assert data["events_log"] == "runs/1.events.jsonl"
+    assert data["events_log"] == "runs/1.jsonl"
     assert data["custom"] == "kept"
     assert runs.read_run(page_dir, 1) == record
     assert runs.list_runs(page_dir) == [1]
@@ -113,7 +113,7 @@ def test_run_page_records(
     )
     assert record.usage == runs.RunUsage(input=15230, cached=11904, output=402)
     assert record.result_status == "done"
-    assert record.events_log == "runs/1.events.jsonl"
+    assert record.events_log == "runs/1.jsonl"
     assert record.trigger == {"message": "b06", "mode": "edit"}
     assert record.started <= record.finished
     assert record.changed_files == [
@@ -209,7 +209,7 @@ def test_latest_run_picks_highest_numbered_record(page_dir: Path) -> None:
     runs_dir.mkdir()
     for n in (2, 10):
         (runs_dir / f"{n}.json").write_text(json.dumps({"n": n}))
-    (runs_dir / "11.events.jsonl").write_text("")
+    (runs_dir / "11.jsonl").write_text("")
     (runs_dir / ".last").write_text("11\n")
     path, data = latest_run(page_dir)
     assert path.name == "10.json" and data == {"n": 10}

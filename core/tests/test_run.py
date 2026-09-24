@@ -137,7 +137,7 @@ def test_run_records_and_checks(home: Path, page: Path) -> None:
 
 def test_run_logs_user_and_agent_blocks(home: Path, page: Path) -> None:
     run(page, home, FakeRunner(act=write_design))
-    log = (page / "log.md").read_text()
+    log = frontmatter.read(page / "page.md")[1]
     heads = [line for line in log.splitlines() if line.startswith("<!--")]
     assert len(heads) == 2
     assert heads[0].startswith("<!-- b01 | ") and heads[0].endswith(
@@ -184,7 +184,7 @@ def test_target_and_promoted_tier(home: Path, page: Path) -> None:
 def test_missing_target_stops_before_logging(home: Path, page: Path) -> None:
     with pytest.raises(ValueError, match="b09"):
         run(page, home, FakeRunner(), target="b09")
-    assert (page / "log.md").read_text() == ""
+    assert frontmatter.read(page / "page.md")[1] == ""
 
 
 def test_codex_runner_path(home: Path, page: Path) -> None:
@@ -241,7 +241,7 @@ def test_failed_run_is_still_recorded(home: Path, page: Path) -> None:
     data = record(page, 1)
     assert data["result_status"] == "error"
     assert data["error"] == "boom"
-    assert "error: boom" in (page / "log.md").read_text()
+    assert "error: boom" in (page / "page.md").read_text()
 
 
 def test_invalid_state_is_reported(home: Path, page: Path) -> None:

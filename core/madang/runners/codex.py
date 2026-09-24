@@ -18,6 +18,8 @@ class CodexStreamParser:
 
     def __init__(self) -> None:
         self.final_text = ""
+        # codex 스트림에는 파일 읽기를 알리는 항목이 없어 늘 비어 있다.
+        self.reads: list[str] = []
         self.usage: Usage | None = None
         self.error: str | None = None
         self.finished = False

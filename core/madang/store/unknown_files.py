@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from madang import recorder
 from madang.store import pages, runs
 from madang.store.page import LEDGER_FILE, PAGE_FILE, project_root
 
@@ -102,7 +103,7 @@ def resolve(page_dir: Path, entry: str, action: str) -> None:
     path = locate(page_dir, entry)
     assert path is not None  # list_unknown이 이미 확인했다
     if action == "artifact":
-        pages.update_state(page_dir, lambda h: _append(h, "artifacts", entry))
+        recorder.add_artifact(page_dir, entry)
     elif action == "keep":
         pages.update_page(page_dir, lambda h: _append(h, KEPT_KEY, entry))
     else:

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from madang.store import blocks, frontmatter, pages, runs
-from madang.store.log import read_messages
+from madang.store.log import overview, read_messages
 from madang.store.page import LEDGER_FILE, PAGE_STATUSES, load_page
 from madang.store.projects import Project
 
@@ -199,7 +199,7 @@ def page_detail(page_dir: Path, project: str) -> dict[str, Any]:
         "updated": page.updated,
         "pinned": page.pinned,
         "tags": list(page.tags),
-        "overview": body,
+        "overview": overview(body),
         "blocks": headers,
         "runs": [run_record(r) for r in records],
     }

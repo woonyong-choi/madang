@@ -1,36 +1,34 @@
 """페이지 실행 한 번을 이루는 단계: 조립, 실행, 기록, 검사, 답.
 
 ``madang run``과 흐름 그래프의 노드가 같은 단계를 공유한다. 단계 사이에서
-넘기는 값은 실행 번호와 페이지 파일뿐이다. 프롬프트는 ``scratch/``에,
-실행 결과는 ``runs/N.json``에 남는다.
+넘기는 값은 실행 번호와 페이지 파일뿐이다. 프롬프트는 ``scratch/``에
+남고, 실행 결과는 recorder가 page.md, ledger.md, ``runs/``에 쓴다.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import re
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from madang import config
+from madang import config, recorder
 from madang.assemble import Assembled, assemble
 from madang.cli_agent.context import BY_ENV
+from madang.recorder.undo import REPO_PREFIX
 from madang.runners.base import CliRunner, RunEvent
 from madang.runners.record import RecordedRun, run_page
 from madang.store import changes, frontmatter, pages, runs
-from madang.store.log import append_message
+from madang.store.log import read_messages
 from madang.store.page import LEDGER_FILE, MADANG_DIR, project_root, work_dir
 from madang.validate import Issue, validate_target
 
-SCRATCH_DIR = "scratch"
-REPO_PREFIX = "repo:"
+SCRATCH_DIR = pages.SCRATCH_DIR
 # 코어가 직접 쓰는 페이지 파일. 실행 산출물로 보고하지 않는다.
-_BOOKKEEPING = (pages.LOG_FILE, f"{pages.BLOCKS_DIR}/{pages.LAST_BLOCK_FILE}")
+_BOOKKEEPING = (f"{pages.BLOCKS_DIR}/{pages.LAST_BLOCK_FILE}",)
 _BOOKKEEPING_DIRS = (f"{runs.RUNS_DIR}/", f"{SCRATCH_DIR}/")
-_LOG_HEAD = re.compile(r"^<!--\s*(b\d+)\s*\|.*-->\s*$", re.MULTILINE)
 
 Snapshots = tuple[changes.Snapshot, changes.Snapshot | None]
 
@@ -101,7 +99,7 @@ def execute(
     trigger: dict[str, Any],
     on_event: Callable[[RunEvent], None] = lambda _event: None,
 ) -> RecordedRun:
-    """저장된 프롬프트로 러너를 실행하고 바뀐 파일까지 기록한다.
+    """저장된 프롬프트로 러너를 실행하고 바뀐 파일과 읽은 파일까지 기록한다.
 
     Args:
         page_dir: 페이지 폴더.
@@ -140,27 +138,27 @@ def execute(
     record_output(
         page_dir, recorded, meta["contract"], run_output(page_dir, cwd, before)
     )
+    recorder.set_reads(page_dir, recorded.n, recorded.result.read_files, cwd)
     return recorded
 
 
 def reply(page_dir: Path, recorded: RecordedRun) -> str:
-    """실행의 답을 에이전트 메시지로 log.md에 덧붙인다.
+    """실행의 답을 에이전트 블록으로 page.md에 쌓는다.
 
     Returns:
         새 메시지 블록 id.
     """
     result = recorded.result
     answer = result.final_text if result.status == "done" else None
-    return append_message(
+    return recorder.reply(
         page_dir,
-        "agent",
+        recorded.n,
         answer or f"{result.status}: {result.error or 'no answer'}",
-        {"run": recorded.n},
     )
 
 
 def message_text(page_dir: Path, block_id: str) -> str:
-    """log.md에서 메시지 블록 하나의 본문을 반환한다.
+    """page.md에서 메시지 블록 하나의 본문을 반환한다.
 
     Args:
         page_dir: 페이지 폴더.
@@ -170,16 +168,12 @@ def message_text(page_dir: Path, block_id: str) -> str:
         머리 줄을 뺀 본문.
 
     Raises:
-        KeyError: log.md에 그 블록이 없는 경우.
+        KeyError: page.md에 그 블록이 없는 경우.
     """
-    log = page_dir / pages.LOG_FILE
-    text = log.read_text(encoding="utf-8") if log.is_file() else ""
-    heads = list(_LOG_HEAD.finditer(text))
-    for i, head in enumerate(heads):
-        if head.group(1) == block_id:
-            end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
-            return text[head.end() : end].strip()
-    raise KeyError(f"message '{block_id}' is not in {pages.LOG_FILE}")
+    for message in read_messages(page_dir):
+        if message.id == block_id:
+            return message.text
+    raise KeyError(f"message '{block_id}' is not in {pages.PAGE_FILE}")
 
 
 # 기록과 검사
@@ -207,7 +201,7 @@ def check(page_dir: Path, cfg: config.Config, n: int) -> list[Issue]:
         "ok": not issues,
         "issues": [issue.to_dict() for issue in issues],
     }
-    runs.write_run(page_dir, record)
+    recorder.save_run(page_dir, record)
     return issues
 
 
@@ -225,7 +219,7 @@ def record_output(
     record.error = result.error
     if result.status == "done":
         record.result_status = state_status(page_dir)
-    runs.write_run(page_dir, record)
+    recorder.save_run(page_dir, record)
 
 
 def state_status(page_dir: Path) -> str | None:
@@ -269,7 +263,7 @@ def run_output(
         ]
         new += [REPO_PREFIX + p for p in repo_after.new_untracked(repo_before)]
     registered = _artifacts(page_dir)
-    managed = {LEDGER_FILE, "page.md"}
+    managed = {LEDGER_FILE, pages.PAGE_FILE}
     unknown = [p for p in new if p not in registered and p not in managed]
     return changed, unknown
 

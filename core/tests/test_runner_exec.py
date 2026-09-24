@@ -128,7 +128,7 @@ def test_exec_replays_stream(
     runner = ClaudeRunner(
         fake_spec, home=home, core_url="http://127.0.0.1:7470"
     )
-    log = tmp_path / "runs" / "1.events.jsonl"
+    log = tmp_path / "runs" / "1.jsonl"
     events, on_event = collect()
 
     result = runner.exec(

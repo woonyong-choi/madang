@@ -1,4 +1,4 @@
-"""블록 읽기·쓰기: 메시지(log.md 항목)와 ``blocks/`` 파일 블록.
+"""블록 읽기·쓰기: 메시지(page.md 본문 항목)와 ``blocks/`` 파일 블록.
 
 블록 종류는 파일 이름으로 정한다. ``.view.md``는 view, 그 밖의 ``.md``는
 doc, ``.json``·``.csv``는 data(머리부는 ``.meta.yaml`` 부속 파일),
@@ -118,7 +118,7 @@ def find_file_block(page_dir: Path, block_id: str) -> FileBlock | None:
 
 
 def find_message(page_dir: Path, block_id: str) -> Message | None:
-    """log.md에서 메시지 블록을 찾는다. 없으면 None."""
+    """page.md에서 메시지 블록을 찾는다. 없으면 None."""
     return next((m for m in read_messages(page_dir) if m.id == block_id), None)
 
 
@@ -129,7 +129,7 @@ def message_header(message: Message) -> dict[str, Any]:
     """메시지 블록의 머리부를 반환한다.
 
     Args:
-        message: log.md의 메시지.
+        message: page.md의 메시지.
 
     Returns:
         ``id``, ``type``, ``role``, ``ts``, ``text``와, 있으면 ``run``,

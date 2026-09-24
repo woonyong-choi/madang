@@ -30,7 +30,8 @@ def test_create_page_is_valid(home: Path, tmp_path: Path, work: Path) -> None:
     assert page == (
         tmp_path.resolve() / "work/.madang/pages/2026-09-24-lock-race"
     )
-    assert (page / "log.md").is_file() and (page / "blocks").is_dir()
+    assert not (page / "log.md").exists() and (page / "blocks").is_dir()
+    assert frontmatter.read(page / "ledger.md")[0]["reads"] == []
     assert validate_target(page) == []
     with pytest.raises(FileExistsError):
         pages.create_page(work, "Lock Race", day=date(2026, 9, 24))
@@ -85,9 +86,9 @@ def test_update_state_keeps_body(work: Path) -> None:
 def test_block_ids_grow_and_are_not_reused(work: Path) -> None:
     page = pages.create_page(work, "p")
     assert pages.allocate_block(page) == "b01"
-    (page / "log.md").write_text(
-        "<!-- b02 | 2026-09-24T08:00:00+09:00 | user | target=page -->\nhi\n"
-    )
+    header, _ = frontmatter.read(page / "page.md")
+    head = "<!-- b02 | 2026-09-24T08:00:00+09:00 | user | target=page -->"
+    (page / "page.md").write_text(frontmatter.dumps(header, f"{head}\nhi\n"))
     (page / "blocks" / "b04-x.json").write_text("{}")
     assert pages.allocate_block(page) == "b05"
     (page / "blocks" / "b04-x.json").unlink()

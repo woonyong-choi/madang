@@ -81,6 +81,7 @@ class RunResult:
         usage: 도구가 보고한 토큰 수.
         final_text: 최종 답.
         events_log: 원본 스트림을 담은 파일. 없을 수 있다.
+        read_files: 에이전트가 도구로 읽은 파일. 스트림이 알려 준 것만.
         exit_code: 프로세스 종료 코드. 시작하지 못했으면 None.
         duration: 실제 경과 시간(초).
         error: 실행이 끝나지 못했다면 그 이유.
@@ -91,6 +92,7 @@ class RunResult:
     usage: Usage = field(default_factory=Usage)
     final_text: str = ""
     events_log: Path | None = None
+    read_files: list[str] = field(default_factory=list)
     exit_code: int | None = None
     duration: float = 0.0
     error: str | None = None
@@ -147,6 +149,7 @@ class StreamParser(Protocol):
     usage: Usage | None
     error: str | None
     finished: bool
+    reads: list[str]
 
     def feed(self, obj: dict[str, Any]) -> list[RunEvent]:
         """디코딩된 JSON 한 줄에 대한 이벤트를 반환한다."""
@@ -403,6 +406,7 @@ class CliRunner:
             usage=parser.usage or Usage(),
             final_text=parser.final_text,
             events_log=events_log,
+            read_files=list(parser.reads),
             exit_code=exit_code,
             duration=duration,
             error=error,

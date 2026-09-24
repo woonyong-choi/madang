@@ -1,8 +1,8 @@
 """흐름 그래프의 노드.
 
-노드는 상태의 id로 페이지 파일을 찾아 읽고 쓴다. 분기하는 노드는 다음
-노드를 ``Command``로 정한다. 모델은 직접 부르지 않으며 요청 종류는 결정기가
-고른다.
+노드는 상태의 id로 페이지 파일을 찾아 읽고, 결과는 recorder로 쓴다.
+분기하는 노드는 다음 노드를 ``Command``로 정한다. 모델은 직접 부르지 않으며
+요청 종류는 결정기가 고른다.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Any
 from langgraph.graph import END
 from langgraph.types import Command, RunnableConfig, interrupt
 
+from madang import recorder
 from madang.config import Config, Tier
 from madang.deciders import Question, build_chain, target_kind
 from madang.graph import events, steps
@@ -111,13 +112,13 @@ class FlowNodes:
             self._implementer(state, page_dir),
         )
 
-        def mark(header: dict[str, Any]) -> None:
-            header["tier"] = state["tier"]
-            header["attempts"] = state["attempts"]
-            if state["kind"] != REVIEW_KIND:
-                header["owner"] = f"{runner}/{model}"
-
-        pages.update_state(page_dir, mark)
+        recorder.mark_route(
+            page_dir,
+            tier=state["tier"],
+            attempts=state["attempts"],
+            owner=None if state["kind"] == REVIEW_KIND else f"{runner}/{model}",
+            n=state["run_n"] if state["runs_this_message"] else None,
+        )
         return {"runner": runner, "model": model, "effort": effort}
 
     def assemble(self, state: FlowState) -> dict[str, Any]:
@@ -177,7 +178,7 @@ class FlowNodes:
             return Command(goto="finish", update={"result_status": "done"})
         if status in ("done", "review"):
             if status == "done":
-                _set_status(page_dir, "review")
+                _set_status(page_dir, "review", state["run_n"])
             update = {"result_status": "review"}
             return self._next(state, config, "review_run", update)
         if state["kind"] in ANSWER_KINDS:
@@ -223,9 +224,9 @@ class FlowNodes:
         record = runs.read_run(page_dir, state["run_n"])
         if not record.verify.ok:
             record.verify.ok = True
-            runs.write_run(page_dir, record)
+            recorder.save_run(page_dir, record)
         if steps.state_status(page_dir) != "done":
-            _set_status(page_dir, "done")
+            _set_status(page_dir, "done", state["run_n"])
         return {"result_status": "done"}
 
     def ask_human(self, state: FlowState) -> Command:
@@ -258,7 +259,7 @@ class FlowNodes:
             return self._wait(state, config, WAIT_REVIEW, retry=again)
         if status in ("review", "done"):
             return Command(goto="finish", update={"result_status": "done"})
-        _set_status(self._page_dir(state), "doing")
+        _set_status(self._page_dir(state), "doing", state["run_n"])
         update = {"result_status": "doing"}
         if state["kind"] == REVIEW_KIND:
             return Command(goto=END, update=update)
@@ -501,5 +502,6 @@ def _blocking(issues: list[Issue]) -> bool:
     return any(issue.code not in JUDGED_ISSUES for issue in issues)
 
 
-def _set_status(page_dir: Path, status: str) -> None:
-    pages.update_state(page_dir, lambda header: header.update(status=status))
+def _set_status(page_dir: Path, status: str, n: int) -> None:
+    """실행 ``n``의 판정으로 ledger.md 상태를 바꾼다."""
+    recorder.set_status(page_dir, status, n)

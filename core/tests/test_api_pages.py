@@ -412,7 +412,7 @@ def test_message_blocks_are_read_only(
     contract.check(client.delete(f"/pages/{page}/blocks/b01"), 204)
     folder = page_dir(home, page)
     assert pages.read_header(folder / "page.md")["blocks"] == []
-    assert "안녕" in (folder / "log.md").read_text()
+    assert "안녕" in (folder / "page.md").read_text()
 
 
 # 메모리

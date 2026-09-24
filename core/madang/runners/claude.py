@@ -8,6 +8,8 @@ from madang.runners.base import CliRunner, RunEvent, Usage, summarize
 
 # 성공 결과가 ``file_path`` 파일을 썼다는 뜻인 도구.
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
+# 성공 결과가 ``file_path`` 파일을 읽었다는 뜻인 도구.
+_READ_TOOLS = frozenset({"Read"})
 # 도구 이름별로 호출을 가장 잘 설명하는 입력 키.
 _SUMMARY_KEYS = {
     "Bash": "command",
@@ -32,7 +34,9 @@ class ClaudeStreamParser:
         self.usage: Usage | None = None
         self.error: str | None = None
         self.finished = False
+        self.reads: list[str] = []
         self._pending_writes: dict[str, str] = {}
+        self._pending_reads: dict[str, str] = {}
 
     def feed(self, obj: dict[str, Any]) -> list[RunEvent]:
         """디코딩된 JSON 한 줄에 대한 이벤트를 반환한다."""
@@ -62,8 +66,11 @@ class ClaudeStreamParser:
                 summary = summarize(args[key] if key and key in args else args)
                 events.append(RunEvent("tool_call", name=name, summary=summary))
                 path = args.get("file_path") or args.get("notebook_path")
-                if name in _WRITE_TOOLS and path and part.get("id"):
-                    self._pending_writes[str(part["id"])] = str(path)
+                if path and part.get("id"):
+                    if name in _WRITE_TOOLS:
+                        self._pending_writes[str(part["id"])] = str(path)
+                    elif name in _READ_TOOLS:
+                        self._pending_reads[str(part["id"])] = str(path)
         return events
 
     def _user(self, obj: dict[str, Any]) -> list[RunEvent]:
@@ -79,9 +86,13 @@ class ClaudeStreamParser:
                     summary=("error: " if failed else "") + summary,
                 )
             )
-            path = self._pending_writes.pop(str(part.get("tool_use_id")), None)
+            call = str(part.get("tool_use_id"))
+            path = self._pending_writes.pop(call, None)
             if path and not failed:
                 events.append(RunEvent("file_changed", path=path))
+            read = self._pending_reads.pop(call, None)
+            if read and not failed and read not in self.reads:
+                self.reads.append(read)
         return events
 
     def _result(self, obj: dict[str, Any]) -> list[RunEvent]:

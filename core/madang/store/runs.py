@@ -1,4 +1,7 @@
-"""실행 기록: ``runs/N.json`` 요약과 ``runs/N.events.jsonl`` 스트림.
+"""실행 기록: ``runs/N.json`` 요약과 ``runs/N.jsonl`` 원본 스트림.
+
+``N.jsonl``은 러너가 낸 줄을 손대지 않고 담는다. 요약은 스트림과 섞지 않고
+별도 파일 ``N.json``에 둔다.
 
 실행 번호는 페이지 안에서 늘어나며 기록이 삭제돼도 다시 쓰지 않는다.
 마지막으로 내준 번호는 ``runs/.last``에 보관한다.
@@ -20,7 +23,7 @@ from madang.store.files import atomic_write
 RUNS_DIR = "runs"
 LAST_FILE = ".last"
 
-_NUMBERED = re.compile(r"^(\d+)\.(?:json|events\.jsonl)$")
+_NUMBERED = re.compile(r"^(\d+)\.jsonl?$")
 
 
 class _Model(BaseModel):
@@ -78,13 +81,13 @@ def record_path(page_dir: Path, n: int) -> Path:
 
 
 def events_path(page_dir: Path, n: int) -> Path:
-    """``runs/N.events.jsonl``의 경로를 반환한다."""
-    return runs_dir(page_dir) / f"{n}.events.jsonl"
+    """원본 스트림 ``runs/N.jsonl``의 경로를 반환한다."""
+    return page_dir / events_rel(n)
 
 
 def events_rel(n: int) -> str:
     """기록에 저장하는 ``events_log`` 값(페이지 기준 상대 경로)을 반환한다."""
-    return f"{RUNS_DIR}/{n}.events.jsonl"
+    return f"{RUNS_DIR}/{n}.jsonl"
 
 
 def list_runs(page_dir: Path) -> list[int]:
@@ -130,7 +133,7 @@ def current(page_dir: Path) -> int | None:
 
 
 def allocate(page_dir: Path) -> int:
-    """빈 ``N.events.jsonl``을 만들어 다음 실행 번호를 예약한다.
+    """빈 ``N.jsonl``을 만들어 다음 실행 번호를 예약한다.
 
     Args:
         page_dir: 페이지 폴더.

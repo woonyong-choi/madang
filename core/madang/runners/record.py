@@ -1,6 +1,7 @@
-"""페이지에 대해 러너를 실행하고 실행 기록과 이벤트 로그를 남긴다.
+"""페이지에 대해 러너를 실행하고 실행 기록과 원본 스트림을 남긴다.
 
-기록은 ``runs/N.json``, 로그는 ``runs/N.events.jsonl``이다.
+요약은 ``runs/N.json``, 원본 스트림은 ``runs/N.jsonl``이다. 둘 다
+recorder가 번호를 내주고 쓴다.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from madang import recorder
 from madang.config import Config
 from madang.runners.base import CliRunner, RunEvent, RunResult
 from madang.store import runs
@@ -83,7 +85,7 @@ def run_page(
     Returns:
         끝난 실행.
     """
-    n = runs.allocate(page_dir)
+    n = recorder.begin(page_dir)
     started = datetime.now().astimezone()
     result = runner.exec(
         cwd=cwd,
@@ -117,7 +119,7 @@ def run_page(
         result_status=result.status,
         events_log=runs.events_rel(n),
     )
-    path = runs.write_run(page_dir, record)
+    path = recorder.save_run(page_dir, record)
     return RecordedRun(n=n, result=result, record=record, path=path)
 
 

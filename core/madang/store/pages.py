@@ -19,12 +19,12 @@ from madang.store.files import atomic_write
 from madang.store.page import LEDGER_FILE, PAGE_FILE
 
 BLOCKS_DIR = "blocks"
-LOG_FILE = "log.md"
 LAST_BLOCK_FILE = ".last"
+SCRATCH_DIR = "scratch"
 
 _BLOCK_ID = re.compile(r"^b(\d+)$")
 _BLOCK_FILE = re.compile(r"^b(\d+)(?:-|\.|$)")
-_LOG_BLOCK = re.compile(r"^<!--\s*b(\d+)\s*\|", re.MULTILINE)
+_MESSAGE_HEAD = re.compile(r"^<!--\s*b(\d+)\s*\|", re.MULTILINE)
 
 
 class PageNotFoundError(LookupError):
@@ -82,7 +82,9 @@ def read_header(path: Path) -> dict[str, Any]:
 
 
 def update_header(
-    path: Path, mutate: Callable[[dict[str, Any]], None]
+    path: Path,
+    mutate: Callable[[dict[str, Any]], None],
+    extend_body: str = "",
 ) -> dict[str, Any]:
     """``mutate``를 거쳐 ``path``의 머리부를 다시 쓴다.
 
@@ -91,6 +93,7 @@ def update_header(
     Args:
         path: 마크다운 파일.
         mutate: 머리부 매핑을 제자리에서 바꾼다.
+        extend_body: 본문 끝에 빈 줄 하나를 두고 덧붙일 텍스트.
 
     Returns:
         새 머리부.
@@ -102,6 +105,9 @@ def update_header(
     header = frontmatter.load_header(parts)
     mutate(header)
     parts.header = frontmatter.dump_header(header)
+    if extend_body:
+        old = parts.body.rstrip("\n")
+        parts.body = f"{old}\n\n{extend_body}" if old.strip() else extend_body
     atomic_write(path, frontmatter.join(parts))
     return header
 
@@ -114,13 +120,16 @@ def update_state(
 
 
 def update_page(
-    page_dir: Path, mutate: Callable[[dict[str, Any]], None]
+    page_dir: Path,
+    mutate: Callable[[dict[str, Any]], None],
+    extend_body: str = "",
 ) -> dict[str, Any]:
     """page.md 머리부를 다시 쓰고 ``updated`` 시각을 갱신한다.
 
     Args:
         page_dir: 페이지 폴더.
         mutate: 머리부 매핑을 제자리에서 바꾼다.
+        extend_body: 본문 끝에 덧붙일 텍스트. ``update_header``와 같다.
 
     Returns:
         새 머리부.
@@ -130,7 +139,7 @@ def update_page(
         mutate(header)
         header["updated"] = now()
 
-    return update_header(page_dir / PAGE_FILE, wrapped)
+    return update_header(page_dir / PAGE_FILE, wrapped, extend_body)
 
 
 # 블록
@@ -151,9 +160,11 @@ def _used_block_numbers(page_dir: Path) -> set[int]:
     used: set[int] = set()
     page_md = page_dir / PAGE_FILE
     if page_md.is_file():
-        for item in read_header(page_md).get("blocks") or []:
+        header, body = frontmatter.read(page_md)
+        for item in header.get("blocks") or []:
             if (n := parse_block_id(str(item))) is not None:
                 used.add(n)
+        used.update(int(n) for n in _MESSAGE_HEAD.findall(body))
     blocks = page_dir / BLOCKS_DIR
     if blocks.is_dir():
         for p in blocks.iterdir():
@@ -165,11 +176,6 @@ def _used_block_numbers(page_dir: Path) -> set[int]:
             and (text := last.read_text(encoding="utf-8").strip()).isdigit()
         ):
             used.add(int(text))
-    log = page_dir / LOG_FILE
-    if log.is_file():
-        used.update(
-            int(n) for n in _LOG_BLOCK.findall(log.read_text(encoding="utf-8"))
-        )
     return used
 
 
@@ -192,8 +198,14 @@ def allocate_block(page_dir: Path) -> str:
     return format_block_id(n)
 
 
-def append_block(page_dir: Path, block_id: str) -> None:
-    """``block_id``가 없으면 page.md ``blocks`` 끝에 추가한다."""
+def append_block(page_dir: Path, block_id: str, text: str = "") -> None:
+    """``block_id``가 없으면 page.md ``blocks`` 끝에 추가한다.
+
+    Args:
+        page_dir: 페이지 폴더.
+        block_id: 블록 id.
+        text: 같은 쓰기에서 page.md 본문 끝에 덧붙일 블록 텍스트.
+    """
 
     def mutate(header: dict[str, Any]) -> None:
         blocks = [str(b) for b in header.get("blocks") or []]
@@ -201,7 +213,7 @@ def append_block(page_dir: Path, block_id: str) -> None:
             blocks.append(block_id)
         header["blocks"] = blocks
 
-    update_page(page_dir, mutate)
+    update_page(page_dir, mutate, text)
 
 
 def block_files(page_dir: Path, block_id: str) -> list[Path]:
@@ -267,7 +279,7 @@ def create_page(
     goal: str = "",
     day: date | None = None,
 ) -> Path:
-    """page.md, ledger.md, log.md를 가진 페이지 폴더를 만든다.
+    """page.md와 ledger.md를 가진 페이지 폴더를 만든다.
 
     폴더는 ``<pages_dir>/<YYYY-MM-DD-slug>/``이다.
 
@@ -314,10 +326,10 @@ def create_page(
         "decisions": [],
         "tasks": [],
         "artifacts": [],
+        "reads": [],
     }
     body = STATE_BODY.format(goal=goal or title, next="1. 목표를 구체화한다.")
     (page_dir / LEDGER_FILE).write_text(frontmatter.dumps(state, body), "utf-8")
-    (page_dir / LOG_FILE).write_text("", "utf-8")
     return page_dir
 
 

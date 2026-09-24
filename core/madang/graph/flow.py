@@ -21,13 +21,13 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
+from madang import recorder
 from madang.config import Config
 from madang.graph import events
 from madang.graph.nodes import FlowNodes, RunnerFactory
 from madang.graph.state import FlowState, initial_state
 from madang.runners import make_runner
 from madang.store import pages, projects
-from madang.store.log import append_message
 
 DB_FILE = "core.db"
 
@@ -147,7 +147,7 @@ class Flow:
         request: str,
         target: dict[str, Any] | None = None,
     ) -> tuple[str, FlowState]:
-        """메시지를 페이지 로그에 남기고 흐름의 첫 상태를 만든다.
+        """메시지를 page.md에 요청 블록으로 남기고 흐름의 첫 상태를 만든다.
 
         그래프는 실행하지 않는다. 호출자가 ``advance``로 이어 간다.
 
@@ -168,9 +168,7 @@ class Flow:
         block = target["block"]
         if block is not None and not pages.block_files(page_dir, block):
             raise ValueError(f"block '{block}' has no file in blocks/")
-        message = append_message(
-            page_dir, "user", request, {"target": block or "page"}
-        )
+        message = recorder.request(page_dir, request, block)
         project = projects.owner(self.cfg.home, page_dir).id
         state = initial_state(project, page_dir.name, message, target)
         return f"{page_dir.name}/{message}", state
