@@ -8,6 +8,7 @@ import madang.api.model.PageCard
 import madang.api.model.PageDetail
 import madang.api.model.Project
 import madang.api.model.RunStreamEvent
+import madang.api.model.UndoResult
 
 /** 이벤트 연결 상태. */
 sealed interface EventLink {
@@ -78,6 +79,10 @@ data class DataDraft(
  * @property drafts 데이터 탭에서 고치는 중인 블록 id별 원문.
  * @property source 디스크의 page.md 원문. 읽지 못했으면 null이고 문서 탭은 core 머리부로 흐름을
  *   만든다.
+ * @property undoLog 마지막으로 끝난 run의 되돌리기 기록(`runs/<n>.undo.json`). 읽지 못했으면 null.
+ * @property settle 이 세션에 이벤트로 본 정책 단계(묻는 블록·게시).
+ * @property undoing 되돌리기를 보내고 답을 기다린다.
+ * @property undoResult 마지막 되돌리기가 되감은 것. 다음 run이 시작하면 지운다.
  */
 data class OpenPage(
     val detail: PageDetail,
@@ -88,8 +93,23 @@ data class OpenPage(
     val files: Map<String, Load<String>> = emptyMap(),
     val diff: Load<DiffView>? = null,
     val drafts: Map<String, DataDraft> = emptyMap(),
-    val source: String? = null
+    val source: String? = null,
+    val undoLog: UndoLog? = null,
+    val settle: SettleWatch = SettleWatch(),
+    val undoing: Boolean = false,
+    val undoResult: UndoResult? = null
 ) {
+    /**
+     * 결과 블록: 마지막으로 끝난 run의 정책 단계와 되돌리기 상태. 끝난 run이 없으면 null. 묻는
+     * 블록은 `ask.created`와 지금 기다리는 결정에서, 대기는 페이지 `busy`에서 얻는다.
+     */
+    val outcome: RunOutcome?
+        get() = lastFinishedRun(detail.runs)?.let {
+            val waitingAsk = detail.waiting?.decision?.takeIf { d -> d.ask != null }?.run
+            val flowBusy = detail.busy == true && detail.runs.lastOrNull()?.n == it.n
+            runOutcome(it, undoLog, settle.asked + setOfNotNull(waitingAsk), settle, flowBusy)
+        }
+
     /** 블록 흐름 끝에 아직 core에 없는 메시지를 붙인 것. */
     val flowItems: List<FlowItem>
         get() = pageFlow(detail) + unconfirmed().map { FlowItem.Pending(it) }

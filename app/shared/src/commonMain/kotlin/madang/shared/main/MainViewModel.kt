@@ -80,7 +80,11 @@ import madang.shared.settings.InMemorySettingsStore
  * 열린 페이지와 그 프로젝트를 따라간다.
  *
  * run 이벤트로 페이지별 실행 상태([MainState.watch])를 따라가고, 앱 설정이 허락하면 run 완료·실패와
- * 묻는 블록을 [notices]로 알린다.
+ * 묻는 블록을 [notices]로 알린다. 읽지 않음은 앱 설정에 저장해 재시작 뒤에도 남는다.
+ *
+ * 사용자가 누르는 실행은 보내기 하나다. 머지·게시는 core 정책이 하고, 앱은 결과 블록에 그 상태
+ * ([OpenPage.outcome])와 되돌리기·다시 실행을, 정책이 멈추면 묻는 블록의 선택지를 보인다. 모두
+ * core API를 부른다.
  *
  * @param newPageTitle 새 페이지의 처음 제목.
  * @param settings 페이지별 탭 세트를 저장하는 앱 설정.
@@ -95,7 +99,9 @@ class MainViewModel(
     private val timeSource: TimeSource = TimeSource.Monotonic,
     private val files: LocalFiles = NoLocalFiles
 ) {
-    private val _state = MutableStateFlow(MainState(baseUrl = core.baseUrl))
+    private val _state = MutableStateFlow(
+        MainState(baseUrl = core.baseUrl, watch = RunWatch(unread = settings.load().unread))
+    )
     val state: StateFlow<MainState> = _state.asStateFlow()
 
     private val projectsApi = core.api(::ProjectsApi)
@@ -132,6 +138,9 @@ class MainViewModel(
         }
         scope.launch {
             state.map { it.sendTarget }.distinctUntilChanged().collect(composer::setTarget)
+        }
+        scope.launch {
+            state.map { it.watch.unread }.distinctUntilChanged().collect(::saveUnread)
         }
     }
 
@@ -415,8 +424,58 @@ class MainViewModel(
     fun send() {
         if (_state.value.page == null) return
         val (target, text) = composer.take() ?: return
-        val page = target.page
-        val message = MessageCreate(text, target = target.block?.let { Target(block = it) })
+        post(target.page, text, target.block) { composer.restore(target.page, text) }
+    }
+
+    /**
+     * 결과 블록의 "다시 실행": 마지막으로 끝난 run을 일으킨 요청을 같은 대상에게 다시 보낸다.
+     * 보내기와 같은 길(`POST /pages/{p}/messages`)이다.
+     */
+    fun rerun() {
+        val open = _state.value.page ?: return
+        if (open.detail.id in _state.value.activeRuns) return
+        val trigger = lastFinishedRun(open.detail.runs)?.trigger?.message ?: return
+        val request = open.detail.blocks.firstOrNull { it.id == trigger } ?: return
+        val text = request.text?.takeIf { it.isNotBlank() } ?: return
+        post(open.detail.id, text, request.target?.block)
+    }
+
+    /**
+     * 결과 블록의 "되돌리기": core가 그 run의 부작용(게시·머지·커밋·페이지 파일)을 기록대로
+     * 되감는다(`POST /pages/{p}/runs/{n}/undo`). core가 거부하면(409) 이유를 상태 줄에 보인다.
+     */
+    fun undo() {
+        val open = _state.value.page ?: return
+        val outcome = open.outcome ?: return
+        if (open.undoing || outcome.undone) return
+        val page = open.detail.id
+        updateOpen(page) { it.copy(undoing = true, undoResult = null) }
+        scope.launch {
+            try {
+                val result = runsApi.undoRun(page, outcome.n).bodyOrThrow()
+                updateOpen(page) {
+                    it.copy(
+                        undoing = false,
+                        undoResult = result,
+                        settle = it.settle.copy(undone = it.settle.undone + outcome.n)
+                    )
+                }
+                refreshIfOpen(page)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateOpen(page) { it.copy(undoing = false) }
+                showError(e)
+            }
+        }
+    }
+
+    /**
+     * 페이지에 요청을 보낸다. 메시지는 core 응답 전에 본문 끝에 붙인다. 실패하면 붙인 것을 빼고
+     * [onFailed]를 부른다.
+     */
+    private fun post(page: String, text: String, block: String?, onFailed: () -> Unit = {}) {
+        val message = MessageCreate(text, target = block?.let { Target(block = it) })
         val pending = PendingMessage("pending-${++pendingCount}", text)
         updateOpen(page) { it.copy(pending = it.pending + pending) }
         scope.launch {
@@ -429,7 +488,7 @@ class MainViewModel(
                 updateOpen(page) { open ->
                     open.copy(pending = open.pending.filter { it.localId != pending.localId })
                 }
-                composer.restore(page, text)
+                onFailed()
                 showError(e)
             }
         }
@@ -475,7 +534,10 @@ class MainViewModel(
         }
     }
 
-    /** 열린 페이지가 기다리는 사람 결정에 답한다. flow가 다시 돌면 카드가 사라진다. */
+    /**
+     * 열린 페이지가 기다리는 사람 결정에 답한다. 정책이 멈춘 묻는 블록이면 그 블록에
+     * (`POST /pages/{p}/asks/{id}/answer`), 아니면 결정에 답한다. flow가 다시 돌면 카드가 사라진다.
+     */
     fun answer(choice: String) {
         val open = _state.value.page ?: return
         val decision = open.detail.waiting?.decision ?: return
@@ -484,8 +546,13 @@ class MainViewModel(
         updateOpen(page) { it.copy(answered = decision.id) }
         scope.launch {
             try {
-                decisionsApi.answerDecision(page, decision.id, DecisionAnswer(choice))
-                    .bodyOrThrow()
+                val ask = decision.ask
+                if (ask != null) {
+                    decisionsApi.answerAsk(page, ask, DecisionAnswer(choice)).bodyOrThrow()
+                } else {
+                    decisionsApi.answerDecision(page, decision.id, DecisionAnswer(choice))
+                        .bodyOrThrow()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -524,6 +591,7 @@ class MainViewModel(
                 activeRuns = it.activeRuns.withRunEvent(payload, timeSource::markNow)
             )
         }
+        watchSettle(event)
         noticeOf(payload, _state.value::pageTitle)?.let(::notify)
         side.onEvent(payload)
         when (payload) {
@@ -556,6 +624,20 @@ class MainViewModel(
             )
 
             is GitChangedEvent -> reloadDiffIn(payload.project)
+        }
+    }
+
+    /** 열린 페이지의 정책 단계를 이벤트로 따라간다. 새 run이 시작하면 지난 되돌리기 결과를 지운다. */
+    private fun watchSettle(event: CoreEvent) {
+        val open = _state.value.page?.detail ?: return
+        val page = event.envelope.page
+        if (page != null && page != open.id) return
+        val payload = event.payload
+        updateOpen(open.id) {
+            it.copy(
+                settle = it.settle.withEvent(payload),
+                undoResult = it.undoResult.takeUnless { payload is RunStartedEvent }
+            )
         }
     }
 
@@ -592,8 +674,14 @@ class MainViewModel(
         val contents = detail.blocks
             .filter { it.type in TAB_BLOCK_TYPES }
             .associate { it.id to blocksApi.getBlock(id, it.id).bodyOrThrow().content }
-        val source = _state.value.pageFolder?.let { readOrNull(pageFile(it)) }
-        updateOpen(id) { it.copy(contents = contents, source = source) }
+        val folder = _state.value.pageFolder
+        val source = folder?.let { readOrNull(pageFile(it)) }
+        val undoLog = folder?.let {
+            lastFinishedRun(detail.runs)?.n?.let { n -> undoLogFile(it, n) }
+        }
+            ?.let { readOrNull(it) }
+            ?.let(::parseUndoLog)
+        updateOpen(id) { it.copy(contents = contents, source = source, undoLog = undoLog) }
     }
 
     /**
@@ -802,6 +890,12 @@ class MainViewModel(
                 showError(e)
             }
         }
+    }
+
+    /** 읽지 않은 페이지를 앱 설정에 적는다. 같은 값이면 파일을 다시 쓰지 않는다. */
+    private fun saveUnread(unread: Set<String>) {
+        val current = settings.load()
+        if (current.unread != unread) settings.save(current.copy(unread = unread))
     }
 
     /** 알림을 낸다. 같은 결정은 한 번만 알린다(`ask.created`와 `flow.waiting`이 함께 온다). */

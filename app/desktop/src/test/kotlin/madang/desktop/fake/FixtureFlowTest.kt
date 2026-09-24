@@ -19,6 +19,7 @@ import madang.api.client.DecisionsApi
 import madang.api.client.MemoryApi
 import madang.api.client.MessagesApi
 import madang.api.client.PagesApi
+import madang.api.client.RunsApi
 import madang.api.client.TrashApi
 import madang.api.model.DecisionAnswer
 import madang.api.model.MemoryContent
@@ -31,7 +32,10 @@ import madang.shared.core.bodyOrThrow
 import madang.shared.core.decodeEvent
 import madang.shared.core.resolveUnknownFile
 
-/** 픽스처 가짜 core가 메시지·결정·메모리·미등록 파일·최근 삭제를 계약대로 흉내 내는지 본다. */
+/**
+ * 픽스처 가짜 core가 메시지·결정·묻는 블록·되돌리기·메모리·미등록 파일·최근 삭제를 계약대로 흉내
+ * 내는지 본다.
+ */
 class FixtureFlowTest {
 
     private val home = File(checkNotNull(javaClass.getResource("/fixture-home")).toURI())
@@ -98,6 +102,48 @@ class FixtureFlowTest {
                 .bodyOrThrow()
 
             assertEquals("run.finished", finished.await().last())
+            assertNull(core.api(::PagesApi).getPage(page).bodyOrThrow().waiting)
+        }
+    }
+
+    @Test
+    fun finishedRunIsPublishedAndUndoUnpublishesItOnce() = runBlocking {
+        client().use { core ->
+            val types = nextEventTypes(10)
+            core.api(::MessagesApi).sendMessage(page, MessageCreate("정리해줘")).bodyOrThrow()
+            assertEquals(listOf("page.updated", "publish.done"), types.await().takeLast(2))
+
+            val runs = core.api(::RunsApi)
+            val undone = runs.undoRun(page, 3).bodyOrThrow()
+
+            assertEquals(listOf(1), undone.unpublished)
+            val again = assertFailsWith<CoreApiException> { runs.undoRun(page, 3).bodyOrThrow() }
+            assertEquals(409, again.status)
+        }
+    }
+
+    @Test
+    fun policyWordLeavesAnAskBlockAndMergeAnswerPublishes() = runBlocking {
+        client().use { core ->
+            val types = nextEventTypes(12)
+            core.api(::MessagesApi).sendMessage(page, MessageCreate("정책에 걸릴 작업")).bodyOrThrow()
+            assertEquals(
+                listOf("block.added", "flow.waiting", "ask.created"),
+                types.await().takeLast(3)
+            )
+            val decision = core.api(::PagesApi).getPage(page).bodyOrThrow().waiting?.decision
+            val ask = checkNotNull(decision?.ask)
+            assertEquals(listOf("merge", "retry", "stop"), decision.question.options)
+
+            val decisions = core.api(::DecisionsApi)
+            val wrong = assertFailsWith<CoreApiException> {
+                decisions.answerAsk(page, ask, DecisionAnswer("maybe")).bodyOrThrow()
+            }
+            assertEquals(400, wrong.status)
+            val resumed = nextEventTypes(3)
+            decisions.answerAsk(page, ask, DecisionAnswer("merge")).bodyOrThrow()
+
+            assertEquals(listOf("block.added", "publish.done", "page.updated"), resumed.await())
             assertNull(core.api(::PagesApi).getPage(page).bodyOrThrow().waiting)
         }
     }

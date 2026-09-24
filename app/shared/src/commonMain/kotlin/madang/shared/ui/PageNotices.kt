@@ -106,7 +106,8 @@ private fun UnknownFileRow(
 
 /**
  * 페이지 상단의 사람 결정 카드. 질문과 선택지를 보이고, 고르면 [onAnswer]로 답을 보낸다.
- * 결정 없이 멈춘 이유만 있으면(`no_runner` 등) 그 이유를 보인다.
+ * 정책이 머지·게시를 멈춘 묻는 블록이면 거부 이유도 보인다. 결정 없이 멈춘 이유만 있으면
+ * (`no_runner` 등) 그 이유를 보인다.
  */
 @Composable
 fun DecisionCard(waiting: FlowWaitingData, answered: Boolean, onAnswer: (String) -> Unit) {
@@ -120,17 +121,20 @@ fun DecisionCard(waiting: FlowWaitingData, answered: Boolean, onAnswer: (String)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        val decision = waiting.decision
         Text(
-            strings.decisionTitle,
+            if (decision?.ask != null) strings.askTitle else strings.decisionTitle,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onTertiaryContainer
         )
-        val decision = waiting.decision
         if (decision == null) {
             Text(strings.waitingReason(waiting.reason.orEmpty()))
             return@Column
         }
         Text(decision.question.prompt, style = MaterialTheme.typography.bodyMedium)
+        decision.reasons.orEmpty().forEach {
+            Text("- $it", style = MaterialTheme.typography.bodySmall)
+        }
         if (answered) {
             Text(
                 strings.decisionSent,
@@ -152,7 +156,7 @@ fun DecisionCard(waiting: FlowWaitingData, answered: Boolean, onAnswer: (String)
 private fun choices(decision: PendingDecision): List<Pair<String, String>> {
     val strings = LocalStrings.current.page
     return when (decision.question.kind) {
-        Question.Kind.CHOICE -> decision.question.options.orEmpty().map { it to it }
+        Question.Kind.CHOICE -> decision.question.options.orEmpty().map { it to strings.choice(it) }
         Question.Kind.YESNO -> listOf("true" to strings.yes, "false" to strings.no)
         Question.Kind.SCORE -> (1..5).map { "$it" to "$it" }
     }

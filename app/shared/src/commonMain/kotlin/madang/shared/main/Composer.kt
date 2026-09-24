@@ -28,51 +28,26 @@ data class ComposerState(
 ) {
     val page: String? get() = target?.page
 
-    val suggestions: List<String> get() = prefixSuggestions(text)
-
     val canSend: Boolean get() = target != null && text.isNotBlank()
-}
-
-/** 종류를 강제하는 접두어. routes.yaml의 기본 종류와 같다. */
-val KIND_PREFIXES = listOf("design", "build", "small", "review", "explore")
-
-/**
- * 접두어 자동완성 후보(`design:` 등).
- *
- * 공백 없이 쓰는 첫 단어가 종류 이름의 앞부분이면 후보를 낸다. 이미 `:`를 썼거나 종류 이름을
- * 다 썼으면 후보가 없다.
- */
-fun prefixSuggestions(text: String, kinds: List<String> = KIND_PREFIXES): List<String> {
-    if (text.isEmpty() || text.any { it.isWhitespace() || it == ':' }) return emptyList()
-    val typed = text.lowercase()
-    return kinds.filter { it.startsWith(typed) && it != typed }.map { "$it:" }
 }
 
 /** 입력창에서 꺼낸 보낼 문장과 그 대상. */
 data class Outgoing(val target: SendTarget, val text: String)
 
 /** 입력창에서 누른 키가 할 일. */
-enum class ComposerKey { SEND, NEWLINE, COMPLETE }
+enum class ComposerKey { SEND, NEWLINE }
 
 /**
- * 입력창 키 규칙. Enter와 Cmd/Ctrl+Enter는 보내기, Shift+Enter는 줄바꿈, 후보가 있을 때
- * Tab은 자동완성이다. 입력창이 처리하지 않는 키면 null.
+ * 입력창 키 규칙. Enter와 Cmd/Ctrl+Enter는 보내기, Shift+Enter는 줄바꿈이다. 입력창이 처리하지
+ * 않는 키면 null.
  *
- * 입력기가 글자를 조합하는 중([composing], 한글 등)이면 Enter·Tab은 조합을 확정하는 키이므로
- * 입력기에 넘긴다.
+ * 입력기가 글자를 조합하는 중([composing], 한글 등)이면 Enter는 조합을 확정하는 키이므로 입력기에
+ * 넘긴다.
  */
-fun composerKey(
-    enter: Boolean,
-    tab: Boolean,
-    shift: Boolean,
-    hasSuggestions: Boolean,
-    composing: Boolean = false
-): ComposerKey? = when {
-    composing -> null
-    enter && shift -> ComposerKey.NEWLINE
-    enter -> ComposerKey.SEND
-    tab && hasSuggestions && !shift -> ComposerKey.COMPLETE
-    else -> null
+fun composerKey(enter: Boolean, shift: Boolean, composing: Boolean = false): ComposerKey? = when {
+    composing || !enter -> null
+    shift -> ComposerKey.NEWLINE
+    else -> ComposerKey.SEND
 }
 
 /**
@@ -109,9 +84,6 @@ class ComposerViewModel(
         _state.update { it.copy(text = text) }
         schedulePreview()
     }
-
-    /** 첫 단어를 고른 접두어로 바꾼다. */
-    fun complete(prefix: String) = setText("$prefix ")
 
     /** 보낼 문장과 대상을 꺼내고 입력창을 비운다. 보낼 것이 없으면 null. */
     fun take(): Outgoing? {

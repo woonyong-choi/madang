@@ -92,7 +92,9 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
     LaunchedEffect(dialog) { if (dialog == null) focus.requestFocus() }
     LaunchedEffect(viewModel, notifier, allStrings) {
         viewModel.notices.collect {
-            notifier.notify(allStrings.side.noticeTitle(it), allStrings.side.noticeBody(it))
+            notifier.notify(allStrings.side.noticeTitle(it), allStrings.side.noticeBody(it)) {
+                viewModel.showPage(it.project, it.page)
+            }
         }
     }
 
@@ -257,9 +259,10 @@ private fun pageActions(
     openDiff = { viewModel.open(OpenRequest.Diff) },
     showUnknownFiles = { viewModel.showUnknownFiles(true) },
     answer = viewModel::answer,
+    undo = viewModel::undo,
+    rerun = viewModel::rerun,
     composer = ComposerActions(
         setText = viewModel.composer::setText,
-        complete = viewModel.composer::complete,
         send = viewModel::send,
         onEditing = onEditing,
         onEscape = onEscape

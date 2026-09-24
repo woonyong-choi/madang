@@ -1,7 +1,6 @@
 package madang.shared.ui
 
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +9,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,7 +38,6 @@ import madang.shared.main.composerKey
 /** 입력창 조작. [onEditing]은 입력창에 키보드 포커스가 들어오고 나갈 때 불린다. */
 class ComposerActions(
     val setText: (String) -> Unit,
-    val complete: (String) -> Unit,
     val send: () -> Unit,
     val onEditing: (Boolean) -> Unit,
     val onEscape: () -> Unit
@@ -48,11 +45,10 @@ class ComposerActions(
 
 /**
  * 가운데 열 아래 입력창: 대상(활성 탭. "페이지에게" 또는 "[블록 이름]에게"), 문장, 다음 호출
- * 입력 토큰 추정, 보내기.
+ * 입력 토큰 추정, 보내기. 누르는 것은 보내기 하나다. 종류·모델·머지·게시는 core 정책이 정한다.
  *
  * Enter와 Cmd/Ctrl+Enter로 보내고 Shift+Enter로 줄을 바꾼다. 한글처럼 입력기가 글자를 조합하는
- * 중에 누른 Enter는 조합 확정이라 보내지 않는다. 첫 단어가 종류 이름의 앞부분이면 접두어 후보가
- * 뜨고 Tab이나 클릭으로 채운다.
+ * 중에 누른 Enter는 조합 확정이라 보내지 않는다.
  */
 @Composable
 fun ComposerBar(state: ComposerState, actions: ComposerActions, modifier: Modifier = Modifier) {
@@ -62,24 +58,7 @@ fun ComposerBar(state: ComposerState, actions: ComposerActions, modifier: Modifi
     if (field.text != state.text) {
         field = TextFieldValue(state.text, TextRange(state.text.length))
     }
-    val suggestions = state.suggestions
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-        if (suggestions.isNotEmpty()) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 6.dp)
-            ) {
-                suggestions.forEach { prefix ->
-                    AssistChip(onClick = { actions.complete(prefix) }, label = { Text(prefix) })
-                }
-                Text(
-                    strings.completeHint,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
         Row(
             modifier = Modifier.fillMaxWidth()
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
@@ -123,15 +102,11 @@ fun ComposerBar(state: ComposerState, actions: ComposerActions, modifier: Modifi
                             }
                             val key = composerKey(
                                 enter = event.key == Key.Enter || event.key == Key.NumPadEnter,
-                                tab = event.key == Key.Tab,
                                 shift = event.isShiftPressed,
-                                hasSuggestions = suggestions.isNotEmpty(),
                                 composing = field.composition != null
                             )
                             when (key) {
                                 ComposerKey.SEND -> actions.send()
-
-                                ComposerKey.COMPLETE -> actions.complete(suggestions.first())
 
                                 ComposerKey.NEWLINE -> {
                                     field = field.withNewline()

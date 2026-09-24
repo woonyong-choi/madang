@@ -1,17 +1,21 @@
 package madang.shared.ui
 
 import madang.api.model.MemoryLayer
+import madang.api.model.UndoResult
 import madang.api.model.UnknownFileAction
+import madang.shared.main.SettleState
 import madang.shared.main.SideTab
 
-/** 입력창, 오른쪽 사이드바와 메모리 탭, 미등록 파일, 사람 결정, 최근 삭제, 페이지 검색 문구. */
+/**
+ * 입력창, 결과 블록, 오른쪽 사이드바와 메모리 탭, 미등록 파일, 사람 결정과 묻는 블록, 최근 삭제,
+ * 페이지 검색 문구.
+ */
 data class PageStrings(
     val toPage: String,
     val inputPlaceholder: String,
     val send: String,
     val sending: String,
     val nextInput: (tokens: String, runner: String) -> String,
-    val completeHint: String,
     val memory: String,
     val memoryLayer: (MemoryLayer) -> String,
     val memoryTokens: (tokens: Int, limit: Int?) -> String,
@@ -26,7 +30,18 @@ data class PageStrings(
     val unknownFilesTitle: String,
     val unknownFileRun: (Int) -> String,
     val unknownFileAction: (UnknownFileAction.Action) -> String,
+    val resultTitle: (Int) -> String,
+    val settleState: (SettleState) -> String,
+    val merged: (String) -> String,
+    val published: (Int) -> String,
+    val undo: String,
+    val undoing: String,
+    val undone: String,
+    val undoSummary: (UndoResult) -> String,
+    val rerun: String,
     val decisionTitle: String,
+    val askTitle: String,
+    val choice: (String) -> String,
     val decisionSent: String,
     val yes: String,
     val no: String,
@@ -48,7 +63,6 @@ val KoreanPageStrings = PageStrings(
     send = "보내기",
     sending = "보내는 중",
     nextInput = { tokens, runner -> "~$tokens · $runner" },
-    completeHint = "Tab 자동완성",
     memory = "메모리",
     memoryLayer = {
         when (it) {
@@ -84,7 +98,40 @@ val KoreanPageStrings = PageStrings(
             UnknownFileAction.Action.DELETE -> "삭제"
         }
     },
+    resultTitle = { "결과 · run $it" },
+    settleState = {
+        when (it) {
+            SettleState.PENDING -> "머지·게시 대기"
+            SettleState.DONE -> "완료"
+            SettleState.REFUSED -> "거부 · 묻는 블록"
+        }
+    },
+    merged = { "머지 $it" },
+    published = { "게시 #$it" },
+    undo = "되돌리기",
+    undoing = "되돌리는 중",
+    undone = "되돌렸습니다",
+    undoSummary = {
+        listOfNotNull(
+            "되돌렸습니다",
+            it.restored.size.takeIf { n -> n > 0 }?.let { n -> "파일 $n" },
+            it.reverted.size.takeIf { n -> n > 0 }?.let { n -> "되돌림 커밋 $n" },
+            it.unpublished.takeIf { n -> n.isNotEmpty() }
+                ?.let { n -> "게시 취소 " + n.joinToString { p -> "#$p" } }
+        ).joinToString(" · ")
+    },
+    rerun = "다시 실행",
     decisionTitle = "결정이 필요합니다",
+    askTitle = "묻는 블록: 정책이 멈췄습니다",
+    choice = {
+        when (it) {
+            "merge" -> "그래도 머지"
+            "retry" -> "다시 시도"
+            "stop" -> "멈추기"
+            "next_tier" -> "다음 단계 모델로"
+            else -> it
+        }
+    },
     decisionSent = "답을 보냈습니다. 흐름이 다시 시작되기를 기다립니다.",
     yes = "예",
     no = "아니오",
@@ -110,7 +157,6 @@ val EnglishPageStrings = KoreanPageStrings.copy(
     inputPlaceholder = "Write a request (Enter to send, Shift+Enter for a new line)",
     send = "Send",
     sending = "Sending",
-    completeHint = "Tab to complete",
     memory = "Memory",
     memoryTokens = { tokens, limit ->
         if (limit != null) "$tokens / $limit tokens" else "$tokens tokens"
@@ -140,7 +186,40 @@ val EnglishPageStrings = KoreanPageStrings.copy(
             UnknownFileAction.Action.DELETE -> "Delete"
         }
     },
+    resultTitle = { "Result · run $it" },
+    settleState = {
+        when (it) {
+            SettleState.PENDING -> "Merge/publish pending"
+            SettleState.DONE -> "Done"
+            SettleState.REFUSED -> "Refused · asking"
+        }
+    },
+    merged = { "merged $it" },
+    published = { "published #$it" },
+    undo = "Undo",
+    undoing = "Undoing",
+    undone = "Undone",
+    undoSummary = {
+        listOfNotNull(
+            "Undone",
+            it.restored.size.takeIf { n -> n > 0 }?.let { n -> "$n files" },
+            it.reverted.size.takeIf { n -> n > 0 }?.let { n -> "$n revert commits" },
+            it.unpublished.takeIf { n -> n.isNotEmpty() }
+                ?.let { n -> "unpublished " + n.joinToString { p -> "#$p" } }
+        ).joinToString(" · ")
+    },
+    rerun = "Run again",
     decisionTitle = "Decision needed",
+    askTitle = "Asking: the policy stopped",
+    choice = {
+        when (it) {
+            "merge" -> "Merge anyway"
+            "retry" -> "Retry"
+            "stop" -> "Stop"
+            "next_tier" -> "Next tier"
+            else -> it
+        }
+    },
     decisionSent = "Answer sent. Waiting for the flow to resume.",
     yes = "Yes",
     no = "No",

@@ -121,9 +121,9 @@ app/
 
 - 입력창: 대상은 활성 탭이다. 페이지 탭과 run 탭에서는 "페이지에게", doc·data 탭에서는
   "[블록 이름]에게"(`target.block`)로 보낸다. Enter와 Cmd/Ctrl+Enter는 보내기, Shift+Enter는 줄바꿈.
-  한글처럼 입력기가 글자를 조합하는 중의 Enter는 조합 확정이라 보내지 않는다. 첫 단어가 `de`처럼 종류 이름의
-  앞부분이면 `design:` 같은 접두어 후보가 뜨고 Tab이나 클릭으로 채운다. 입력을 멈추고 300ms 뒤
-  `GET /pages/{p}/preview-input`으로 다음 호출의 입력 토큰과 도구/모델을 받아 오른쪽에 보인다.
+  한글처럼 입력기가 글자를 조합하는 중의 Enter는 조합 확정이라 보내지 않는다. 누르는 버튼은 보내기 하나이고
+  종류·모델·머지·게시는 core 정책이 정한다. 입력을 멈추고 300ms 뒤 `GET /pages/{p}/preview-input`으로 다음
+  호출의 입력 토큰과 도구/모델을 받아 오른쪽에 보인다(보이기만 한다).
 - 보낸 메시지는 core 응답 전에 본문 끝에 흐리게 붙고, core 페이지에 같은 메시지 블록이 생기면
   그 블록으로 바뀐다. 보내기에 실패하면 빠지고 입력창에 문장이 되돌아온다.
 - 오른쪽 사이드바(페이지 제목 옆 "메모리" 또는 M): 지금 · 파일 · 메모리 · git · 포트 · 기록 탭. 보이는 탭
@@ -152,7 +152,9 @@ app/
 - 기록 탭: 열린 페이지의 run, 최근 것부터. 모델, 고른 이유(같은 run의 router 메시지), 입력·출력 토큰, 결과를
   보이고 누르면 그 run 탭을 연다.
 - 시스템 알림: run 완료·실패와 묻는 블록(`ask.created`, 사람 결정 `flow.waiting`)을 운영체제 알림으로 알린다.
-  같은 질문은 한 번만 알린다. 설정 화면 "알림"에서 끈다(앱 설정 `notifications`).
+  같은 질문은 한 번만 알린다. 알림을 누르면(플랫폼이 알려 줄 때) 그 페이지를 연다. 설정 화면 "알림"에서
+  끈다(앱 설정 `notifications`). 지금 탭에서 물음표(사람 필요) 줄은 한 번만 눌러도 그 페이지를 연다.
+- 읽지 않음은 앱 설정(`unread`)에 저장되어 재시작 뒤에도 카드가 굵게 남는다.
 - 메모리 탭은 Profile / Brief / Ledger를 언제나 이 순서로 위에서 아래로
   보인다. 층마다 머리부는 최상위 키별 입력칸(값은 `키:` 뒤의 원문, 고친 키의 줄만 바뀐다), 본문은 원문 그대로
   보인다(문서 렌더러가 붙기 전까지). "원문"을 켜면 파일 전체를 줄 번호 편집기로 고친다. 저장은 층마다 하고,
@@ -160,13 +162,19 @@ app/
 - 미등록 파일: `page.unknown_files` 이벤트가 오면 제목 아래 노란 띠가 뜬다. 띠를 누르면 목록이
   열리고 파일마다 산출물로 / 유지 / 삭제를 고른다.
 - 사람 결정: `flow.waiting` 이벤트가 오면 페이지 위에 질문과 선택지 카드가 뜬다. 고르면 답을 보내고
-  flow가 다시 돌면(`run.started`) 사라진다.
+  flow가 다시 돌면(`run.started`) 사라진다. 정책이 머지·게시를 멈춘 묻는 블록(결정에 `ask`가 있음)이면
+  카드 제목이 "묻는 블록"이 되고 거부 이유를 함께 보이며, 답은 `POST /pages/{p}/asks/{id}/answer`로 간다.
+- 결과 블록: run이 없을 때 문서 아래에 마지막으로 끝난 run의 자동 머지·게시 상태를 보인다. 완료(머지 해시·게시
+  번호)는 core recorder의 되돌리기 기록(`runs/<n>.undo.json`)과 `publish.done`, 거부는 `ask.created` 이벤트와
+  기다리는 결정의 `ask`, 대기는 그 run이 마지막이고 페이지가 `busy`인 동안이다.
+  "되돌리기"는 `POST /pages/{p}/runs/{n}/undo`(core가 기록대로 게시·머지·페이지 파일을 되감는다. 거부하면 이유를
+  상태 줄에), "다시 실행"은 그 run을 일으킨 요청을 같은 대상에게 다시 보낸다(보내기와 같은 길).
 - 최근 삭제: 프로젝트 오른쪽 클릭 메뉴에서 연다. 등록한 모든 프로젝트의 `.madang/trash/`에 옮겨 둔
   페이지·블록을 최신순으로 보고 복구한다.
 - 시작 화면에서 core에 연결하지 못하면 그 자리에서 core 주소를 고쳐 다시 연결할 수 있다.
 
-앱은 앱 홈과 프로젝트의 `.madang/` 파일을 읽거나 쓰지 않는다(`core.port` 읽기만 예외). 작업 폴더 파일은
-파일 탭(코드 보기·데이터)에서 읽기만 한다. 앱이 쓰는 파일은 앱 설정 `settings.json`과 브라우저 엔진 번들·캐시다(macOS `~/Library/Application Support/Madang`, Windows `%APPDATA%\Madang`,
+앱은 앱 홈과 프로젝트의 `.madang/` 파일을 쓰지 않는다. 읽는 것은 `core.port`, 열린 페이지의 page.md와 마지막
+run의 되돌리기 기록뿐이다. 작업 폴더 파일은 파일 탭(코드 보기·데이터)에서 읽기만 한다. 앱이 쓰는 파일은 앱 설정 `settings.json`과 브라우저 엔진 번들·캐시다(macOS `~/Library/Application Support/Madang`, Windows `%APPDATA%\Madang`,
 그 밖 `~/.config/madang`, `MADANG_APP_CONFIG_DIR`로 변경).
 
 ## 명령
@@ -188,6 +196,16 @@ app/
 
 ```sh
 MADANG_SMOKE=1 ./gradlew :desktop:run
+```
+
+떠 있는 실제 core로 한 동작(보내기 → 결과 블록의 게시 상태 → 되돌리기)을 화면 없이 확인하려면
+`RealCoreOneActionTest`를 쓴다. `MADANG_REAL_CORE_URL`이 없으면 아무것도 하지 않는다. 에이전트 호출이 한 번
+들기 때문에 임시 앱 홈과 `policy.auto_publish`·`publish:`가 있는 임시 프로젝트로 돌린다.
+
+```sh
+MADANG_REAL_CORE_URL=http://127.0.0.1:7470 MADANG_REAL_PROJECT=<프로젝트 id> \
+  MADANG_REAL_PAGE=<페이지 id> MADANG_REAL_REQUEST="<요청>" MADANG_REAL_LOG=<기록 파일> \
+  ./gradlew :desktop:test --tests 'madang.desktop.RealCoreOneActionTest'
 ```
 
 ## core 연결
@@ -213,7 +231,10 @@ MADANG_FAKE_CORE=1 MADANG_FAKE_FIXTURE=src/test/resources/fixture-home ./gradlew
 
 픽스처는 메시지를 받으면 run 하나를 흉내 낸다. `run.*` 이벤트를 차례로 보내고, 끝나면
 router·agent 메시지와 run 기록을 붙이고 미등록 파일(`blocks/scratch-<n>.txt`) 하나를 남긴다.
-문장에 "결정"이 들어 있으면 도중에 `flow.waiting`으로 선택지를 묻고, 답하면 마저 끝낸다. 메모리
+끝나면 정책 단계로 게시했다고 알린다(`publish.done`). 문장에 "결정"이 들어 있으면 도중에 `flow.waiting`으로
+선택지를 묻고, 답하면 마저 끝낸다. 문장에 "정책"이 들어 있으면 정책이 게시를 멈추고 묻는 블록
+(`ask.created`, merge·retry·stop)을 남긴다. merge면 게시하고, retry면 다시 돌고, stop이면 멈춘다. 되돌리기는
+그 run의 게시를 되감고 두 번째부터는 409다. 메모리
 저장은 ledger.md의 머리부 필수 키·status 값·필수 절·토큰 상한을 검사한다. 지운 페이지는 최근
 삭제에서 되살릴 수 있다.
 

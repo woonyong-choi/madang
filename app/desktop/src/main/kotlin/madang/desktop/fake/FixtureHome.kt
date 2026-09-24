@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -69,6 +70,7 @@ import madang.api.model.RunUsage
 import madang.api.model.RunVerify
 import madang.api.model.TrashEntry
 import madang.api.model.TrashRestore
+import madang.api.model.UndoResult
 import madang.api.model.UnknownFile
 import madang.api.model.UnknownFileAction
 import madang.api.model.Usage
@@ -89,8 +91,10 @@ data class FixtureResponse(val status: Int, val body: String?)
  * 블록 원문 저장은 `.json` 블록이면 JSON 문법을 검사한다.
  *
  * 메시지를 받으면 run 하나를 흉내 낸다. [runStep]마다 `run.*` 이벤트를 내고, 끝나면 router·agent
- * 메시지와 run 기록을 붙이고 미등록 파일 하나를 남긴다. 문장에 "결정"이 있으면 도중에
- * `flow.waiting`으로 사람 결정을 묻고, 답을 받으면 마저 끝낸다.
+ * 메시지와 run 기록을 붙이고 미등록 파일 하나를 남긴 뒤 정책 단계로 게시한다(`publish.done`).
+ * 문장에 "결정"이 있으면 도중에 `flow.waiting`으로 사람 결정을 묻고, 답을 받으면 마저 끝낸다.
+ * 문장에 "정책"이 있으면 정책이 게시를 멈추고 묻는 블록(`ask.created`)을 남긴다. 되돌리기는 그
+ * run의 게시를 되감는다.
  */
 class FixtureHome(private val dir: File, private val runStep: Duration = 600.milliseconds) {
 
@@ -120,6 +124,9 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
     private val sidebar = FixtureSidebar(dir)
     private val blockEdits = mutableMapOf<Pair<String, String>, String>()
     private val waitingRuns = mutableMapOf<String, FixtureRun>()
+    private val published = mutableMapOf<Pair<String, Int>, Int>()
+    private val undone = mutableSetOf<Pair<String, Int>>()
+    private var publishCount = 0
     private val runScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val _events = MutableSharedFlow<String>(
@@ -161,6 +168,12 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
 
             parts.size == 5 && parts[0] == "pages" && parts[2] == "decisions" &&
                 parts[4] == "answer" && method == "POST" -> answer(parts[1], parts[3], body)
+
+            parts.size == 5 && parts[0] == "pages" && parts[2] == "asks" &&
+                parts[4] == "answer" && method == "POST" -> answerAsk(parts[1], parts[3], body)
+
+            parts.size == 5 && parts[0] == "pages" && parts[2] == "runs" && parts[4] == "undo" &&
+                method == "POST" -> undoRun(parts[1], parts[3].toIntOrNull())
 
             parts == listOf("projects") && method == "GET" -> ok(projectsJson())
 
@@ -708,6 +721,127 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
             run.n
         )
         emitPage("page.updated", finished)
+        if (POLICY_WORD in run.text) refuse(run) else publish(run)
+    }
+
+    /** 정책 단계가 run의 문서를 게시한다. */
+    private fun publish(run: FixtureRun) {
+        val page = pages[run.page] ?: return
+        val n = ++publishCount
+        published[run.page to run.n] = n
+        emit("publish.done", page.project, page.id, publishData(n, undo = false), run.n)
+    }
+
+    /** 정책이 게시를 멈추고 묻는 블록을 남긴다. 답을 기다린다. */
+    private fun refuse(run: FixtureRun) {
+        val page = pages[run.page] ?: return
+        val ask = BlockHeader(
+            id = nextBlockId(page),
+            type = BlockType.MESSAGE,
+            role = MessageRole.ROUTER,
+            ts = now(),
+            run = run.n,
+            text = "$POLICY_PROMPT\n\n- $POLICY_REASON\n\n선택지: ${POLICY_OPTIONS.joinToString(
+                " | "
+            )}"
+        )
+        val decision = PendingDecision(
+            id = "q${run.n}",
+            run = run.n,
+            question = Question(Question.Kind.CHOICE, POLICY_PROMPT, options = POLICY_OPTIONS),
+            ask = ask.id,
+            reasons = listOf(POLICY_REASON)
+        )
+        val waiting = FlowWaitingData(decision = decision)
+        val asking = page.copy(blocks = page.blocks + ask, waiting = waiting, updated = now())
+        pages[page.id] = asking
+        waitingRuns[page.id] = run
+        emitBlock(asking, ask.id, run.n)
+        emit(
+            "flow.waiting",
+            page.project,
+            page.id,
+            json.encodeToJsonElement(FlowWaitingData.serializer(), waiting),
+            run.n
+        )
+        val created = buildJsonObject {
+            put("block", ask.id)
+            put("decision", decision.id)
+            put("prompt", POLICY_PROMPT)
+            put("reasons", json.encodeToJsonElement(stringsSerializer, listOf(POLICY_REASON)))
+            put("options", json.encodeToJsonElement(stringsSerializer, POLICY_OPTIONS))
+        }
+        emit("ask.created", page.project, page.id, created, run.n, block = ask.id)
+    }
+
+    /**
+     * 묻는 블록에 답한다. 답은 블록으로 남는다. merge면 게시하고, retry면 같은 요청을 정책 거부
+     * 없이 다시 돌리고, stop이면 멈춘다.
+     */
+    private fun answerAsk(pageId: String, ask: String, body: String?): FixtureResponse {
+        val page = pages[pageId] ?: return notFound("page $pageId")
+        val decision = page.waiting?.decision?.takeIf { it.ask == ask }
+            ?: return notFound("flow waiting on $ask")
+        val choice = decode(body, DecisionAnswer.serializer()).choice
+        if (choice !in decision.question.options.orEmpty()) {
+            return error(400, "invalid", "choice $choice is not an option")
+        }
+        val answer = BlockHeader(
+            id = nextBlockId(page),
+            type = BlockType.MESSAGE,
+            role = MessageRole.USER,
+            ts = now(),
+            text = choice
+        )
+        val answered = page.copy(blocks = page.blocks + answer, waiting = null, updated = now())
+        pages[pageId] = answered
+        emitBlock(answered, answer.id)
+        val run = waitingRuns.remove(pageId)
+        when {
+            run == null || choice == STOP -> emitPage("page.updated", answered)
+
+            choice == RETRY -> runScope.launch {
+                val again = run.copy(
+                    n = answered.runs.size + 1,
+                    text = run.text.replace(POLICY_WORD, "")
+                )
+                play(again)
+            }
+
+            else -> runScope.launch {
+                delay(runStep)
+                synchronized(lock) {
+                    publish(run)
+                    pages[pageId]?.let { emitPage("page.updated", it) }
+                }
+            }
+        }
+        return FixtureResponse(202, null)
+    }
+
+    /** run 하나를 되돌린다: 그 run의 게시를 되감고 페이지 파일을 되돌린 것으로 답한다. */
+    private fun undoRun(pageId: String, n: Int?): FixtureResponse {
+        val page = pages[pageId] ?: return notFound("page $pageId")
+        if (n == null || page.runs.none { it.n == n }) return notFound("run $n")
+        if (!undone.add(pageId to n)) return error(409, "nothing-to-undo", "run $n is undone")
+        val unpublished = listOfNotNull(published.remove(pageId to n))
+        unpublished.forEach {
+            emit("publish.done", page.project, pageId, publishData(it, undo = true), n)
+        }
+        emitPage("page.updated", page)
+        val result = UndoResult(
+            run = n,
+            restored = listOf("ledger.md", "page.md"),
+            skipped = emptyList(),
+            reverted = emptyList(),
+            unpublished = unpublished
+        )
+        return ok(json.encodeToString(UndoResult.serializer(), result))
+    }
+
+    private fun publishData(n: Int, undo: Boolean) = buildJsonObject {
+        put("n", n)
+        put("undo", undo)
     }
 
     private fun preview(page: PageDetail, text: String?): InputPreview {
@@ -913,7 +1047,14 @@ class FixtureHome(private val dir: File, private val runStep: Duration = 600.mil
     private companion object {
         const val GIT_LOG_DEFAULT = 50
         val portsSerializer = ListSerializer(ObservedPort.serializer())
+        val stringsSerializer = ListSerializer(String.serializer())
         const val DECISION_WORD = "결정"
+        const val POLICY_WORD = "정책"
+        const val POLICY_PROMPT = "정책이 게시를 멈췄습니다. 어떻게 할까요?"
+        const val POLICY_REASON = "테스트 실패(종료 코드 1)"
+        const val RETRY = "retry"
+        const val STOP = "stop"
+        val POLICY_OPTIONS = listOf("merge", RETRY, STOP)
         const val SYSTEM_TOKENS = 24600
         const val CONTRACT_TOKENS = 420
         const val OUTPUT_TOKENS = 640

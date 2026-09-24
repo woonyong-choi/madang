@@ -47,7 +47,8 @@ class NowActions(
  * 사이드바 지금 탭: 위에 구독 사용량, 아래에 모든 프로젝트의 진행 중·사람 필요·최근 30분 run.
  *
  * 줄을 누르면 그 run의 마지막 호출 입력 구성을, "로그"를 누르면 진행 로그의 마지막 30줄을 펼친다.
- * 두 번 누르면 그 페이지를 연다. 읽지 않은 완료는 굵게 보인다.
+ * 두 번 누르면 그 페이지를 연다. 사람을 기다리는 줄(물음표)은 한 번 눌러도 그 페이지의 묻는 블록으로
+ * 간다. 읽지 않은 완료는 굵게 보인다.
  */
 @Composable
 fun NowTab(main: MainState, state: NowState, actions: NowActions, modifier: Modifier) {
@@ -165,7 +166,9 @@ private fun NowRow(
                 RoundedCornerShape(6.dp)
             )
             .combinedClickable(
-                onClick = { actions.showInput(item) },
+                onClick = {
+                    if (item.opensOnClick) actions.openPage(item) else actions.showInput(item)
+                },
                 onDoubleClick = { actions.openPage(item) }
             )
             .padding(horizontal = 8.dp, vertical = 6.dp)

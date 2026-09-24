@@ -147,7 +147,10 @@ data class NowItem(
     val at: Instant?,
     val unread: Boolean,
     val active: ActiveRun? = null
-)
+) {
+    /** 사람을 기다리는 줄(물음표)은 한 번 눌러도 그 페이지를 연다. 묻는 블록이 거기 있다. */
+    val opensOnClick: Boolean get() = glyph == RunGlyph.NEEDS_HUMAN
+}
 
 /**
  * 모든 프로젝트의 진행 중·사람 필요·최근 run. 진행 중이 먼저(최근에 시작한 것부터), 다음 사람

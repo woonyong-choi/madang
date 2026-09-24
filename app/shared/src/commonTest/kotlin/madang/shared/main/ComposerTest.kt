@@ -13,46 +13,18 @@ import madang.api.model.PageStatus
 class ComposerTest {
 
     @Test
-    fun prefixSuggestionsMatchTheFirstWord() {
-        assertEquals(listOf("design:"), prefixSuggestions("de"))
-        assertEquals(listOf("small:"), prefixSuggestions("S"))
-        assertEquals(
-            KIND_PREFIXES.map {
-                "$it:"
-            }.filter { it.startsWith("b") },
-            prefixSuggestions("b")
-        )
-        assertTrue(prefixSuggestions("").isEmpty())
-        assertTrue(prefixSuggestions("design").isEmpty())
-        assertTrue(prefixSuggestions("design:").isEmpty())
-        assertTrue(prefixSuggestions("de sign").isEmpty())
-        assertTrue(prefixSuggestions("표").isEmpty())
-    }
-
-    @Test
     fun enterWhileAnInputMethodIsComposingDoesNotSend() {
-        assertNull(composerKey(enter = true, tab = false, shift = false, false, composing = true))
-        assertNull(composerKey(enter = true, tab = false, shift = true, false, composing = true))
-        assertNull(composerKey(enter = false, tab = true, shift = false, true, composing = true))
-        assertEquals(
-            ComposerKey.SEND,
-            composerKey(enter = true, tab = false, shift = false, false, composing = false)
-        )
+        assertNull(composerKey(enter = true, shift = false, composing = true))
+        assertNull(composerKey(enter = true, shift = true, composing = true))
+        assertEquals(ComposerKey.SEND, composerKey(enter = true, shift = false, composing = false))
     }
 
     @Test
-    fun enterSendsShiftEnterBreaksTabCompletes() {
-        assertEquals(ComposerKey.SEND, composerKey(enter = true, tab = false, shift = false, false))
-        assertEquals(
-            ComposerKey.NEWLINE,
-            composerKey(enter = true, tab = false, shift = true, false)
-        )
-        assertEquals(
-            ComposerKey.COMPLETE,
-            composerKey(enter = false, tab = true, shift = false, true)
-        )
-        assertNull(composerKey(enter = false, tab = true, shift = false, hasSuggestions = false))
-        assertNull(composerKey(enter = false, tab = false, shift = false, hasSuggestions = true))
+    fun enterSendsShiftEnterBreaksAndOtherKeysPass() {
+        assertEquals(ComposerKey.SEND, composerKey(enter = true, shift = false))
+        assertEquals(ComposerKey.NEWLINE, composerKey(enter = true, shift = true))
+        assertNull(composerKey(enter = false, shift = false))
+        assertNull(composerKey(enter = false, shift = true))
     }
 
     @Test

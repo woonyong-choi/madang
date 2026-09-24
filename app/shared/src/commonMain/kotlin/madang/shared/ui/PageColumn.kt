@@ -49,6 +49,8 @@ class PageActions(
     val openDiff: () -> Unit,
     val showUnknownFiles: () -> Unit,
     val answer: (String) -> Unit,
+    val undo: () -> Unit,
+    val rerun: () -> Unit,
     val composer: ComposerActions,
     val sidebar: SidebarActions
 )
@@ -114,8 +116,8 @@ private fun CenterColumn(
 }
 
 /**
- * 페이지 탭: 제목과 상태, 미등록 파일 띠, 사람 결정 카드, 렌더러가 그린 블록 흐름(page.md), 끝에
- * 진행 중인 run 카드.
+ * 페이지 탭: 제목과 상태, 미등록 파일 띠, 사람 결정·묻는 블록 카드, 렌더러가 그린 블록 흐름(page.md),
+ * 끝에 진행 중인 run 카드 또는 마지막 결과 블록(머지·게시 상태, 되돌리기, 다시 실행).
  */
 @Composable
 private fun PageTab(state: MainState, open: OpenPage, actions: PageActions, modifier: Modifier) {
@@ -172,10 +174,21 @@ private fun PageTab(state: MainState, open: OpenPage, actions: PageActions, modi
                 runs = runs
             )
         }
-        state.activeRuns[page.id]?.let { run ->
+        val active = state.activeRuns[page.id]
+        val outcome = open.outcome
+        if (active != null) {
             Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
-                RunProgressCard(run, actions.cancelRun)
+                RunProgressCard(active, actions.cancelRun)
             }
+        } else if (outcome != null) {
+            ResultBar(
+                outcome,
+                open.undoing,
+                open.undoResult,
+                actions.undo,
+                actions.rerun,
+                Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
         }
     }
 }
