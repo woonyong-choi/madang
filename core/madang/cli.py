@@ -8,7 +8,7 @@ from typing import Annotated, Optional
 
 import typer
 
-from madang import __version__, config
+from madang import __version__, cli_agent, config
 from madang.store.git import GitError
 from madang.store.home import init_home
 from madang.validate import validate_target
@@ -92,6 +92,9 @@ def validate(
             typer.echo(issue.format())
     if issues:
         raise typer.Exit(1)
+
+
+cli_agent.register(app)
 
 
 def main() -> None:

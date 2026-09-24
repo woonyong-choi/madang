@@ -100,6 +100,13 @@ def _highest(page_dir: Path) -> int:
     return high
 
 
+def current(page_dir: Path) -> int | None:
+    """Last run number handed out for the page (the run in progress, if any)."""
+    if not runs_dir(page_dir).is_dir():
+        return None
+    return _highest(page_dir) or None
+
+
 def allocate(page_dir: Path) -> int:
     """Reserve the next run number by creating an empty ``N.events.jsonl``."""
     runs = runs_dir(page_dir)

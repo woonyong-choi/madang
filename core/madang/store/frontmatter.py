@@ -104,7 +104,11 @@ def read(path: Path) -> tuple[dict[str, Any], str]:
     return parse(path.read_text(encoding="utf-8"))
 
 
+def dump_header(header: dict[str, Any]) -> str:
+    """Serialize a header mapping as the YAML text between the fences."""
+    return yaml.safe_dump(header, sort_keys=False, allow_unicode=True)
+
+
 def dumps(header: dict[str, Any], body: str) -> str:
     """Build a new file from a header mapping and a body."""
-    text = yaml.safe_dump(header, sort_keys=False, allow_unicode=True)
-    return join(Parts(header=text, body=body))
+    return join(Parts(header=dump_header(header), body=body))
