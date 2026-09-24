@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
 FALLBACK_NAME = "madang"
@@ -25,6 +26,7 @@ def run(
     *args: str,
     check: bool = True,
     timeout: float = TIMEOUT_SECONDS,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """터미널 프롬프트 없이 ``repo``에서 git을 실행한다.
 
@@ -33,6 +35,7 @@ def run(
         *args: git 인자.
         check: 0이 아닌 종료 코드에서 예외를 던질지 여부.
         timeout: git을 중단하기까지의 초.
+        env: 더할 환경 변수.
 
     Returns:
         텍스트 출력을 가진 종료된 프로세스.
@@ -47,7 +50,7 @@ def run(
             text=True,
             check=False,
             stdin=subprocess.DEVNULL,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0", **(env or {})},
             timeout=timeout,
         )
     except FileNotFoundError as exc:

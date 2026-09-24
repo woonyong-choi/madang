@@ -1,0 +1,52 @@
+[
+  {
+    "name": "top level",
+    "markdown": "# Doc\n\n```view demo/list data=./a.json\n```\n",
+    "keys": ["demo/list data=./a.json"]
+  },
+  {
+    "name": "inside a bullet list",
+    "markdown": "- item\n\n  ```view demo/list data=./a.json\n  ```\n",
+    "keys": ["demo/list data=./a.json"]
+  },
+  {
+    "name": "fence on the list marker line",
+    "markdown": "- ```view demo/list\n  ```\n- next\n",
+    "keys": ["demo/list"]
+  },
+  {
+    "name": "inside an ordered list",
+    "markdown": "1. step\n\n   ```view demo/list data=./b.json\n   ```\n2) other\n",
+    "keys": ["demo/list data=./b.json"]
+  },
+  {
+    "name": "inside a blockquote",
+    "markdown": "> quote\n>\n> ```view demo/list data=./b.json\n> ```\n",
+    "keys": ["demo/list data=./b.json"]
+  },
+  {
+    "name": "list inside a blockquote",
+    "markdown": "> - ```view demo/list\n>   ```\n",
+    "keys": ["demo/list"]
+  },
+  {
+    "name": "tilde fence and pin",
+    "markdown": "~~~view demo/list@abc1234 data=./a.json\n~~~\n",
+    "keys": ["demo/list@abc1234 data=./a.json"]
+  },
+  {
+    "name": "shown inside a longer code fence",
+    "markdown": "````md\n```view demo/list\n```\n````\n",
+    "keys": []
+  },
+  {
+    "name": "after front matter",
+    "markdown": "---\ntitle: x\ntags:\n  - a\n---\n```view demo/list\n```\n",
+    "keys": ["demo/list"]
+  },
+  {
+    "name": "same reference twice and other languages",
+    "markdown": "```js\nlet a;\n```\n\n```view demo/list\n```\n\n- ```view demo/list\n  ```\n\n```view other/x   data=./c.json\n```\n",
+    "keys": ["demo/list", "other/x data=./c.json"]
+  }
+]

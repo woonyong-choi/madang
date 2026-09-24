@@ -4,6 +4,14 @@
 함수를 쓴다. 모든 호출은 시간 제한이 있고 터미널 프롬프트를 끈다.
 """
 
+from madang.git.branch import (
+    commit_tree,
+    empty_tree,
+    resolve,
+    set_branch,
+    tree_of,
+    write_tree,
+)
 from madang.git.command import GitError, run
 from madang.git.repo import (
     Commit,
@@ -42,10 +50,12 @@ __all__ = [
     "Worktree",
     "branches",
     "commit",
+    "commit_tree",
     "create_branch",
     "current_branch",
     "delete_branch",
     "diff",
+    "empty_tree",
     "exclude",
     "has_branch",
     "has_staged_changes",
@@ -59,10 +69,14 @@ __all__ = [
     "pull",
     "push",
     "remotes",
+    "resolve",
     "rev_parse",
     "revert",
     "run",
+    "set_branch",
     "stage",
     "status",
+    "tree_of",
     "upstream_remote",
+    "write_tree",
 ]

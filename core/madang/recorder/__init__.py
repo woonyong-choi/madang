@@ -3,6 +3,8 @@
 흐름과 러너가 페이지에 남기는 결과는 모두 이 모듈을 거친다. 실행에 딸린
 쓰기는 그 실행의 부작용으로 ``runs/N.undo.json``에 남아 ``undo``로 되감을
 수 있다. git 커밋·머지는 ``record_git``으로 더해 되돌림 커밋으로 되감는다.
+게시는 프로젝트 단위 부작용이라 ``published`` 모듈이
+``.madang/published/<n>.json``에 따로 남긴다.
 """
 
 from madang.recorder.ledger import (

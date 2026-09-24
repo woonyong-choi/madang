@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 사이트 안의 스크립트와 인라인만 허용한다. 뷰어 iframe(srcdoc)은 이 정책을 물려받는다. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: 'unsafe-inline'; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data:; font-src data:; base-uri 'none'; form-action 'none'">
+<title>${title}</title>
+<link rel="stylesheet" href="${base}_madang/runtime/document.css">
+<style>body { margin: 0 auto; max-width: 860px; padding: 24px; }</style>
+<script src="${base}_madang/runtime/vendor/marked.umd.js"></script>
+<script src="${base}_madang/runtime/document.js"></script>
+<script type="application/json" id="madang-markdown">${markdown}</script>
+<script type="application/json" id="madang-context">${context}</script>
+</head>
+<body>
+<main id="madang-page"></main>
+<script>
+(function() {
+  'use strict';
+  function read(id) {
+    return JSON.parse(document.getElementById(id).textContent);
+  }
+  var page = document.getElementById('madang-page');
+  madangDocument.mountDocument(
+      page, read('madang-markdown'), read('madang-context'));
+  // 문서 사이의 상대 링크(.md)는 게시된 .html을 가리키게 한다.
+  Array.prototype.forEach.call(page.querySelectorAll('a[href]'), function(a) {
+    var href = a.getAttribute('href');
+    if (/^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) return;
+    a.setAttribute('href', href.replace(/\.md(?=$$|[?#])/i, '.html'));
+  });
+})();
+</script>
+</body>
+</html>

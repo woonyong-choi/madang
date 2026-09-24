@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
 from madang import __version__, cli_agent, config
+from madang.git import GitError
 from madang.graph import Flow, FlowResult, events, steps
 from madang.runners import make_runner
-from madang.runners.base import CliRunner
+from madang.runners.base import PAGE_ENV, CliRunner
 from madang.runners.record import RecordedRun
 from madang.store import frontmatter, pages, projects
 from madang.store.home import (
@@ -24,6 +26,9 @@ from madang.store.home import (
 from madang.store.log import append_message
 from madang.store.page import LEDGER_FILE, work_dir
 from madang.validate import Issue, validate_target
+
+if TYPE_CHECKING:
+    from madang.publish import PublishResult
 
 app = typer.Typer(
     name="madang",
@@ -430,6 +435,86 @@ def openapi() -> None:
     from madang.api.contract import contract_text
 
     sys.stdout.write(contract_text())
+
+
+# 게시
+
+
+@app.command("publish")
+def publish_command(
+    project: Annotated[
+        str | None,
+        typer.Option(
+            "--project",
+            help="프로젝트 id. 없으면 $MADANG_PAGE 페이지의 프로젝트.",
+        ),
+    ] = None,
+    undo: Annotated[
+        bool,
+        typer.Option("--undo", help="가장 최근 게시를 되감는다."),
+    ] = False,
+    home: HomeOption = None,
+) -> None:
+    """프로젝트 config.yaml의 publish: 대로 정적 사이트를 만들어 게시한다.
+
+    대상은 gh-pages 브랜치나 folder:<경로>다. gh-pages는 원격 origin이
+    있고 정책(policy.deny)이 막지 않을 때만 민다.
+    """
+    from madang import publish
+
+    root = _publish_root(home, project)
+    try:
+        result = publish.undo(root) if undo else publish.publish(root, home)
+    except (
+        publish.PublishError,
+        config.ConfigError,
+        GitError,
+        OSError,
+    ) as exc:
+        raise _fail(str(exc)) from exc
+    for warning in result.warnings:
+        typer.echo(f"warning: {warning}", err=True)
+    typer.echo(format_publish(result, undo=undo))
+    if result.push_error is not None:
+        raise _fail(f"push failed: {result.push_error}")
+
+
+def format_publish(result: PublishResult, *, undo: bool = False) -> str:
+    """게시나 되감기 뒤 출력하는 한 줄 요약을 반환한다."""
+    record = result.record
+    if undo:
+        parts = [f"undid publish {record.n}", result.target]
+        if record.undo_commit:
+            parts.append(f"commit {record.undo_commit[:12]}")
+        return " · ".join(parts)
+    if record is None:
+        return f"unchanged · {result.target} · site {result.site[:12]}"
+    parts = [
+        f"published {record.n}",
+        result.target,
+        f"documents {result.documents}",
+        f"viewers {len(record.viewers)}",
+        f"site {record.site[:12]}",
+    ]
+    if record.after_commit:
+        parts.append(f"commit {record.after_commit[:12]}")
+    if record.pushed_to:
+        parts.append(f"pushed {record.pushed_to}")
+    return " · ".join(parts)
+
+
+def _publish_root(home: Path | None, project: str | None) -> Path:
+    """게시할 프로젝트 폴더: --project, 없으면 $MADANG_PAGE 페이지의 것."""
+    root = config.resolve_home(home)
+    try:
+        if project is not None:
+            return projects.get(root, project).root
+        page_id = os.environ.get(PAGE_ENV)
+        if not page_id:
+            raise _fail(f"give --project or set {PAGE_ENV}")
+        return projects.owner(root, pages.find_page(root, page_id)).root
+    except (FileNotFoundError, pages.PageNotFoundError) as exc:
+        raise _fail(str(exc)) from exc
 
 
 # 프로젝트와 페이지
