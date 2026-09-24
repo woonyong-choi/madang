@@ -29,3 +29,7 @@ packages = ["madang"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = [
+    "integration: runs the real claude and codex CLIs (deselected by default; use -m integration)",
+]
