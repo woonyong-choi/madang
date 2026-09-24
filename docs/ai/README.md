@@ -11,4 +11,5 @@ AI가 작성한 초안. 승인 전이며, 승인되면 상위 `docs/`로 이동�
 | 04-roadmap.md | Phase A~F, 각 완료 기준 |
 | 05-decisions.md | 결정 기록 (ADR) |
 | 06-build-orchestration.md | 오너 에이전트가 Phase A를 빌드하는 루프, 역할, 과업 분해 |
-| reference/ | 토큰 절감 가이드, 화면 목업, 초기 설계서 (HTML) |
+| 07-landscape-review.md | Orca와 경쟁 도구 80여 종 조사 기반의 방향 재확인, 가져올 요소, 로드맵 조정 제안 |
+| reference/ | 토큰 절감 가이드, 화면 목업, 초기 설계서 (HTML), landscape/ 조사 원문 |
