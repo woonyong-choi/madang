@@ -1,38 +1,41 @@
 package madang.shared
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import madang.shared.ui.LocalStrings
+import madang.shared.ui.MainScreen
+import madang.shared.ui.OnboardingScreen
+import madang.shared.ui.SettingsScreen
+import madang.shared.ui.StartScreen
+import madang.shared.ui.stringsFor
 
-/** 앱 루트. 3열(탐색 / 목록 / 본문) 레이아웃. */
+/** 앱 루트. 시작 → 온보딩 → 메인 ↔ 설정. */
 @Composable
-fun MadangApp() {
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Row(modifier = Modifier.fillMaxSize()) {
-                Pane("Navigation", Modifier.width(240.dp).fillMaxHeight())
-                VerticalDivider()
-                Pane("List", Modifier.width(320.dp).fillMaxHeight())
-                VerticalDivider()
-                Pane("Content", Modifier.weight(1f).fillMaxHeight())
+fun MadangApp(viewModel: AppViewModel) {
+    val screen by viewModel.screen.collectAsState()
+    val language by viewModel.language.collectAsState()
+    LaunchedEffect(viewModel) { viewModel.start() }
+    CompositionLocalProvider(LocalStrings provides stringsFor(language)) {
+        MaterialTheme {
+            Surface(modifier = Modifier.fillMaxSize()) {
+                when (val current = screen) {
+                    is Screen.Start -> StartScreen(current.viewModel)
+
+                    is Screen.Onboarding -> OnboardingScreen(current.viewModel)
+
+                    is Screen.Main -> MainScreen(current.viewModel, viewModel::openSettings)
+
+                    is Screen.Settings ->
+                        SettingsScreen(current.viewModel, viewModel::closeSettings)
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun Pane(label: String, modifier: Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

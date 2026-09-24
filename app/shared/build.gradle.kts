@@ -10,7 +10,6 @@ plugins {
 val openApiSpec: File = providers.gradleProperty("madang.openapiSpec")
     .map { file(it) }
     .getOrElse(rootProject.file("../core/openapi.yaml"))
-val hasOpenApiSpec = openApiSpec.isFile
 val openApiOutput = layout.buildDirectory.dir("generated/openapi")
 
 kotlin {
@@ -20,9 +19,12 @@ kotlin {
 
     sourceSets {
         commonMain {
-            if (hasOpenApiSpec) {
-                kotlin.srcDir(openApiOutput.map { it.dir("src/commonMain/kotlin") })
-            }
+            // 작업 출력에서 소스 디렉터리를 얻으므로 컴파일 전에 생성이 자동으로 돈다.
+            kotlin.srcDir(
+                tasks.named("openApiGenerate").map {
+                    openApiOutput.get().dir("src/commonMain/kotlin")
+                }
+            )
             dependencies {
                 implementation(libs.compose.runtime)
                 implementation(libs.compose.foundation)
@@ -74,14 +76,7 @@ openApiGenerate {
 }
 
 tasks.named("openApiGenerate") {
-    onlyIf("core/openapi.yaml exists") { hasOpenApiSpec }
     doFirst { delete(openApiOutput) }
-}
-
-if (hasOpenApiSpec) {
-    tasks.matching { it.name.startsWith("compileKotlin") }.configureEach {
-        dependsOn("openApiGenerate")
-    }
 }
 
 // Kotlin Multiplatform에는 단순 `test` 작업이 없으므로 JVM 테스트의 별칭으로 둔다.
