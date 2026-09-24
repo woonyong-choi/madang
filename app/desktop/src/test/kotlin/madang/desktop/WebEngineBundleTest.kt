@@ -97,6 +97,31 @@ class WebEngineBundleTest {
         assertEquals(BundleCheck.Ready, WebEngineBundle(dir, os = MAC).check())
     }
 
+    @Test
+    fun macArgsPointCefAtTheBundleNotTheJavaRuntime() {
+        val frameworks = dir.canonicalFile.resolve("Frameworks")
+        val args = macBundle().cefArgs()
+
+        assertEquals(
+            listOf(
+                "--framework-dir-path=$frameworks/Chromium Embedded Framework.framework",
+                "--main-bundle-path=$frameworks/jcef Helper.app",
+                "--browser-subprocess-path=$frameworks/jcef Helper.app/Contents/MacOS/jcef Helper"
+            ),
+            args.filter { it.endsWith(".framework") || it.contains("Helper") }
+        )
+        val javaHome = System.getProperty("java.home")
+        assertTrue(args.none { it.contains(javaHome) })
+    }
+
+    @Test
+    fun otherSystemsGetNoPathArgs() {
+        val args = WebEngineBundle(dir, os = "Linux", hasClass = KNOWN::contains).cefArgs()
+
+        assertTrue(args.isNotEmpty())
+        assertTrue(args.none { it.contains(dir.name) })
+    }
+
     private fun macBundle(at: File = dir) =
         WebEngineBundle(at, os = MAC, hasClass = KNOWN::contains)
 

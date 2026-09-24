@@ -60,6 +60,24 @@ class WebEngineBundle(
         return BundleCheck.Ready
     }
 
+    /**
+     * CEF 명령줄 인자. KCEF 기본 인자(JCefAppConfig)는 JetBrains Runtime 구성이라 CEF 프레임워크와
+     * 헬퍼를 `java.home/../Frameworks`에서 찾는데, 앱 런타임에는 그곳에 CEF가 없다. 그래서 macOS는
+     * 경로 인자를 이 번들 기준으로 직접 준다. 이 인자는 두 곳에 쓴다. JCEF는 `--framework-dir-path`가
+     * 여럿이면 마지막 것으로 CEF 프레임워크를 싣고, CEF는 앱 처리기가 넘긴 인자에서 프레임워크(ICU
+     * 데이터·리소스)와 헬퍼를 찾는다. 나머지는 KCEF 기본 인자의 경로 아닌 인자다.
+     */
+    fun cefArgs(): List<String> {
+        if (!isMac) return COMMON_ARGS
+        val frameworks = dir.canonicalFile.resolve("Frameworks")
+        val helper = frameworks.resolve(MAC_HELPER)
+        return listOf(
+            "--framework-dir-path=${frameworks.resolve(MAC_FRAMEWORK).path}",
+            "--main-bundle-path=${helper.path}",
+            "--browser-subprocess-path=${helper.resolve(MAC_HELPER_EXECUTABLE).path}"
+        ) + COMMON_ARGS
+    }
+
     /** 방금 [RELEASE]에서 받은 번들이라고 표식을 남긴다. */
     fun markInstalled() {
         dir.resolve(MARKER).writeText(RELEASE)
@@ -91,9 +109,14 @@ class WebEngineBundle(
         /** KCEF가 설치를 마치면 만드는 파일. */
         const val INSTALL_LOCK = "install.lock"
 
-        private val MAC_FRAMEWORKS = listOf(
-            "Frameworks/Chromium Embedded Framework.framework",
-            "Frameworks/jcef Helper.app"
+        private const val MAC_FRAMEWORK = "Chromium Embedded Framework.framework"
+        private const val MAC_HELPER = "jcef Helper.app"
+        private const val MAC_HELPER_EXECUTABLE = "Contents/MacOS/jcef Helper"
+        private val MAC_FRAMEWORKS = listOf("Frameworks/$MAC_FRAMEWORK", "Frameworks/$MAC_HELPER")
+        private val COMMON_ARGS = listOf(
+            "--disable-in-process-stack-traces",
+            "--use-mock-keychain",
+            "--disable-features=SpareRendererForSitePerProcess"
         )
         private const val SHOWN_CLASSES = 3
         private val CLASS_NAME = Regex("(?<=\u0000)org/cef/[A-Za-z0-9_/$]+(?=\u0000)")

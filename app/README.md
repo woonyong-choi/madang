@@ -205,9 +205,15 @@ run의 되돌리기 기록뿐이다. 작업 폴더 파일은 파일 탭(코드 �
 코드 스타일은 Android Kotlin 스타일 가이드(ktlint `android_studio`)를 따른다. 규칙은 `.editorconfig`에 있다.
 
 자동 확인용 실행: `MADANG_SMOKE=1`이면 첫 화면을 그린 뒤 3초 후 스스로 종료한다(exit 0).
+`MADANG_SMOKE_SECONDS`로 기다리는 초를 바꾼다. `MADANG_OPEN_PAGE=<페이지 id>`면 메인 화면이 뜨는 대로 그
+페이지를 연다. 둘을 함께 쓰면 창을 조작하지 않고 문서 탭 경로(엔진 준비 → 호스트 읽기)를 확인할 수
+있다. 앱은 엔진 상태(`madang: web engine …`)와 문서 탭 호스트를 다 읽은 것(`madang: document host
+loaded …`)을 표준 출력에 찍는다.
 
 ```sh
 MADANG_SMOKE=1 ./gradlew :desktop:run
+MADANG_FAKE_CORE=1 MADANG_FAKE_FIXTURE=src/test/resources/fixture-home \
+  MADANG_OPEN_PAGE=2026-09-24-session-bug MADANG_SMOKE=1 MADANG_SMOKE_SECONDS=25 ./gradlew :desktop:run
 ```
 
 떠 있는 실제 core로 한 동작(보내기 → 결과 블록의 게시 상태 → 되돌리기)을 화면 없이 확인하려면
@@ -317,9 +323,18 @@ bash scripts/build-core.sh       # 저장소 루트에서. 결과: core/dist/mad
   릴리스 노트에 맞춰 바꾼다. 받은 릴리스는 번들의 `madang-webengine-release`에 적고, 표식이 없거나 다른
   번들은 지우고 다시 받는다. CEF를 띄우기 전에 네이티브 라이브러리·프레임워크·헬퍼와, 네이티브
   라이브러리가 찾는 `org/cef` 클래스가 앱에 있는지 검사하고 맞지 않으면 띄우지 않는다.
+- 앱 런타임은 JetBrains Runtime이 아니라서 `java.home` 옆에 CEF가 없다. KCEF 기본 인자는 그곳을
+  가리키므로 쓰지 않고, CEF 프레임워크·헬퍼 경로 인자를 번들 기준으로 직접 준다
+  (`WebEngineBundle.cefArgs`). 기본 인자를 그대로 두면 CEF 프레임워크를 싣지 못한 채 초기화하다
+  앱이 죽는다.
 - 설치된 앱의 엔진 번들 확인: `bash scripts/check-webengine.sh bundle <앱 경로>`(앱을 띄우지 않고 검사),
-  `bash scripts/check-webengine.sh run <앱 경로>`(앱을 터미널에서 띄우고 `~/madang-webengine.log`에
-  로그를 남긴다). 앱 자체 검사는 `<앱>/Contents/MacOS/Madang --check-webengine`(창 없음)이다.
+  `bash scripts/check-webengine.sh probe <앱 경로>`(앱 화면 없이 CEF를 띄워 로컬 html을 읽어 보고
+  `~/madang-webengine-probe.log`에 남긴다), `bash scripts/check-webengine.sh run <앱 경로>`(앱을 터미널에서
+  띄우고 `~/madang-webengine.log`에 로그를 남긴다). 앱 자체 검사는
+  `<앱>/Contents/MacOS/Madang --check-webengine`(창 없음, 번들 파일만), 앱 자체 진단은
+  `<앱>/Contents/MacOS/Madang --probe-webengine`(작은 창을 잠깐 띄워 문서 탭 호스트를 읽고, 0 읽기 완료·
+  1 실패·2 재시작 필요로 끝난다)이다. 원격 셸에서는 `launchctl asuser $(id -u) <명령>`으로 사용자 세션에서
+  돌린다.
 - 서명·공증은 하지 않는다. 아이콘은 흰색 자리표시 아이콘(`desktop/icons/`)이다.
 - Finder로 연 앱은 셸의 PATH를 받지 않는다. `claude`가 `~/.local/bin`처럼 기본 PATH 밖에 있으면
   앱 홈 `config.yaml`의 `runners.claude.bin`에 절대 경로를 적거나, 터미널에서

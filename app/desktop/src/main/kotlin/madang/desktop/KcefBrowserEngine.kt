@@ -39,6 +39,9 @@ class KcefBrowserEngine(private val bundle: WebEngineBundle, private val runtime
     private val _status = MutableStateFlow<BrowserStatus>(BrowserStatus.Idle)
     override val status: StateFlow<BrowserStatus> = _status.asStateFlow()
 
+    /** 엔진 번들 폴더. */
+    val bundleDir get() = bundle.dir
+
     private val documents = DocumentBridge()
     private val documentCount = AtomicInteger()
     private val client: KCEFClient by lazy {
@@ -84,6 +87,9 @@ class KcefBrowserEngine(private val bundle: WebEngineBundle, private val runtime
             KCEF.init(
                 builder = {
                     installDir(bundle.dir)
+                    val cefArgs = bundle.cefArgs().toTypedArray()
+                    args(*cefArgs)
+                    appHandler(KCEF.AppHandler(cefArgs))
                     download { github { release(WebEngineBundle.RELEASE) } }
                     progress {
                         onDownloading {

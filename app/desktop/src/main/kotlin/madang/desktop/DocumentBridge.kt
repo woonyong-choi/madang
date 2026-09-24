@@ -81,7 +81,10 @@ class DocumentBridge {
 
     val loads = object : CefLoadHandlerAdapter() {
         override fun onLoadEnd(browser: CefBrowser, frame: CefFrame, httpStatusCode: Int) {
-            if (frame.isMain) viewOf(browser.url)?.onLoaded()
+            if (!frame.isMain) return
+            val view = viewOf(browser.url) ?: return
+            println("madang: document host loaded ${browser.url} status $httpStatusCode")
+            view.onLoaded()
         }
     }
 
