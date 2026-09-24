@@ -1,4 +1,4 @@
-"""에이전트 경로: state.md 작업·결정·산출물, 프로젝트 저장소 커밋·push."""
+"""에이전트 경로: ledger.md 작업·결정·산출물, 프로젝트 저장소 커밋·push."""
 
 from pathlib import Path
 
@@ -69,7 +69,7 @@ def test_tasks_decisions_and_artifacts(
     missing = client.post(f"{base}/artifacts", json={"path": "blocks/nope.md"})
     body = contract.check(missing, 400)
     assert body["issues"][0]["code"] == "artifact-missing"
-    state = pages.read_header(folder / "state.md")
+    state = pages.read_header(folder / "ledger.md")
     assert state["artifacts"] == ["blocks/b01-notes.md"]
 
 
@@ -114,7 +114,7 @@ def test_repo_commit_and_push(
     )
     assert result["commit"] == git(repo, "rev-parse", "--short", "HEAD").strip()
     committed = git(repo, "show", "--name-only", "--format=", "HEAD").split()
-    assert committed == ["lock.ts"]  # .madang/은 .gitignore로 빠진다
+    assert committed == ["lock.ts"]  # .madang/은 .git/info/exclude로 빠진다
     contract.check(
         client.post("/projects/code/repo/commit", json={"message": "again"}),
         409,

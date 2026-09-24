@@ -25,7 +25,7 @@ _PREFIX = re.compile(r"^\s*([A-Za-z_]+)\s*:")
 
 
 class RulesDecider:
-    """routes.yaml의 규칙만으로 요청 종류를 고르는 결정기.
+    """라우팅 표의 규칙만으로 요청 종류를 고르는 결정기.
 
     Attributes:
         routes: 라우팅 표.
@@ -105,7 +105,7 @@ def target_kind(target: Mapping[str, Any]) -> str | None:
 
 
 def build_chain(routes: RoutesConfig) -> DeciderChain:
-    """routes.yaml의 ``decider.chain`` 중 구현된 결정기로 체인을 만든다.
+    """라우팅 표의 ``decider.chain`` 중 구현된 결정기로 체인을 만든다.
 
     아직 없는 결정기(예: ``light_model``)는 건너뛴다.
 

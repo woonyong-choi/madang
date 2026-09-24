@@ -9,12 +9,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from madang import config
 from madang.store import frontmatter, runs
 
 PAGE_FILE = "page.md"
-STATE_FILE = "state.md"
-PROJECT_FILE = "project.md"
-MADANG_DIR = ".madang"
+LEDGER_FILE = "ledger.md"
+BRIEF_FILE = "brief.md"
+MADANG_DIR = config.PROJECT_DIR
 PAGES_DIR = "pages"
 
 PageStatus = Literal["planning", "doing", "blocked", "review", "done"]
@@ -76,10 +77,10 @@ def project_root(page_dir: Path) -> Path | None:
     return pages.parent.parent
 
 
-def project_memory(page_dir: Path) -> Path | None:
-    """페이지가 속한 프로젝트의 project.md 경로. 프로젝트 밖이면 None."""
+def brief_path(page_dir: Path) -> Path | None:
+    """페이지가 속한 프로젝트의 brief.md 경로. 프로젝트 밖이면 None."""
     root = project_root(page_dir)
-    return None if root is None else root / MADANG_DIR / PROJECT_FILE
+    return None if root is None else root / MADANG_DIR / BRIEF_FILE
 
 
 def latest_run(page_dir: Path) -> tuple[Path, dict[str, Any]] | None:

@@ -1,4 +1,4 @@
-"""``madang task``: state.md의 태스크를 추가하거나 갱신한다."""
+"""``madang task``: ledger.md의 태스크를 추가하거나 갱신한다."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 from madang.cli_agent.context import AgentError, PageContext, guarded
 from madang.cli_agent.items import check_id, find_by_id, items_of
 from madang.store import pages
-from madang.store.page import STATE_FILE
+from madang.store.page import LEDGER_FILE
 
 TASK_STATUSES = ("todo", "doing", "blocked", "review", "done")
 
@@ -20,7 +20,7 @@ def set_task(
     title: str | None = None,
     due: str | None = None,
 ) -> None:
-    """state.md에 태스크를 추가하거나 기존 태스크를 갱신한다.
+    """ledger.md에 태스크를 추가하거나 기존 태스크를 갱신한다.
 
     Args:
         ctx: 변경할 페이지.
@@ -62,5 +62,5 @@ def set_task(
             task["due"] = due_date
         header["tasks"] = tasks
 
-    with guarded(ctx, ctx.page_dir / STATE_FILE):
+    with guarded(ctx, ctx.page_dir / LEDGER_FILE):
         pages.update_state(ctx.page_dir, mutate)

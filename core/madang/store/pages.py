@@ -16,7 +16,7 @@ from typing import Any
 
 from madang.store import frontmatter, projects
 from madang.store.files import atomic_write
-from madang.store.page import PAGE_FILE, STATE_FILE
+from madang.store.page import LEDGER_FILE, PAGE_FILE
 
 BLOCKS_DIR = "blocks"
 LOG_FILE = "log.md"
@@ -109,8 +109,8 @@ def update_header(
 def update_state(
     page_dir: Path, mutate: Callable[[dict[str, Any]], None]
 ) -> dict[str, Any]:
-    """``update_header``처럼 페이지의 state.md 머리부를 다시 쓴다."""
-    return update_header(page_dir / STATE_FILE, mutate)
+    """``update_header``처럼 페이지의 ledger.md 머리부를 다시 쓴다."""
+    return update_header(page_dir / LEDGER_FILE, mutate)
 
 
 def update_page(
@@ -267,7 +267,7 @@ def create_page(
     goal: str = "",
     day: date | None = None,
 ) -> Path:
-    """page.md, state.md, log.md를 가진 페이지 폴더를 만든다.
+    """page.md, ledger.md, log.md를 가진 페이지 폴더를 만든다.
 
     폴더는 ``<pages_dir>/<YYYY-MM-DD-slug>/``이다.
 
@@ -276,7 +276,7 @@ def create_page(
         title: 페이지 제목.
         slug: 페이지 슬러그. 기본값은 제목의 슬러그.
         kind: 페이지 종류.
-        goal: state.md에 적을 목표. 기본값은 제목.
+        goal: ledger.md에 적을 목표. 기본값은 제목.
         day: 페이지 id에 들어갈 날짜. 기본값은 오늘.
 
     Returns:
@@ -316,7 +316,7 @@ def create_page(
         "artifacts": [],
     }
     body = STATE_BODY.format(goal=goal or title, next="1. 목표를 구체화한다.")
-    (page_dir / STATE_FILE).write_text(frontmatter.dumps(state, body), "utf-8")
+    (page_dir / LEDGER_FILE).write_text(frontmatter.dumps(state, body), "utf-8")
     (page_dir / LOG_FILE).write_text("", "utf-8")
     return page_dir
 

@@ -43,7 +43,7 @@ def create_app(
 
     Args:
         home: 앱 홈. 아직 없어도 된다(``POST /home``으로 만든다).
-        runners: 러너 이름으로 러너를 만든다. 기본은 runners.yaml.
+        runners: 러너 이름으로 러너를 만든다. 기본은 config.yaml의 runners 절.
         probe: 러너 사용 가능 여부 확인.
         core_url: 에이전트에 넘길 core 주소.
 

@@ -22,7 +22,7 @@ from madang.runners.base import CliRunner, RunEvent
 from madang.runners.record import RecordedRun, run_page
 from madang.store import changes, frontmatter, pages, runs
 from madang.store.log import append_message
-from madang.store.page import MADANG_DIR, STATE_FILE, project_root, work_dir
+from madang.store.page import LEDGER_FILE, MADANG_DIR, project_root, work_dir
 from madang.validate import Issue, validate_target
 
 SCRATCH_DIR = "scratch"
@@ -199,7 +199,7 @@ def check(page_dir: Path, cfg: config.Config, n: int) -> list[Issue]:
     issues = validate_target(
         page_dir,
         repo=project_root(page_dir),
-        token_limit=cfg.madang.limits.state_tokens,
+        token_limit=cfg.madang.limits.ledger_tokens,
         kinds=cfg.routes.kinds,
     )
     record = runs.read_run(page_dir, n)
@@ -229,9 +229,9 @@ def record_output(
 
 
 def state_status(page_dir: Path) -> str | None:
-    """state.md 머리부의 status를 반환한다. 읽을 수 없으면 None."""
+    """ledger.md 머리부의 status를 반환한다. 읽을 수 없으면 None."""
     try:
-        status = pages.read_header(page_dir / STATE_FILE).get("status")
+        status = pages.read_header(page_dir / LEDGER_FILE).get("status")
     except (OSError, frontmatter.FrontmatterError):
         return None
     return str(status) if status else None
@@ -269,7 +269,7 @@ def run_output(
         ]
         new += [REPO_PREFIX + p for p in repo_after.new_untracked(repo_before)]
     registered = _artifacts(page_dir)
-    managed = {STATE_FILE, "page.md"}
+    managed = {LEDGER_FILE, "page.md"}
     unknown = [p for p in new if p not in registered and p not in managed]
     return changed, unknown
 
@@ -280,7 +280,7 @@ def _bookkeeping(path: str) -> bool:
 
 def _artifacts(page_dir: Path) -> set[str]:
     try:
-        header = pages.read_header(page_dir / STATE_FILE)
+        header = pages.read_header(page_dir / LEDGER_FILE)
     except (OSError, frontmatter.FrontmatterError):
         return set()
     items = header.get("artifacts")

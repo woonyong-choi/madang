@@ -1,6 +1,6 @@
-"""에이전트 경로: madang CLI 명령이 부르는 state.md·프로젝트 저장소 변경.
+"""에이전트 경로: madang CLI 명령이 부르는 ledger.md·프로젝트 저장소 변경.
 
-state.md를 고친 뒤에는 페이지를 검사하고, 실패하면 되돌린 뒤 400을
+ledger.md를 고친 뒤에는 페이지를 검사하고, 실패하면 되돌린 뒤 400을
 돌려준다.
 """
 
@@ -16,7 +16,7 @@ from madang.cli_agent import artifacts, decisions, tasks
 from madang.cli_agent import repo as coderepo
 from madang.cli_agent.context import AgentError, PageContext
 from madang.store import frontmatter, pages
-from madang.store.page import STATE_FILE
+from madang.store.page import LEDGER_FILE
 
 router = Router(tags=["agent"])
 
@@ -37,13 +37,13 @@ def _state_changed(core: Core, page_dir: Path) -> None:
 
 
 def _state_list(page_dir: Path, key: str) -> list[Any]:
-    items = pages.read_header(page_dir / STATE_FILE).get(key)
+    items = pages.read_header(page_dir / LEDGER_FILE).get(key)
     return list(items) if isinstance(items, list) else []
 
 
 @router.patch("/pages/{page}/state/tasks", operation_id="setTask")
 def set_task(page: str, body: models.TaskUpdate, core: CoreDep) -> models.Task:
-    """state.md에 작업을 추가하거나 갱신한다."""
+    """ledger.md에 작업을 추가하거나 갱신한다."""
     page_dir = core.page_dir(page)
     with core.lock:
         try:
@@ -75,7 +75,7 @@ def set_task(page: str, body: models.TaskUpdate, core: CoreDep) -> models.Task:
 def record_decision(
     page: str, body: models.DecisionCreate, core: CoreDep
 ) -> models.StateDecision:
-    """state.md에 결정을 기록한다."""
+    """ledger.md에 결정을 기록한다."""
     page_dir = core.page_dir(page)
     with core.lock:
         try:
@@ -105,7 +105,7 @@ def record_decision(
 def add_artifact(
     page: str, body: models.ArtifactAdd, core: CoreDep
 ) -> list[str]:
-    """state.md의 artifacts에 파일을 등록한다."""
+    """ledger.md의 artifacts에 파일을 등록한다."""
     page_dir = core.page_dir(page)
     with core.lock:
         try:

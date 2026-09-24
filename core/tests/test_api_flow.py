@@ -194,6 +194,8 @@ def test_preview_input(client, home, project_root, page, contract) -> None:
     )
     assert plain["kind"] == "build" and plain["runner"] == "codex"
     assert plain["parts"]["target"] == 0
+    assert plain["parts"]["state"] > 0  # Ledger는 REST에서 state로 나간다
+    assert not {"profile", "brief", "ledger"} & set(plain["parts"])
     assert plain["total_est"] == sum(plain["parts"].values())
 
     forced = contract.check(
@@ -263,7 +265,7 @@ def test_unknown_files_are_reported_and_resolved(
     left = contract.check(resolve("blocks/notes.txt", "artifact"), 200)
     assert len(left) == 2
     folder = page_dir(home, page)
-    state = pages.read_header(folder / "state.md")
+    state = pages.read_header(folder / "ledger.md")
     assert "blocks/notes.txt" in state["artifacts"]
     contract.check(resolve("blocks/keep.txt", "keep"), 200)
     assert contract.check(resolve("blocks/junk.txt", "delete"), 200) == []

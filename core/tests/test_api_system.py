@@ -7,6 +7,7 @@ from api_support import LOCAL, WS
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from madang import config
 from madang.api.app import create_app
 
 
@@ -94,20 +95,30 @@ def test_init_refuses_foreign_folder(client, tmp_path, contract) -> None:
     assert contract.check(bad, 400)["error"] == "invalid"
 
 
+def routes_section(home: Path) -> str | None:
+    return config.section_text((home / "config.yaml").read_text(), "routes")
+
+
 def test_routes_document_round_trip(client, home, contract) -> None:
     body = contract.check(client.get("/config/routes"), 200)
-    assert body["text"] == (home / "config/routes.yaml").read_text()
+    assert body["text"] == routes_section(home)
+    assert body["text"].startswith("kinds: [design")
+    assert "# 구현한 쪽의 반대편" in body["text"]
 
     text = body["text"].replace("default_kind: build", "default_kind: small")
     saved = contract.check(
         client.put("/config/routes", json={"text": text}), 200
     )
     assert saved["text"] == text
-    assert (home / "config/routes.yaml").read_text() == text
+    assert routes_section(home) == text
+    settings = (home / "config.yaml").read_text()
+    assert "# 도구 경로와 실행 방법" in settings
+    assert config.load_config(home).routes.default_kind == "small"
+    assert config.load_config(home).runners["claude"].bin == "claude"
 
 
 def test_routes_document_is_validated(client, home, contract) -> None:
-    original = (home / "config/routes.yaml").read_text()
+    original = (home / "config.yaml").read_text()
     cases = {
         "kinds: [a\n": "invalid-yaml",
         "kinds: [build]\n": "missing-key",
@@ -120,8 +131,8 @@ def test_routes_document_is_validated(client, home, contract) -> None:
         response = client.put("/config/routes", json={"text": text})
         body = contract.check(response, 400)
         assert body["issues"][0]["code"] == code, text
-        assert body["issues"][0]["path"] == "config/routes.yaml"
-    assert (home / "config/routes.yaml").read_text() == original
+        assert body["issues"][0]["path"] == "config.yaml#routes"
+    assert (home / "config.yaml").read_text() == original
     runner = client.put(
         "/config/routes",
         json={

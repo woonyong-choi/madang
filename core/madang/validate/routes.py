@@ -1,4 +1,4 @@
-"""routes.yaml 검사: YAML 문법, 필수 키, 스키마, 종류·러너 참조."""
+"""라우팅 표(config.yaml ``routes`` 절) 검사: 문법, 필수 키, 스키마, 참조."""
 
 from __future__ import annotations
 
@@ -9,21 +9,22 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from madang.config import CONFIG_DIR, RoutesConfig
+from madang.config import CONFIG_FILE, ROUTES_KEY, RoutesConfig
 from madang.validate.issues import Issue, Lines
 
-ROUTES_PATH = Path(CONFIG_DIR) / "routes.yaml"
+# 문제의 위치 표시. 줄 번호는 절 텍스트 기준이다.
+ROUTES_PATH = Path(f"{CONFIG_FILE}#{ROUTES_KEY}")
 REQUIRED_KEYS = ("kinds", "default_kind", "tiers")
 # 러너 이름 대신 쓸 수 있는 값: 구현한 쪽의 반대편.
 OPPOSITE = "opposite"
 
 
 def validate_routes(text: str, runners: Iterable[str]) -> list[Issue]:
-    """routes.yaml 텍스트를 검사한다. 파일은 쓰지 않는다.
+    """``routes`` 절 텍스트를 검사한다. 파일은 쓰지 않는다.
 
     Args:
-        text: 새 routes.yaml 내용.
-        runners: runners.yaml에 있는 러너 이름.
+        text: 새 ``routes`` 절 내용(들여쓰기 없이).
+        runners: ``runners`` 절에 있는 러너 이름.
 
     Returns:
         찾은 문제. 올바르면 빈 목록.
@@ -35,7 +36,7 @@ def validate_routes(text: str, runners: Iterable[str]) -> list[Issue]:
         line = mark.line + 1 if mark is not None else None
         return [_issue("invalid-yaml", f"invalid YAML: {exc}", line)]
     if not isinstance(data, dict):
-        return [_issue("invalid-value", "routes.yaml must be a mapping", 1)]
+        return [_issue("invalid-value", "routes must be a mapping", 1)]
     lines = Lines(text, 1)
     issues = [
         _issue("missing-key", f"required key '{key}' is missing", None)
@@ -85,7 +86,7 @@ def _check_references(
                     _issue(
                         "invalid-value",
                         f"tiers.{kind}[{i}] runner '{tier.runner}' is not "
-                        "in runners.yaml",
+                        "in runners",
                         lines.key("tiers", kind, i, "runner"),
                     )
                 )

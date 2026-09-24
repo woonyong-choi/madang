@@ -1,4 +1,4 @@
-"""state.md 검사: 머리부, 결정, 산출물, 절, 크기, 완료 조건."""
+"""ledger.md 검사: 머리부, 결정, 산출물, 절, 크기, 완료 조건."""
 
 from __future__ import annotations
 
@@ -8,15 +8,13 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from madang import config
 from madang.store import frontmatter
 from madang.store.page import PAGE_STATUSES, latest_run
 from madang.validate.issues import Issue, Lines
 from madang.validate.tokens import count_tokens
 
-DEFAULT_TOKEN_LIMIT = config.Limits().state_tokens
+DEFAULT_TOKEN_LIMIT = config.Limits().ledger_tokens
 REQUIRED_KEYS = ("status", "kind", "tier", "attempts")
 REQUIRED_SECTIONS = ("목표", "다음 할 일")
 DECISION_STATES = ("proposed", "confirmed", "superseded", "deferred")
@@ -27,8 +25,8 @@ _HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*#*[ \t]*$")
 
 @lru_cache(maxsize=1)
 def default_kinds() -> tuple[str, ...]:
-    """내장 routes.yaml에 적힌 종류를 반환한다."""
-    data = yaml.safe_load(config.default_text("routes.yaml")) or {}
+    """내장 설정의 ``routes`` 절에 적힌 종류를 반환한다."""
+    data = config.default_data()[config.ROUTES_KEY]
     return tuple(data.get("kinds") or ())
 
 
@@ -40,20 +38,20 @@ def _enum(values: Sequence[str]) -> str:
     return " | ".join(values)
 
 
-def validate_state(
+def validate_ledger(
     path: Path,
     *,
     repo: Path | None = None,
     token_limit: int = DEFAULT_TOKEN_LIMIT,
     kinds: Sequence[str] | None = None,
 ) -> list[Issue]:
-    """state.md 파일을 검사한다. 파일을 고치지는 않는다.
+    """ledger.md 파일을 검사한다. 파일을 고치지는 않는다.
 
     Args:
-        path: state.md 파일.
+        path: ledger.md 파일.
         repo: ``repo:`` 산출물의 기준인 프로젝트 폴더.
         token_limit: 파일의 최대 토큰 수.
-        kinds: 허용하는 페이지 종류. 기본값은 내장 routes.yaml.
+        kinds: 허용하는 페이지 종류. 기본값은 내장 설정의 routes 절.
 
     Returns:
         찾은 문제. 파일이 올바르면 빈 목록.
@@ -76,7 +74,7 @@ def validate_state(
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        add("missing-file", "state.md not found")
+        add("missing-file", "ledger.md not found")
         return issues
     except (OSError, UnicodeDecodeError) as exc:
         add("unreadable", str(exc))

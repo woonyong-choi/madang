@@ -37,7 +37,7 @@ class Env:
     core: object
 
     def state(self) -> dict:
-        return frontmatter.read(self.page / "state.md")[0]
+        return frontmatter.read(self.page / "ledger.md")[0]
 
     def page_header(self) -> dict:
         return frontmatter.read(self.page / "page.md")[0]
@@ -183,7 +183,7 @@ def test_unreachable_core_exits_with_2(
     assert "madang serve" in result.output
 
 
-def test_state_changes_are_not_committed(env: Env) -> None:
+def test_ledger_changes_are_not_committed(env: Env) -> None:
     ok("task", "T1", "--status", "doing", "--title", "x")
     ok("decide", "D1", "--topic", "t", "--choice", "a", "--options", "a,b")
     assert env.state()["tasks"][0]["id"] == "T1"
@@ -196,7 +196,7 @@ def test_state_changes_are_not_committed(env: Env) -> None:
 
 
 def test_task_add_and_update(env: Env) -> None:
-    body = (env.page / "state.md").read_text().split("---\n", 2)[2]
+    body = (env.page / "ledger.md").read_text().split("---\n", 2)[2]
     ok("task", "T1", "--status", "todo", "--title", "원인 분석")
     ok("task", "T1", "--status", "done", "--due", "2026-09-26")
     ok("task", "T2", "--status", "doing", "--title", "잠금")
@@ -209,11 +209,11 @@ def test_task_add_and_update(env: Env) -> None:
         },
         {"id": "T2", "title": "잠금", "status": "doing"},
     ]
-    assert (env.page / "state.md").read_text().endswith(body)
+    assert (env.page / "ledger.md").read_text().endswith(body)
 
 
 def test_task_refusals(env: Env) -> None:
-    before = (env.page / "state.md").read_bytes()
+    before = (env.page / "ledger.md").read_bytes()
     refused("task", "T9", "--status", "doing", match="title이 필요하다")
     refused(
         "task",
@@ -244,11 +244,11 @@ def test_task_refusals(env: Env) -> None:
         "x",
         match="잘못된 태스크 id",
     )
-    assert (env.page / "state.md").read_bytes() == before
+    assert (env.page / "ledger.md").read_bytes() == before
 
 
 def test_write_rolled_back_when_page_is_invalid(env: Env) -> None:
-    state = env.page / "state.md"
+    state = env.page / "ledger.md"
     state.write_text(state.read_text().replace("## 다음 할 일", "## 다른 절"))
     before = state.read_bytes()
     result = refused(
@@ -348,7 +348,7 @@ def test_decide_by_human_has_no_run(
 
 def test_decide_refusals(env: Env) -> None:
     ok("decide", "D1", "--topic", "t", "--choice", "a", "--options", "a,b")
-    before = (env.page / "state.md").read_bytes()
+    before = (env.page / "ledger.md").read_bytes()
     refused(
         "decide",
         "D2",
@@ -408,7 +408,7 @@ def test_decide_refusals(env: Env) -> None:
         "maybe",
         match="state",
     )
-    assert (env.page / "state.md").read_bytes() == before
+    assert (env.page / "ledger.md").read_bytes() == before
 
 
 # 산출물
@@ -431,26 +431,26 @@ def test_artifact_add(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_artifact_refusals(env: Env, tmp_path: Path) -> None:
-    before = (env.page / "state.md").read_bytes()
+    before = (env.page / "ledger.md").read_bytes()
     result = refused("artifact", "add", "blocks/missing.md", match="되돌렸다")
     assert "artifact-missing" in result.output
     refused("artifact", "add", "repo:src/none.ts", match="artifact-missing")
     outside = tmp_path / "elsewhere.txt"
     outside.write_text("x")
     refused("artifact", "add", str(outside), match="밖에 있다")
-    assert (env.page / "state.md").read_bytes() == before
+    assert (env.page / "ledger.md").read_bytes() == before
 
 
 def test_artifact_add_rejects_parent_paths(
     env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    before = (env.page / "state.md").read_bytes()
+    before = (env.page / "ledger.md").read_bytes()
     (tmp_path / "outside.md").write_text("x\n")
     refused("artifact", "add", "../outside.md", match="상위 폴더")
     refused("artifact", "add", "repo:../x", match="상위 폴더")
     monkeypatch.chdir(env.page)
     refused("artifact", "add", "../../../../outside.md", match="밖에 있다")
-    assert (env.page / "state.md").read_bytes() == before
+    assert (env.page / "ledger.md").read_bytes() == before
 
 
 # 커밋
@@ -687,7 +687,7 @@ def test_help() -> None:
 
 
 def test_malformed_state_is_reported(env: Env) -> None:
-    (env.page / "state.md").write_text("---\nstatus: [\n---\n## 목표\n")
+    (env.page / "ledger.md").write_text("---\nstatus: [\n---\n## 목표\n")
     refused(
         "task", "T1", "--status", "doing", "--title", "x", match="invalid YAML"
     )

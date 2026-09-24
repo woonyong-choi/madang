@@ -1,4 +1,4 @@
-"""state.md 항목(태스크·결정·산출물)을 다루는 공통 도우미."""
+"""ledger.md 항목(태스크·결정·산출물)을 다루는 공통 도우미."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def items_of(header: dict[str, Any], key: str) -> list[Any]:
     if value is None:
         return []
     if not isinstance(value, list):
-        raise AgentError(f"state.md의 '{key}'가 목록이 아니다")
+        raise AgentError(f"ledger.md의 '{key}'가 목록이 아니다")
     return value
 
 

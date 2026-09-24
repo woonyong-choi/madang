@@ -9,6 +9,7 @@ import yaml
 from conftest import FAKE_CLI, STREAMS
 from typer.testing import CliRunner
 
+from madang import config
 from madang.cli import app, execute_run
 from madang.config import load_config
 from madang.graph.steps import environment
@@ -54,7 +55,7 @@ class FakeRunner:
 def write_design(cwd: Path, page_dir: Path) -> None:
     (page_dir / "blocks/b05-design.md").write_text("# design\n")
     (page_dir / "blocks/b06-notes.md").write_text("stray\n")
-    state = page_dir / "state.md"
+    state = page_dir / "ledger.md"
     header, body = frontmatter.read(state)
     header["status"] = "review"
     header["artifacts"] = ["blocks/b05-design.md"]
@@ -104,13 +105,13 @@ def test_run_records_and_checks(home: Path, page: Path) -> None:
     assert data["trigger"] == {"message": "b01", "target": "page"}
     assert data["runner"] == "claude" and data["model"] == "m-1"
     assert data["kind"] == "build" and data["tier"] == 1
-    assert data["contract"] == "v1"
+    assert data["contract"] == "v2"
     parts = data["input"]["parts"]
     assert list(parts) == [
         "system_est",
-        "root",
-        "project",
-        "state",
+        "profile",
+        "brief",
+        "ledger",
         "contract",
         "request",
     ]
@@ -119,7 +120,7 @@ def test_run_records_and_checks(home: Path, page: Path) -> None:
     assert data["changed_files"] == [
         "blocks/b05-design.md",
         "blocks/b06-notes.md",
-        "state.md",
+        "ledger.md",
     ]
     assert data["unknown_files"] == ["blocks/b06-notes.md"]
     assert data["result_status"] == "review"
@@ -166,7 +167,7 @@ def test_runner_gets_fresh_session_inputs(home: Path, page: Path) -> None:
 
 def test_target_and_promoted_tier(home: Path, page: Path) -> None:
     (page / "blocks/b02-cv.md").write_text("CV-BODY\n")
-    state = page / "state.md"
+    state = page / "ledger.md"
     header, body = frontmatter.read(state)
     header["tier"] = 2
     state.write_text(frontmatter.dumps(header, body + "LOG-LINE\n"))
@@ -213,7 +214,7 @@ def test_project_folder_changes(
         (cwd / "src").mkdir()
         (cwd / "src/app.py").write_text("print(1)\n")
         (cwd / "src/extra.py").write_text("print(2)\n")
-        state = page_dir / "state.md"
+        state = page_dir / "ledger.md"
         header, body = frontmatter.read(state)
         header["artifacts"] = ["repo:src/app.py"]
         state.write_text(frontmatter.dumps(header, body))
@@ -223,7 +224,7 @@ def test_project_folder_changes(
     assert runner.calls[0]["cwd"] == repo.resolve()
     data = record(page_dir, 1)
     assert data["changed_files"] == [
-        "state.md",
+        "ledger.md",
         "repo:src/app.py",
         "repo:src/extra.py",
     ]
@@ -245,7 +246,7 @@ def test_failed_run_is_still_recorded(home: Path, page: Path) -> None:
 
 def test_invalid_state_is_reported(home: Path, page: Path) -> None:
     def break_state(cwd: Path, page_dir: Path) -> None:
-        (page_dir / "state.md").write_text("---\nstatus: nope\n---\n")
+        (page_dir / "ledger.md").write_text("---\nstatus: nope\n---\n")
 
     outcome = run(page, home, FakeRunner(act=break_state))
     assert not outcome.ok and outcome.issues
@@ -263,7 +264,11 @@ def use_fake_cli(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             "args": [str(FAKE_CLI), "--model", "{model}"],
         }
     }
-    (home / "config/runners.yaml").write_text(yaml.safe_dump(spec))
+    path = home / "config.yaml"
+    text = config.replace_section(
+        path.read_text(), config.RUNNERS_KEY, yaml.safe_dump(spec)
+    )
+    path.write_text(text)
     monkeypatch.setenv("FAKE_STREAM", str(STREAMS / "claude-ok.jsonl"))
 
 
@@ -322,7 +327,7 @@ def test_page_new_kind(home: Path) -> None:
     page_id = result.output.strip()
     assert page_id.endswith("-이력서")
     page_dir = projects.get(home, "work").pages_dir / page_id
-    assert pages.read_header(page_dir / "state.md")["kind"] == "design"
+    assert pages.read_header(page_dir / "ledger.md")["kind"] == "design"
     result = cli_runner.invoke(
         app,
         [

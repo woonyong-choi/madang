@@ -16,10 +16,10 @@ from madang.store.home import init_home
 
 
 def set_status(status: str, todo: str | None = None):
-    """state.md의 status(와 다음 할 일)를 바꾸는 에이전트 동작."""
+    """ledger.md의 status(와 다음 할 일)를 바꾸는 에이전트 동작."""
 
     def act(page_dir: Path) -> None:
-        state = page_dir / "state.md"
+        state = page_dir / "ledger.md"
         header, body = frontmatter.read(state)
         header["status"] = status
         if todo is not None:
@@ -30,14 +30,14 @@ def set_status(status: str, todo: str | None = None):
 
 
 def break_state(page_dir: Path) -> None:
-    (page_dir / "state.md").write_text("---\nstatus: nope\n---\n")
+    (page_dir / "ledger.md").write_text("---\nstatus: nope\n---\n")
 
 
 def restore_state(status: str):
     def act(page_dir: Path) -> None:
         header = {"status": status, "kind": "build", "tier": 1, "attempts": 0}
         body = "## 목표\n이력서\n\n## 다음 할 일\n1. 없음\n"
-        (page_dir / "state.md").write_text(frontmatter.dumps(header, body))
+        (page_dir / "ledger.md").write_text(frontmatter.dumps(header, body))
 
     return act
 
@@ -117,13 +117,13 @@ def record(page: Path, n: int) -> dict:
 
 
 def header(page: Path) -> dict:
-    return pages.read_header(page / "state.md")
+    return pages.read_header(page / "ledger.md")
 
 
 def routes_limit(home: Path, **limits) -> None:
-    path = home / "config/routes.yaml"
+    path = home / "config.yaml"
     data = yaml.safe_load(path.read_text())
-    data["limits"].update(limits)
+    data["routes"]["limits"].update(limits)
     path.write_text(yaml.safe_dump(data, allow_unicode=True))
 
 
@@ -178,8 +178,8 @@ def test_done_after_opposite_review(home: Path, page: Path) -> None:
 
 
 def test_blocked_promotes_then_done(home: Path, page: Path) -> None:
-    (page / "state.md").write_text(
-        (page / "state.md").read_text() + "LOG-LINE\n"
+    (page / "ledger.md").write_text(
+        (page / "ledger.md").read_text() + "LOG-LINE\n"
     )
     script = Script(
         set_status("blocked"), set_status("review"), set_status("review")
@@ -333,7 +333,7 @@ def test_repair_fixes_invalid_state(home: Path, page: Path) -> None:
     assert result.state["result_status"] == "done"
     repair = script.calls[1]
     assert repair["name"] == "codex"
-    assert "state.md 검사" in repair["prompt"]
+    assert "ledger.md 검사" in repair["prompt"]
     assert record(page, 1)["state_check"]["ok"] is False
     assert record(page, 2)["state_check"]["ok"] is True
 
@@ -452,7 +452,7 @@ def test_failed_review_run_asks_human(home: Path, page: Path) -> None:
 def test_retry_after_failed_repair_is_judged_as_implementation(
     home: Path, page: Path
 ) -> None:
-    # 리뷰 실행이 state.md를 깨고 보정도 실패한 뒤, 사람이 다시 시도하면
+    # 리뷰 실행이 ledger.md를 깨고 보정도 실패한 뒤, 사람이 다시 시도하면
     # 새 구현 실행은 리뷰로 판정되지 않고 다시 리뷰를 받는다.
     script = Script(
         set_status("review"),

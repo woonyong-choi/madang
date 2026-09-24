@@ -5,9 +5,9 @@ import pytest
 from typer.testing import CliRunner
 
 from madang.cli import app
-from madang.validate import validate_page, validate_state, validate_target
+from madang.validate import validate_ledger, validate_page, validate_target
 
-FIXTURES = Path(__file__).parent / "fixtures" / "state"
+FIXTURES = Path(__file__).parent / "fixtures" / "ledger"
 runner = CliRunner()
 
 STATE = """---
@@ -70,40 +70,42 @@ def test_issue_lines_point_at_keys() -> None:
     }
     artifact = validate_target(FIXTURES / "invalid-3")[0]
     assert artifact.line == 8
-    assert artifact.path == FIXTURES / "invalid-3" / "state.md"
+    assert artifact.path == FIXTURES / "invalid-3" / "ledger.md"
 
 
-def test_state_file_is_not_modified() -> None:
-    path = FIXTURES / "invalid-6" / "state.md"
+def test_ledger_file_is_not_modified() -> None:
+    path = FIXTURES / "invalid-6" / "ledger.md"
     before = path.read_bytes()
-    validate_state(path)
+    validate_ledger(path)
     assert path.read_bytes() == before
 
 
 def test_token_limit_is_configurable() -> None:
-    path = FIXTURES / "valid-1" / "state.md"
-    assert "token-limit" in codes(validate_state(path, token_limit=50))
+    path = FIXTURES / "valid-1" / "ledger.md"
+    assert "token-limit" in codes(validate_ledger(path, token_limit=50))
     assert (
-        validate_state(FIXTURES / "invalid-2" / "state.md", token_limit=100_000)
+        validate_ledger(
+            FIXTURES / "invalid-2" / "ledger.md", token_limit=100_000
+        )
         == []
     )
 
 
 def test_missing_front_matter(tmp_path: Path) -> None:
-    path = tmp_path / "state.md"
+    path = tmp_path / "ledger.md"
     path.write_text("## 목표\n\n## 다음 할 일\n", encoding="utf-8")
-    issues = validate_state(path)
+    issues = validate_ledger(path)
     assert "frontmatter" in codes(issues)
     assert "missing-key" in codes(issues)
 
 
-def test_missing_state_file(tmp_path: Path) -> None:
+def test_missing_ledger_file(tmp_path: Path) -> None:
     assert codes(validate_target(tmp_path)) == {"missing-file"}
 
 
 def test_done_uses_highest_numbered_run(tmp_path: Path) -> None:
     (tmp_path / "runs").mkdir()
-    (tmp_path / "state.md").write_text(
+    (tmp_path / "ledger.md").write_text(
         STATE.replace("status: doing", "status: done").format(artifacts="  []"),
         encoding="utf-8",
     )
@@ -128,7 +130,7 @@ def make_page(tmp_path: Path, *, in_project: bool = True) -> Path:
     page = base / "pages" / "2026-09-24-lock"
     (page / "blocks").mkdir(parents=True)
     (page / "blocks" / "b05-race.md").write_text("분석\n", encoding="utf-8")
-    (page / "state.md").write_text(
+    (page / "ledger.md").write_text(
         STATE.format(artifacts="  - blocks/b05-race.md\n  - repo:src/lock.ts"),
         encoding="utf-8",
     )
@@ -141,7 +143,7 @@ def test_repo_artifact_resolved_from_project(tmp_path: Path) -> None:
     (code / "src").mkdir(parents=True)
     (code / "src" / "lock.ts").write_text("export {}\n")
     assert validate_target(page) == []
-    assert validate_target(page / "state.md") == []
+    assert validate_target(page / "ledger.md") == []
 
 
 def test_repo_artifact_missing_in_project(tmp_path: Path) -> None:
@@ -163,7 +165,7 @@ def test_repo_override(tmp_path: Path) -> None:
 
 
 def test_artifact_escaping_folder(tmp_path: Path) -> None:
-    (tmp_path / "state.md").write_text(
+    (tmp_path / "ledger.md").write_text(
         STATE.format(artifacts="  - ../outside.md\n  - /etc/hosts"),
         encoding="utf-8",
     )
@@ -190,10 +192,10 @@ def test_cli_valid_exit_zero() -> None:
 
 def test_cli_invalid_prints_file_line_code() -> None:
     result = runner.invoke(
-        app, ["validate", str(FIXTURES / "invalid-1" / "state.md")]
+        app, ["validate", str(FIXTURES / "invalid-1" / "ledger.md")]
     )
     assert result.exit_code == 1
-    path = FIXTURES / "invalid-1" / "state.md"
+    path = FIXTURES / "invalid-1" / "ledger.md"
     assert result.output.startswith(f"{path}:2: missing-key ")
 
 
@@ -213,10 +215,8 @@ def test_cli_json() -> None:
 
 
 def test_cli_uses_home_token_limit(isolated_home: Path) -> None:
-    (isolated_home / "config").mkdir(parents=True)
-    (isolated_home / "config" / "madang.yaml").write_text(
-        "limits:\n  state_tokens: 50\n"
-    )
+    isolated_home.mkdir(parents=True)
+    (isolated_home / "config.yaml").write_text("limits:\n  ledger_tokens: 50\n")
     result = runner.invoke(app, ["validate", str(FIXTURES / "valid-1")])
     assert result.exit_code == 1
     assert "token-limit" in result.output

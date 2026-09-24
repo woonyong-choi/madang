@@ -22,7 +22,7 @@ from madang.store.home import (
     is_initialized,
 )
 from madang.store.log import append_message
-from madang.store.page import STATE_FILE, work_dir
+from madang.store.page import LEDGER_FILE, work_dir
 from madang.validate import Issue, validate_target
 
 app = typer.Typer(
@@ -64,7 +64,7 @@ def root(
 
 @app.command()
 def init(home: HomeOption = None) -> None:
-    """앱 홈(전역 설정과 루트 메모리)을 만든다. 페이지는 프로젝트에 둔다."""
+    """앱 홈(전역 설정과 Profile)을 만든다. 페이지는 프로젝트에 둔다."""
     path = config.resolve_home(home)
     try:
         result = init_home(path)
@@ -80,7 +80,7 @@ def init(home: HomeOption = None) -> None:
 @app.command()
 def validate(
     target: Annotated[
-        Path, typer.Argument(help="state.md 경로 또는 페이지 폴더.")
+        Path, typer.Argument(help="ledger.md 경로 또는 페이지 폴더.")
     ],
     repo: Annotated[
         Path | None,
@@ -94,7 +94,7 @@ def validate(
         bool, typer.Option("--json", help="문제 목록을 JSON으로 출력한다.")
     ] = False,
 ) -> None:
-    """페이지의 state.md(와 page.md)를 검사한다. 문제가 있으면 1로 종료한다."""
+    """페이지의 ledger.md(와 page.md)를 검사한다. 문제가 있으면 1로 종료한다."""
     if not target.exists():
         typer.echo(f"error: {target} does not exist", err=True)
         raise typer.Exit(2)
@@ -106,7 +106,7 @@ def validate(
     issues = validate_target(
         target,
         repo=repo.expanduser() if repo is not None else None,
-        token_limit=cfg.madang.limits.state_tokens,
+        token_limit=cfg.madang.limits.ledger_tokens,
         kinds=cfg.routes.kinds,
     )
     if as_json:
@@ -175,7 +175,7 @@ def execute_run(
         OSError: 페이지 파일을 읽거나 쓸 수 없는 경우.
         ValueError: 대상 블록에 파일이 없는 경우.
     """
-    state = pages.read_header(page_dir / STATE_FILE)
+    state = pages.read_header(page_dir / LEDGER_FILE)
     tier = int(state.get("tier") or 1)
     kind = str(state.get("kind") or cfg.routes.default_kind)
     if target is not None and not pages.block_files(page_dir, target):
@@ -267,8 +267,8 @@ def run_command(
         typer.Option(
             "--flow",
             help=(
-                "흐름 그래프로 처리한다. 종류·러너·모델은 routes.yaml이 "
-                "고르고, 검사·리뷰·승격까지 이어 간다."
+                "흐름 그래프로 처리한다. 종류·러너·모델은 config.yaml의 "
+                "routes 절이 고르고, 검사·리뷰·승격까지 이어 간다."
             ),
         ),
     ] = False,
@@ -401,7 +401,7 @@ def serve(
             "--port",
             help=(
                 "처음 시도할 포트. 쓰이고 있으면 다음 포트를 쓴다. "
-                "기본값은 madang.yaml의 core.port(7470)."
+                "기본값은 config.yaml의 core.port(7470)."
             ),
         ),
     ] = None,
@@ -486,7 +486,9 @@ def page_new(
     project: Annotated[str, typer.Option("--project", help="프로젝트 id.")],
     kind: Annotated[
         str | None,
-        typer.Option("--kind", help="페이지 종류. 기본값은 routes.yaml."),
+        typer.Option(
+            "--kind", help="페이지 종류. 기본값은 config.yaml의 routes 절."
+        ),
     ] = None,
     slug: Annotated[
         str | None,

@@ -1,7 +1,7 @@
 """앱이 보여 줄 요약: 프로젝트 목록, 페이지 카드, 페이지 상세.
 
-카드와 상세의 상태는 state.md의 status다. 흐름은 state.md만 갱신하므로
-page.md의 status보다 최신이다. state.md를 읽을 수 없으면 page.md의
+카드와 상세의 상태는 ledger.md의 status다. 흐름은 ledger.md만 갱신하므로
+page.md의 status보다 최신이다. ledger.md를 읽을 수 없으면 page.md의
 status를 쓴다.
 """
 
@@ -14,7 +14,7 @@ from typing import Any
 
 from madang.store import blocks, frontmatter, pages, runs
 from madang.store.log import read_messages
-from madang.store.page import PAGE_STATUSES, STATE_FILE, load_page
+from madang.store.page import LEDGER_FILE, PAGE_STATUSES, load_page
 from madang.store.projects import Project
 
 ACTIVE_STATUSES = ("doing", "blocked")
@@ -59,8 +59,8 @@ def project_summary(project: Project) -> dict[str, Any]:
 
 
 def page_status(page_dir: Path) -> str:
-    """페이지의 현재 상태(state.md, 없으면 page.md)를 반환한다."""
-    for name in (STATE_FILE, "page.md"):
+    """페이지의 현재 상태(ledger.md, 없으면 page.md)를 반환한다."""
+    for name in (LEDGER_FILE, "page.md"):
         try:
             status = pages.read_header(page_dir / name).get("status")
         except (OSError, frontmatter.FrontmatterError):
@@ -215,6 +215,8 @@ def _records(page_dir: Path) -> list[runs.RunRecord]:
     return found
 
 
+# 기록의 부분 이름(profile·brief·ledger) -> REST 계약의 부분 이름.
+API_PART_NAMES = {"profile": "root", "brief": "project", "ledger": "state"}
 INPUT_PARTS = (
     "system_est",
     "root",
@@ -227,13 +229,16 @@ INPUT_PARTS = (
 
 
 def run_input(data: dict[str, Any] | None) -> dict[str, Any] | None:
-    """실행 입력 추정을 모든 부분이 있는 형태로 반환한다.
+    """실행 입력 추정을 REST 부분 이름으로, 모든 부분이 있는 형태로 반환한다.
 
     대상 블록이 없던 실행은 ``target``이 없으므로 0으로 채운다.
     """
     if not data:
         return None
-    parts = dict(data.get("parts") or {})
+    parts = {
+        API_PART_NAMES.get(name, name): tokens
+        for name, tokens in (data.get("parts") or {}).items()
+    }
     for name in INPUT_PARTS:
         parts.setdefault(name, 0)
     return {**data, "parts": parts, "total_est": data.get("total_est", 0)}

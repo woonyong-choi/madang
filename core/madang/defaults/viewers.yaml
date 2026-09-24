@@ -1,0 +1,4 @@
+# 뷰어 등록부. 뷰어 폴더를 복사하지 않고 원래 자리를 가리킨다.
+# 항목: name(프로젝트/뷰어), source(뷰어 폴더 경로), follow(live | pinned),
+#       pinned(follow가 pinned일 때 git 커밋 또는 내용 해시)
+[]

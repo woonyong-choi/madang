@@ -86,7 +86,7 @@ class HomeInit(_Body):
 
 
 class RoutesDocument(_Body):
-    """routes.yaml 원문."""
+    """config.yaml의 routes 절 원문."""
 
     text: str
 
@@ -424,7 +424,7 @@ class DecisionAnswer(_Body):
 
 
 class Task(_Out):
-    """state.md 작업."""
+    """ledger.md 작업."""
 
     id: str
     title: str
@@ -442,7 +442,7 @@ class TaskUpdate(_Body):
 
 
 class StateDecision(_Out):
-    """state.md 결정."""
+    """ledger.md 결정."""
 
     id: str
     topic: str

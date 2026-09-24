@@ -15,7 +15,7 @@ from madang.graph.nodes import resolve_route
 from madang.runners import make_runner
 from madang.runners.base import RunEvent, StreamParser
 from madang.store import pages, runs, summary
-from madang.store.page import STATE_FILE
+from madang.store.page import LEDGER_FILE
 
 router = Router()
 
@@ -173,8 +173,8 @@ def preview_input(
         kind = str(decision.choice) if decision else cfg.routes.default_kind
     tiers = cfg.routes.tiers.get(kind)
     if not tiers:
-        raise errors.invalid(f"routes.yaml has no tiers for kind '{kind}'")
-    owner = str(pages.read_header(page_dir / STATE_FILE).get("owner") or "")
+        raise errors.invalid(f"routes has no tiers for kind '{kind}'")
+    owner = str(pages.read_header(page_dir / LEDGER_FILE).get("owner") or "")
     implementer = owner.split("/", 1)[0] or next(iter(cfg.runners), "")
     try:
         runner, model, effort = resolve_route(cfg, tiers[0], implementer)

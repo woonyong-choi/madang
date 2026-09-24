@@ -57,6 +57,40 @@ def run(
     return proc
 
 
+def is_repository(folder: Path) -> bool:
+    """``folder``가 git 저장소의 최상위(``.git``이 있는 폴더)인지 반환한다."""
+    return (folder / ".git").exists()
+
+
+def exclude(repo: Path, pattern: str) -> bool:
+    """``pattern``을 저장소의 ``info/exclude``에 더한다.
+
+    이미 같은 줄이 있으면 그대로 둔다. 워크트리와 하위 모듈도 git이
+    알려 주는 경로를 쓴다.
+
+    Args:
+        repo: 저장소 최상위 폴더.
+        pattern: gitignore 형식의 한 줄.
+
+    Returns:
+        새로 더했으면 참.
+
+    Raises:
+        GitError: git이 실패했다.
+        OSError: 파일을 쓸 수 없다.
+    """
+    found = run(repo, "rev-parse", "--git-path", "info/exclude").stdout
+    path = repo / found.strip()
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if pattern in (line.strip() for line in text.splitlines()):
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    separator = "" if not text or text.endswith("\n") else "\n"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{separator}{pattern}\n")
+    return True
+
+
 def has_staged_changes(repo: Path) -> bool:
     """인덱스가 HEAD와 다른지 반환한다."""
     return run(repo, "diff", "--cached", "--quiet", check=False).returncode != 0

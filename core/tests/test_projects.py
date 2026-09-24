@@ -62,22 +62,29 @@ def test_add_creates_records_ignored_by_git(home: Path, tmp_path: Path) -> None:
     assert project.title == "Madang Repo"
     assert project.root == path.resolve()
     records = path / ".madang"
-    assert (records / ".gitignore").read_text().splitlines()[-1] == "*"
-    assert (records / "project.md").is_file()
+    assert not (records / ".gitignore").exists()
+    assert (records / "brief.md").is_file()
     assert (records / "pages").is_dir()
     assert (records / "trash").is_dir()
     pages.create_page(project.pages_dir, "메모")
     assert git(path, "status", "--porcelain") == ""
+    exclude = path / ".git/info/exclude"
+    assert exclude.read_text().splitlines().count(".madang/") == 1
+    projects.create_records(path)
+    assert exclude.read_text().splitlines().count(".madang/") == 1
 
 
-def test_commit_records_keeps_pages_in_git(home: Path, tmp_path: Path) -> None:
-    settings = home / "config/madang.yaml"
-    settings.write_text(
-        settings.read_text().replace(
-            "commit_records: false", "commit_records: true"
-        )
-    )
+def test_non_git_folder_gets_no_exclude(home: Path, tmp_path: Path) -> None:
+    path = folder(tmp_path, "plain")
+    projects.add(home, path)
+    assert not (path / ".git").exists()
+    assert sorted(p.name for p in path.iterdir()) == [".madang"]
+
+
+def test_track_keeps_pages_in_git(home: Path, tmp_path: Path) -> None:
     path = folder(tmp_path, "notes", repo=True)
+    (path / ".madang").mkdir()
+    (path / ".madang/config.yaml").write_text("track: true\n")
     project = projects.add(home, path)
     page_dir = pages.create_page(project.pages_dir, "notes")
     (page_dir / "scratch").mkdir()
@@ -88,12 +95,40 @@ def test_commit_records_keeps_pages_in_git(home: Path, tmp_path: Path) -> None:
     assert "scratch" not in status
 
 
+def test_add_refuses_old_memory_names(home: Path, tmp_path: Path) -> None:
+    path = folder(tmp_path, "old")
+    (path / ".madang/pages/p1").mkdir(parents=True)
+    (path / ".madang/project.md").write_text("x\n")
+    (path / ".madang/pages/p1/state.md").write_text("x\n")
+    with pytest.raises(projects.LegacyProjectError) as caught:
+        projects.add(home, path)
+    message = str(caught.value)
+    assert ".madang/project.md" in message
+    assert ".madang/pages/p1/state.md" in message
+    assert "project.md -> brief.md" in message
+    assert projects.load(home) == []
+    assert not (path / ".madang/brief.md").exists()
+
+
+def test_add_refuses_broken_project_config(home: Path, tmp_path: Path) -> None:
+    path = folder(tmp_path, "notes", repo=True)
+    (path / ".madang").mkdir()
+    (path / ".madang/config.yaml").write_text("track: [\n")
+    result = runner.invoke(
+        app, ["project", "add", str(path), "--home", str(home)]
+    )
+    assert result.exit_code == 1
+    assert ".madang/config.yaml" in result.output
+    assert "invalid YAML" in result.output
+    assert projects.load(home) == []
+
+
 def test_add_keeps_existing_records(home: Path, tmp_path: Path) -> None:
     path = folder(tmp_path, "notes")
     (path / ".madang").mkdir()
-    (path / ".madang" / "project.md").write_text("내 메모\n")
+    (path / ".madang" / "brief.md").write_text("내 메모\n")
     projects.add(home, path)
-    assert (path / ".madang" / "project.md").read_text() == "내 메모\n"
+    assert (path / ".madang" / "brief.md").read_text() == "내 메모\n"
 
 
 def test_add_refusals(home: Path, tmp_path: Path) -> None:
@@ -138,13 +173,13 @@ def test_update_and_remove(home: Path, tmp_path: Path) -> None:
     assert projects.update(home, child.id, {"icon": None}).icon is None
     projects.remove(home, child.id)
     assert [p.id for p in projects.load(home)] == ["jobs"]
-    assert (tmp_path / "cv" / ".madang" / "project.md").is_file()
+    assert (tmp_path / "cv" / ".madang" / "brief.md").is_file()
 
 
 def test_saving_keeps_other_settings_and_comments(
     home: Path, tmp_path: Path
 ) -> None:
-    settings = home / "config/madang.yaml"
+    settings = home / "config.yaml"
     before = settings.read_text()
     projects.add(home, folder(tmp_path, "notes"), title="노트")
     after = settings.read_text()

@@ -17,7 +17,7 @@ from madang.cli_agent.bindings import (
 from madang.cli_agent.context import AgentError, PageContext, guarded
 from madang.cli_agent.items import is_valid_id
 from madang.store import frontmatter, pages
-from madang.store.page import PAGE_FILE, STATE_FILE
+from madang.store.page import LEDGER_FILE, PAGE_FILE
 
 TEMPLATES_ENV = "MADANG_TEMPLATES"
 
@@ -95,7 +95,7 @@ def create_view(
 ) -> str:
     """데이터 블록에 묶인 뷰 블록을 만들어 page.md에 덧붙인다.
 
-    만든 뷰 파일은 state.md 산출물로 등록한다.
+    만든 뷰 파일은 ledger.md 산출물로 등록한다.
 
     Args:
         ctx: 변경할 페이지.
@@ -115,7 +115,7 @@ def create_view(
     check_data_blocks(ctx, bindings)
     blocks_dir = ctx.page_dir / pages.BLOCKS_DIR
     last = blocks_dir / pages.LAST_BLOCK_FILE
-    tracked = (ctx.page_dir / PAGE_FILE, ctx.page_dir / STATE_FILE, last)
+    tracked = (ctx.page_dir / PAGE_FILE, ctx.page_dir / LEDGER_FILE, last)
 
     with guarded(ctx, *tracked) as txn:
         block_id = pages.allocate_block(ctx.page_dir)

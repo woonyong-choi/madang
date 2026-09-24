@@ -39,9 +39,9 @@ OVERVIEW = """\
 madang 에이전트 명령($MADANG_PAGE 또는 --page <id>의 페이지에 작용한다):
 
   madang task <id> --status S [--title T] [--due YYYY-MM-DD]
-      state.md의 태스크를 추가하거나 갱신한다. S: todo | doing | blocked | review | done.
+      ledger.md의 태스크를 추가하거나 갱신한다. S: todo | doing | blocked | review | done.
   madang decide <id> --topic T --choice C --options a,b,c [--supersedes D0]
-      state.md에 결정을 기록한다.
+      ledger.md에 결정을 기록한다.
   madang artifact add <path>
       이 페이지가 만든 파일을 등록한다(blocks/... 또는 프로젝트 폴더의 파일).
   madang commit -m "message"
@@ -57,7 +57,7 @@ madang 에이전트 명령($MADANG_PAGE 또는 --page <id>의 페이지에 작�
 """  # noqa: E501
 
 artifact_app = typer.Typer(
-    help="state.md 산출물을 관리한다.",
+    help="ledger.md 산출물을 관리한다.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -146,7 +146,7 @@ def task(
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
-    """state.md의 태스크를 추가하거나 갱신한다."""
+    """ledger.md의 태스크를 추가하거나 갱신한다."""
 
     def act(core: CoreClient, from_env: bool) -> str:
         done = core.set_task(task_id, status, title, due)
@@ -182,7 +182,7 @@ def decide(
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
-    """state.md에 결정을 기록한다."""
+    """ledger.md에 결정을 기록한다."""
 
     def act(core: CoreClient, from_env: bool) -> str:
         done = core.decide(

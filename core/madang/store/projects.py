@@ -1,13 +1,12 @@
 """프로젝트: 페이지를 담는 로컬 폴더와 그 등록.
 
-프로젝트의 기록은 ``<project>/.madang/``에 있다(project.md, pages/,
-trash/). 어떤 폴더가 프로젝트인지와 표시 설정(제목, 상위 프로젝트, 아이콘,
-색, 정렬)은 앱 홈 ``config/madang.yaml``의 ``projects``에 둔다.
+프로젝트의 기록은 ``<project>/.madang/``에 있다(brief.md, config.yaml,
+pages/, trash/). 어떤 폴더가 프로젝트인지와 표시 설정(제목, 상위 프로젝트,
+아이콘, 색, 정렬)은 앱 홈 ``config.yaml``의 ``projects``에 둔다.
 """
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,22 +15,33 @@ from typing import Any
 import yaml
 
 from madang import config
+from madang.store import git
 from madang.store.files import atomic_write
 from madang.store.home import MARKER
-from madang.store.page import MADANG_DIR, PAGES_DIR, PROJECT_FILE
+from madang.store.page import BRIEF_FILE, LEDGER_FILE, MADANG_DIR, PAGES_DIR
 
 TRASH_DIR = "trash"
-GITIGNORE = ".gitignore"
-# madang.yaml 항목에 두는 표시 설정.
+# config.yaml 항목에 두는 표시 설정.
 SETTINGS = ("parent", "icon", "color", "sort")
+# git의 info/exclude에 더하는 줄. track: false면 기록 전체를, true면 실행
+# 임시 파일과 휴지통만 뺀다.
+UNTRACKED_EXCLUDES = (f"{MADANG_DIR}/",)
+TRACKED_EXCLUDES = (
+    f"{MADANG_DIR}/{PAGES_DIR}/*/scratch/",
+    f"{MADANG_DIR}/{TRASH_DIR}/",
+)
+# 예전 구조의 기억 파일 -> 지금 이름
+LEGACY_NAMES = {"project.md": BRIEF_FILE, "state.md": LEDGER_FILE}
 
 _KEY = "projects"
-# 다음 최상위 키(또는 주석)까지. 목록 항목(``- ``)은 블록에 들어간다.
-_BLOCK = re.compile(rf"^{_KEY}:.*?(?=^[^\s-]|\Z)", re.MULTILINE | re.DOTALL)
 
 
 class ProjectError(ValueError):
     """프로젝트 요청이 올바르지 않다(폴더 없음, 순환, 하위 프로젝트 등)."""
+
+
+class LegacyProjectError(ProjectError):
+    """``.madang/``에 예전 이름의 기억 파일이 있다."""
 
 
 @dataclass(frozen=True)
@@ -72,9 +82,9 @@ class Project:
         return self.records / TRASH_DIR
 
     @property
-    def memory(self) -> Path:
-        """``<project>/.madang/project.md``(메모리 2층)."""
-        return self.records / PROJECT_FILE
+    def brief(self) -> Path:
+        """``<project>/.madang/brief.md``(프로젝트 기억 Brief)."""
+        return self.records / BRIEF_FILE
 
 
 # 읽기
@@ -176,7 +186,8 @@ def add(
         등록한 프로젝트.
 
     Raises:
-        ProjectError: 폴더가 없거나, id가 올바르지 않다.
+        ProjectError: 폴더가 없거나, id가 올바르지 않거나, 예전 구조다.
+        ConfigError: 프로젝트 ``config.yaml``이 올바르지 않다.
         FileNotFoundError: 상위 프로젝트가 없다.
         FileExistsError: 같은 폴더나 같은 id의 프로젝트가 이미 있다.
     """
@@ -201,7 +212,7 @@ def add(
     extra = {k: v for k, v in (settings or {}).items() if v is not None}
     if extra.get("parent"):
         get(home, str(extra["parent"]))
-    create_records(root, commit=_commit_records(home))
+    create_records(root)
     entry: dict[str, Any] = {"id": project_id, "path": str(root)}
     if title:
         entry["title"] = title
@@ -217,21 +228,27 @@ def _free_id(base: str, taken: set[str]) -> str:
     return candidate
 
 
-def _commit_records(home: Path) -> bool:
-    return bool(_raw_settings(home).get("commit_records"))
-
-
-def create_records(root: Path, *, commit: bool = False) -> list[str]:
+def create_records(root: Path) -> list[str]:
     """``<root>/.madang/``의 기본 구조를 만든다. 있는 파일은 그대로 둔다.
+
+    폴더가 git 저장소이면 ``.git/info/exclude``에 줄을 더한다. 프로젝트
+    ``config.yaml``의 ``track``이 거짓(기본)이면 ``.madang/`` 전체를,
+    참이면 ``scratch/``와 ``trash/``만 뺀다.
 
     Args:
         root: 프로젝트 폴더.
-        commit: 참이면 기록을 커밋할 수 있는 ``.gitignore``를 쓴다.
-            거짓이면 ``.madang/`` 전체를 git에서 뺀다.
 
     Returns:
         만든 파일과 폴더의 프로젝트 기준 경로.
+
+    Raises:
+        LegacyProjectError: 예전 이름의 기억 파일이 있다.
+        ConfigError: 프로젝트 ``config.yaml``이 올바르지 않다.
+        ProjectError: git에서 ``.madang/``을 뺄 수 없다.
     """
+    check_layout(root)
+    track = config.load_project_config(root).track
+    _exclude(root, TRACKED_EXCLUDES if track else UNTRACKED_EXCLUDES)
     records = root / MADANG_DIR
     created: list[str] = []
     for name in (PAGES_DIR, TRASH_DIR):
@@ -239,16 +256,41 @@ def create_records(root: Path, *, commit: bool = False) -> list[str]:
         if not folder.is_dir():
             folder.mkdir(parents=True)
             created.append(f"{MADANG_DIR}/{name}/")
-    defaults = {
-        GITIGNORE: "gitignore-commit" if commit else "gitignore",
-        PROJECT_FILE: PROJECT_FILE,
-    }
-    for name, default in defaults.items():
-        target = records / name
-        if not target.exists():
-            target.write_text(config.default_text(default), encoding="utf-8")
-            created.append(f"{MADANG_DIR}/{name}")
+    brief = records / BRIEF_FILE
+    if not brief.exists():
+        brief.write_text(config.default_text(BRIEF_FILE), encoding="utf-8")
+        created.append(f"{MADANG_DIR}/{BRIEF_FILE}")
     return created
+
+
+def check_layout(root: Path) -> None:
+    """``<root>/.madang/``에 예전 이름의 기억 파일이 있으면 예외를 던진다.
+
+    Raises:
+        LegacyProjectError: ``project.md``나 페이지의 ``state.md``가 있다.
+    """
+    records = root / MADANG_DIR
+    old = [records / "project.md", *records.glob(f"{PAGES_DIR}/*/state.md")]
+    found = [p.relative_to(root).as_posix() for p in old if p.is_file()]
+    if found:
+        renames = ", ".join(f"{a} -> {b}" for a, b in LEGACY_NAMES.items())
+        raise LegacyProjectError(
+            f"{root} uses the old memory file names ({', '.join(found)}); "
+            f"rename them ({renames}) and add the project again"
+        )
+
+
+def _exclude(root: Path, patterns: tuple[str, ...]) -> None:
+    """``root``가 git 저장소이면 ``patterns``를 ``info/exclude``에 더한다."""
+    if not git.is_repository(root):
+        return
+    try:
+        for pattern in patterns:
+            git.exclude(root, pattern)
+    except (git.GitError, OSError) as exc:
+        raise ProjectError(
+            f"cannot keep {MADANG_DIR}/ out of git in {root}: {exc}"
+        ) from exc
 
 
 def update(home: Path, project_id: str, changes: Mapping[str, Any]) -> Project:
@@ -329,17 +371,13 @@ def _dumped(home: Path) -> list[dict[str, Any]]:
 
 
 def _save(home: Path, entries: list[dict[str, Any]]) -> None:
-    """madang.yaml의 ``projects`` 블록만 바꾼다. 다른 줄과 주석은 그대로다."""
+    """config.yaml의 ``projects`` 절만 바꾼다. 다른 절과 주석은 그대로다."""
     path = home / MARKER
-    text = path.read_text(encoding="utf-8")
-    block = yaml.safe_dump(
-        {_KEY: entries},
+    body = yaml.safe_dump(
+        entries,
         allow_unicode=True,
         sort_keys=False,
         default_flow_style=False,
     )
-    if _BLOCK.search(text):
-        text = _BLOCK.sub(lambda _m: block, text, count=1)
-    else:
-        text = text.rstrip("\n") + "\n" + block
+    text = config.replace_section(path.read_text(encoding="utf-8"), _KEY, body)
     atomic_write(path, text)

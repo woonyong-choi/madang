@@ -8,9 +8,9 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from madang.store import frontmatter
-from madang.store.page import PAGE_FILE, STATE_FILE, Page, project_root
+from madang.store.page import LEDGER_FILE, PAGE_FILE, Page, project_root
 from madang.validate.issues import Issue, Lines
-from madang.validate.state import DEFAULT_TOKEN_LIMIT, validate_state
+from madang.validate.ledger import DEFAULT_TOKEN_LIMIT, validate_ledger
 
 
 def validate_page(path: Path) -> list[Issue]:
@@ -51,17 +51,17 @@ def validate_page(path: Path) -> list[Issue]:
 
 
 def resolve_target(target: Path) -> tuple[Path, Path]:
-    """검사 대상의 페이지 폴더와 state.md 경로를 반환한다.
+    """검사 대상의 페이지 폴더와 ledger.md 경로를 반환한다.
 
     Args:
-        target: 페이지 폴더 또는 state.md 경로.
+        target: 페이지 폴더 또는 ledger.md 경로.
 
     Returns:
-        ``(페이지 폴더, state.md 경로)`` 튜플.
+        ``(페이지 폴더, ledger.md 경로)`` 튜플.
     """
     target = Path(target)
     if target.is_dir():
-        return target, target / STATE_FILE
+        return target, target / LEDGER_FILE
     return target.parent, target
 
 
@@ -72,14 +72,14 @@ def validate_target(
     token_limit: int = DEFAULT_TOKEN_LIMIT,
     kinds: Sequence[str] | None = None,
 ) -> list[Issue]:
-    """페이지의 state.md와, 있으면 page.md를 검사한다.
+    """페이지의 ledger.md와, 있으면 page.md를 검사한다.
 
     Args:
-        target: 페이지 폴더 또는 state.md 경로.
+        target: 페이지 폴더 또는 ledger.md 경로.
         repo: ``repo:`` 산출물의 기준 폴더. 없으면 페이지가 속한 프로젝트
             폴더를 쓴다.
-        token_limit: state.md의 최대 토큰 수.
-        kinds: 허용하는 페이지 종류. 기본값은 내장 routes.yaml.
+        token_limit: ledger.md의 최대 토큰 수.
+        kinds: 허용하는 페이지 종류. 기본값은 내장 설정의 routes 절.
 
     Returns:
         찾은 문제. 페이지가 올바르면 빈 목록.
@@ -87,7 +87,7 @@ def validate_target(
     page_dir, state_path = resolve_target(target)
     if repo is None:
         repo = project_root(page_dir)
-    issues = validate_state(
+    issues = validate_ledger(
         state_path, repo=repo, token_limit=token_limit, kinds=kinds
     )
     page_path = page_dir / PAGE_FILE

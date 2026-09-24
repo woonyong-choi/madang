@@ -1,4 +1,4 @@
-"""``madang decide``: state.md에 결정을 기록한다."""
+"""``madang decide``: ledger.md에 결정을 기록한다."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 from madang.cli_agent.context import AgentError, PageContext, guarded
 from madang.cli_agent.items import check_id, find_by_id, items_of
 from madang.store import pages
-from madang.store.page import STATE_FILE
+from madang.store.page import LEDGER_FILE
 
 DECISION_STATES = ("proposed", "confirmed", "superseded", "deferred")
 
@@ -24,7 +24,7 @@ def decide(
     supersedes: str | None = None,
     state: str = "confirmed",
 ) -> None:
-    """state.md에 새 결정을 기록한다.
+    """ledger.md에 새 결정을 기록한다.
 
     Args:
         ctx: 변경할 페이지.
@@ -84,5 +84,5 @@ def decide(
         )
         header["decisions"] = decisions
 
-    with guarded(ctx, ctx.page_dir / STATE_FILE):
+    with guarded(ctx, ctx.page_dir / LEDGER_FILE):
         pages.update_state(ctx.page_dir, mutate)

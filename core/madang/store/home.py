@@ -1,4 +1,8 @@
-"""앱 홈 생성. 앱 홈은 전역 설정과 root.md만 두는 폴더다(git 저장소 아님)."""
+"""앱 홈 생성.
+
+앱 홈은 나에 대한 기억(profile.md), 전역 설정(config.yaml), 뷰어
+등록부(viewers.yaml), 뷰어 캐시(cache/)만 두는 폴더다(git 저장소 아님).
+"""
 
 from __future__ import annotations
 
@@ -7,17 +11,32 @@ from pathlib import Path
 
 from madang import config
 
-MARKER = f"{config.CONFIG_DIR}/madang.yaml"
-# 예전 구조(앱 홈 안에 페이지를 두던 구조)의 흔적.
-LEGACY_DIR = "spaces"
+MARKER = config.CONFIG_FILE
+# 나에 대한 기억(Profile). 모든 실행이 읽는다.
+PROFILE_FILE = "profile.md"
 
 # 상대 경로 -> 내장 기본 파일
 _FILES: dict[str, str] = {
-    **{f"{config.CONFIG_DIR}/{name}": name for name in config.CONFIG_FILES},
-    "root.md": "root.md",
+    PROFILE_FILE: PROFILE_FILE,
+    config.CONFIG_FILE: config.CONFIG_FILE,
+    config.VIEWERS_FILE: config.VIEWERS_FILE,
 }
+_DIRS = (config.CACHE_DIR,)
 # core가 실행 중에 두는 파일. 아직 초기화 전인 폴더에 있어도 된다.
 RUNTIME_FILES = (config.PORT_FILE, "core.db")
+# 예전 구조의 흔적 -> 옮기는 방법
+LEGACY_MARKS: dict[str, str] = {
+    "spaces": (
+        "pages now live in <project>/.madang/; move the folder aside, "
+        "run 'madang init', then 'madang project add <path>'"
+    ),
+    "config": (
+        "settings now live in one config.yaml; merge config/madang.yaml "
+        "into it, add config/routes.yaml under 'routes:' and "
+        "config/runners.yaml under 'runners:', then remove config/"
+    ),
+    "root.md": "the personal memory is now profile.md; rename root.md",
+}
 
 
 class NotAHomeError(ValueError):
@@ -25,7 +44,7 @@ class NotAHomeError(ValueError):
 
 
 class LegacyHomeError(NotAHomeError):
-    """페이지를 앱 홈 안에 두던 예전 구조의 앱 홈."""
+    """예전 구조(페이지를 안에 두던 구조, config/ 폴더, root.md)의 앱 홈."""
 
 
 @dataclass
@@ -34,7 +53,7 @@ class InitResult:
 
     Attributes:
         home: 앱 홈 디렉터리.
-        created: 만든 파일의 홈 기준 상대 경로.
+        created: 만든 파일과 폴더(``/``로 끝남)의 홈 기준 상대 경로.
     """
 
     home: Path
@@ -42,7 +61,7 @@ class InitResult:
 
 
 def init_home(home: Path) -> InitResult:
-    """앱 홈에 설정 파일과 root.md를 만든다.
+    """앱 홈에 profile.md, config.yaml, viewers.yaml, cache/를 만든다.
 
     기존 파일은 절대 덮어쓰지 않는다.
 
@@ -65,9 +84,13 @@ def init_home(home: Path) -> InitResult:
         path = home / rel
         if path.exists():
             continue
-        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(config.default_text(default), encoding="utf-8")
         result.created.append(rel)
+    for rel in _DIRS:
+        folder = home / rel
+        if not folder.is_dir():
+            folder.mkdir()
+            result.created.append(f"{rel}/")
     return result
 
 
@@ -77,22 +100,27 @@ def is_initialized(home: Path) -> bool:
 
 
 def is_legacy(home: Path) -> bool:
-    """``home``이 페이지를 안에 두던 예전 구조인지 반환한다."""
-    return (home / LEGACY_DIR).is_dir()
+    """``home``에 예전 구조의 흔적이 있는지 반환한다."""
+    return bool(_legacy_marks(home))
 
 
 def check_layout(home: Path) -> None:
     """예전 구조의 앱 홈이면 옮길 방법과 함께 예외를 던진다.
 
     Raises:
-        LegacyHomeError: ``spaces/``가 있는 예전 구조다.
+        LegacyHomeError: ``spaces/``, ``config/``, ``root.md`` 중 하나가
+            있다.
     """
-    if is_legacy(home):
+    found = _legacy_marks(home)
+    if found:
         raise LegacyHomeError(
-            f"{home} uses the old app home layout ({LEGACY_DIR}/); "
-            "pages now live in <project>/.madang/. Move the folder aside, "
-            "run 'madang init', then 'madang project add <path>'"
+            f"{home} uses the old app home layout ({', '.join(found)}): "
+            + "; ".join(LEGACY_MARKS[name] for name in found)
         )
+
+
+def _legacy_marks(home: Path) -> list[str]:
+    return [name for name in LEGACY_MARKS if (home / name).exists()]
 
 
 def _refuse_foreign(home: Path) -> None:

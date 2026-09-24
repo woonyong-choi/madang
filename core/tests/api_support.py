@@ -95,10 +95,10 @@ class Contract:
 
 
 def set_status(status: str):
-    """state.md의 status를 바꾸는 에이전트 동작."""
+    """ledger.md의 status를 바꾸는 에이전트 동작."""
 
     def act(page_dir: Path) -> None:
-        state = page_dir / "state.md"
+        state = page_dir / "ledger.md"
         header, body = frontmatter.read(state)
         header["status"] = status
         state.write_text(frontmatter.dumps(header, body))

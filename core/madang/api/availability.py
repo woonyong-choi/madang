@@ -34,7 +34,7 @@ def probe_cli(name: str, spec: RunnerSpec) -> str | None:
 
     Args:
         name: 러너 이름.
-        spec: runners.yaml의 스펙.
+        spec: runners 절의 스펙.
 
     Returns:
         쓸 수 없는 이유. 쓸 수 있으면 None.
@@ -85,7 +85,7 @@ class Availability:
         """최근 확인 결과를 반환한다. 캐시가 지났으면 다시 확인한다.
 
         Args:
-            runners: runners.yaml의 러너.
+            runners: runners 절의 러너.
             fresh: 캐시를 무시하고 다시 확인할지 여부.
 
         Returns:

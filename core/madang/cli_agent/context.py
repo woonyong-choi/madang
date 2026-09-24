@@ -57,7 +57,7 @@ class PageContext:
         """페이지의 검증 이슈를 반환한다."""
         return validate_target(
             self.page_dir,
-            token_limit=self.cfg.madang.limits.state_tokens,
+            token_limit=self.cfg.madang.limits.ledger_tokens,
             kinds=self.cfg.routes.kinds,
         )
 

@@ -1,8 +1,9 @@
 """실행 하나의 프롬프트를 조립하고 부분별 크기를 추정한다.
 
-프롬프트는 루트 메모리, 프로젝트 노트, 페이지 상태, 공통 작업 지시, 대상
-블록, 요청 순서로 구성한다. 러너 자체의 시스템 프롬프트와 도구는 프롬프트에
-들어가지 않으며, 그 크기는 러너별 추정값(runners.yaml의 ``system_est``)이다.
+프롬프트는 Profile(나), Brief(프로젝트), Ledger(페이지), 공통 작업 지시,
+대상 블록, 요청 순서로 구성한다. 러너 자체의 시스템 프롬프트와 도구는 프롬프트에
+들어가지 않으며, 그 크기는 러너별 추정값(config.yaml ``runners`` 절의
+``system_est``)이다.
 """
 
 from __future__ import annotations
@@ -10,23 +11,20 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from madang import contract
 from madang.cli_agent.views import BUILTIN_TEMPLATES
-from madang.config import Config, default_text
+from madang.config import RUNNERS_KEY, Config, default_data
 from madang.store import frontmatter, pages
-from madang.store.page import STATE_FILE, project_memory, work_dir
+from madang.store.home import PROFILE_FILE
+from madang.store.page import LEDGER_FILE, brief_path, work_dir
 from madang.validate import tokens
 
-ROOT_FILE = "root.md"
 TEMPLATES_DIR = "templates"
 TRUNCATION_MARK = "\n..."
-# 승격된 실행(tier > 1)이 여전히 읽는 상태 절.
+# 승격된 실행(tier > 1)이 여전히 읽는 Ledger 절.
 PROMOTED_SECTIONS = ("막힌 점", "다음 할 일")
 
 _HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
@@ -105,7 +103,7 @@ def assemble(
         page_dir: 페이지 폴더.
         target: 요청 대상 블록 id. 페이지 전체면 None.
         request: 메시지 본문.
-        tier: 승격 단계. 1보다 크면 상태의 막힌 점과 다음 할 일 절만
+        tier: 승격 단계. 1보다 크면 Ledger의 막힌 점과 다음 할 일 절만
             넣는다.
         cfg: 앱 홈 설정.
         runner: 러너 이름. ``system_est``를 고른다.
@@ -120,9 +118,9 @@ def assemble(
     limit = cfg.madang.limits.block_input_tokens
     truncated: list[str] = []
     sections = [
-        ("root", "root", _root_text(cfg.home)),
-        ("project", "project", _project_text(page_dir)),
-        ("state", "state", _state_text(page_dir, tier)),
+        ("profile", "profile", _profile_text(cfg.home)),
+        ("brief", "brief", _brief_text(page_dir)),
+        ("ledger", "ledger", _ledger_text(page_dir, tier)),
         (
             "contract",
             f'instructions version="{contract.VERSION}"',
@@ -142,34 +140,29 @@ def assemble(
 
 
 def system_estimate(cfg: Config, runner: str) -> int:
-    """runners.yaml에서 ``runner``의 ``system_est``를 반환한다.
+    """``runners`` 절에서 ``runner``의 ``system_est``를 반환한다.
 
-    앱 홈의 runners.yaml에 값이 없으면 번들된 기본 runners.yaml의 값을
-    쓴다. 예전에 만든 앱 홈도 추정이 0이 되지 않게 하기 위해서다.
+    앱 홈 설정에 값이 없으면 번들된 기본 설정의 값을 쓴다. 사용자가
+    러너를 고쳐 쓰더라도 추정이 0이 되지 않게 하기 위해서다.
 
     Args:
         cfg: 앱 홈 설정.
         runner: 러너 이름.
 
     Returns:
-        설정값, 없으면 기본 runners.yaml의 값, 그것도 없으면 0.
+        설정값, 없으면 기본 설정의 값, 그것도 없으면 0.
     """
     spec = cfg.runners.get(runner)
     value = getattr(spec, "system_est", None) if spec else None
     if _is_count(value):
         return value
-    default = _default_runners().get(runner) or {}
+    default = default_data()[RUNNERS_KEY].get(runner) or {}
     value = default.get("system_est") if isinstance(default, dict) else None
     return value if _is_count(value) else 0
 
 
 def _is_count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
-
-
-@lru_cache(maxsize=1)
-def _default_runners() -> dict[str, Any]:
-    return yaml.safe_load(default_text("runners.yaml")) or {}
 
 
 def truncate(text: str, limit: int) -> tuple[str, bool]:
@@ -206,17 +199,17 @@ def _body(path: Path) -> str:
     return frontmatter.split(path.read_text(encoding="utf-8")).body
 
 
-def _root_text(home: Path) -> str:
-    return _body(home / ROOT_FILE)
+def _profile_text(home: Path) -> str:
+    return _body(home / PROFILE_FILE)
 
 
-def _project_text(page_dir: Path) -> str:
-    memory = project_memory(page_dir)
-    return _body(memory) if memory else ""
+def _brief_text(page_dir: Path) -> str:
+    brief = brief_path(page_dir)
+    return _body(brief) if brief else ""
 
 
-def _state_text(page_dir: Path, tier: int) -> str:
-    path = page_dir / STATE_FILE
+def _ledger_text(page_dir: Path, tier: int) -> str:
+    path = page_dir / LEDGER_FILE
     text = path.read_text(encoding="utf-8")
     if tier <= 1:
         return f"path: {path}\n\n{text}"

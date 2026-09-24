@@ -1,4 +1,4 @@
-"""``madang artifact add``: 페이지가 만든 파일을 state.md에 등록한다."""
+"""``madang artifact add``: 페이지가 만든 파일을 ledger.md에 등록한다."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 from madang.cli_agent.context import AgentError, PageContext, guarded
 from madang.cli_agent.items import items_of
 from madang.store import pages
-from madang.store.page import STATE_FILE
+from madang.store.page import LEDGER_FILE
 
 REPO_PREFIX = "repo:"
 
@@ -28,7 +28,7 @@ def _relative(raw: str) -> str:
 
 
 def artifact_entry(ctx: PageContext, raw: str) -> str:
-    """경로를 state.md 산출물 항목으로 정규화한다.
+    """경로를 ledger.md 산출물 항목으로 정규화한다.
 
     Args:
         ctx: 산출물이 속한 페이지.
@@ -59,7 +59,7 @@ def register(header: dict[str, Any], entry: str) -> bool:
     """머리부의 ``artifacts``에 ``entry``를 더한다.
 
     Args:
-        header: state.md 머리부.
+        header: ledger.md 머리부.
         entry: 산출물 항목.
 
     Returns:
@@ -74,7 +74,7 @@ def register(header: dict[str, Any], entry: str) -> bool:
 
 
 def add_artifact(ctx: PageContext, raw: str) -> None:
-    """파일을 state.md의 산출물로 등록한다.
+    """파일을 ledger.md의 산출물로 등록한다.
 
     Args:
         ctx: 변경할 페이지.
@@ -84,5 +84,5 @@ def add_artifact(ctx: PageContext, raw: str) -> None:
         AgentError: 허용되지 않는 경로이거나 페이지 검증에 실패했다.
     """
     entry = artifact_entry(ctx, raw)
-    with guarded(ctx, ctx.page_dir / STATE_FILE):
+    with guarded(ctx, ctx.page_dir / LEDGER_FILE):
         pages.update_state(ctx.page_dir, lambda header: register(header, entry))

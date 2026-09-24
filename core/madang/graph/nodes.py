@@ -22,7 +22,7 @@ from madang.graph.state import FlowState
 from madang.runners.base import CliRunner, RunEvent
 from madang.runners.record import RecordedRun
 from madang.store import pages, projects, runs
-from madang.store.page import STATE_FILE
+from madang.store.page import LEDGER_FILE
 from madang.validate import Issue
 
 RunnerFactory = Callable[[str, Config], CliRunner]
@@ -47,8 +47,8 @@ STOP = "stop"
 
 REVIEW_REQUEST = """\
 이번 실행은 리뷰다. 구현하지 말고 검토만 한다.
-1. state.md, 산출물, 바뀐 파일을 읽고 아래 요청과 목표를 만족하는지 본다.
-2. 통과면 state.md의 status를 review로 그대로 둔다.
+1. ledger.md, 산출물, 바뀐 파일을 읽고 아래 요청과 목표를 만족하는지 본다.
+2. 통과면 ledger.md의 status를 review로 그대로 둔다.
 3. 고칠 것이 있으면 status를 doing으로 바꾸고 "다음 할 일"에 지적을 \
 1~3개로 쓴다.
 
@@ -56,7 +56,7 @@ REVIEW_REQUEST = """\
 {request}"""
 
 REPAIR_REQUEST = """\
-state.md 검사에서 아래 문제가 나왔다. 다른 작업은 하지 말고 이 문제만 \
+ledger.md 검사에서 아래 문제가 나왔다. 다른 작업은 하지 말고 이 문제만 \
 고친다.
 
 {issues}"""
@@ -415,16 +415,16 @@ class FlowNodes:
     def _tiers(self, kind: str, *, required: bool = True) -> list[Tier]:
         tiers = self.cfg.routes.tiers.get(kind) or []
         if required and not tiers:
-            raise ValueError(f"routes.yaml has no tiers for kind '{kind}'")
+            raise ValueError(f"routes has no tiers for kind '{kind}'")
         return tiers
 
     def _implementer(self, state: FlowState, page_dir: Path) -> str:
         """마지막으로 구현한 러너.
 
-        pick이 구현 실행마다 state.md의 owner를 남기므로 그것을 먼저 본다.
+        pick이 구현 실행마다 ledger.md의 owner를 남기므로 그것을 먼저 본다.
         흐름 상태의 러너는 리뷰 뒤라면 리뷰한 쪽일 수 있다.
         """
-        owner = pages.read_header(page_dir / STATE_FILE).get("owner")
+        owner = pages.read_header(page_dir / LEDGER_FILE).get("owner")
         return str(owner).split("/", 1)[0] if owner else state["runner"]
 
 
@@ -461,7 +461,7 @@ def _primary(cfg: Config, runner: str) -> tuple[str, str | None]:
         for tier in tiers:
             if tier.runner == runner and tier.model != PRIMARY:
                 return tier.model, tier.effort
-    raise ValueError(f"routes.yaml has no model for runner '{runner}'")
+    raise ValueError(f"routes has no model for runner '{runner}'")
 
 
 def _base(state: FlowState) -> dict[str, Any]:

@@ -5,7 +5,7 @@ import pytest
 from madang.store import frontmatter
 from madang.store.page import load_page
 
-FIXTURES = Path(__file__).parent / "fixtures" / "state"
+FIXTURES = Path(__file__).parent / "fixtures" / "ledger"
 
 
 @pytest.mark.parametrize(

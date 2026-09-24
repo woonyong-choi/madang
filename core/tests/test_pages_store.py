@@ -67,7 +67,7 @@ def test_move_page(home: Path, tmp_path: Path, work: Path) -> None:
 
 def test_update_state_keeps_body(work: Path) -> None:
     page = pages.create_page(work, "p")
-    state = page / "state.md"
+    state = page / "ledger.md"
     body = (
         frontmatter.split(state.read_text(encoding="utf-8")).body
         + "\n추가 본문\r\n끝"

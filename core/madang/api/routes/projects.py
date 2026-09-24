@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import Response
 
+from madang import config
 from madang.api import errors, events, models
 from madang.api.core import Core
 from madang.api.routes import CoreDep, Router
@@ -54,7 +55,7 @@ def create_project(body: models.ProjectCreate, core: CoreDep) -> models.Project:
             raise errors.not_found(str(exc)) from exc
         except FileExistsError as exc:
             raise errors.conflict(str(exc)) from exc
-        except projects.ProjectError as exc:
+        except (projects.ProjectError, config.ConfigError) as exc:
             raise errors.invalid(str(exc)) from exc
     return _announce(core, events.PROJECT_CREATED, project)
 

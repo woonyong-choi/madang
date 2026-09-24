@@ -12,7 +12,7 @@ from madang.api.core import Core
 from madang.api.routes import CoreDep, Router
 from madang.store.files import atomic_write
 from madang.store.home import NotAHomeError, init_home
-from madang.validate.routes import ROUTES_PATH, validate_routes
+from madang.validate.routes import validate_routes
 
 router = Router()
 
@@ -47,7 +47,7 @@ def get_home(core: CoreDep) -> models.HomeStatus:
 
 @router.post("/home", tags=["setup"], operation_id="initHome")
 def init_app_home(body: models.HomeInit, core: CoreDep) -> models.HomeStatus:
-    """앱 홈에 전역 설정과 root.md를 만들고 core가 그 홈을 쓰게 한다."""
+    """앱 홈(profile.md, config.yaml, viewers.yaml, cache/)을 만들어 쓴다."""
     if not body.path.strip():
         raise errors.invalid("path is empty")
     path = config.resolve_home(body.path)
@@ -64,29 +64,40 @@ def init_app_home(body: models.HomeInit, core: CoreDep) -> models.HomeStatus:
 
 @router.get("/config/routes", tags=["setup"], operation_id="getRoutes")
 def get_routes(core: CoreDep) -> models.RoutesDocument:
-    """config/routes.yaml 원문."""
+    """config.yaml의 routes 절 원문."""
     core.config()
-    path = core.home / ROUTES_PATH
-    text = (
-        path.read_text(encoding="utf-8")
-        if path.is_file()
-        else config.default_text("routes.yaml")
-    )
-    return models.RoutesDocument(text=text)
+    text = config.section_text(_settings_text(core), config.ROUTES_KEY)
+    if text is None:
+        text = config.section_text(
+            config.default_text(config.CONFIG_FILE), config.ROUTES_KEY
+        )
+    return models.RoutesDocument(text=text or "")
 
 
 @router.put("/config/routes", tags=["setup"], operation_id="saveRoutes")
 def save_routes(
     body: models.RoutesDocument, core: CoreDep
 ) -> models.RoutesDocument:
-    """config/routes.yaml을 검사해 저장한다."""
+    """config.yaml의 routes 절을 검사해 바꾼다. 다른 절과 주석은 그대로다."""
     cfg = core.config()
     issues = validate_routes(body.text, cfg.runners)
     if issues:
-        raise errors.invalid("routes.yaml failed validation", issues)
+        raise errors.invalid("routes failed validation", issues)
     with core.lock:
-        atomic_write(core.home / ROUTES_PATH, body.text)
+        text = config.replace_section(
+            _settings_text(core), config.ROUTES_KEY, body.text
+        )
+        path = core.home / config.CONFIG_FILE
+        try:
+            config.parse_config(core.home, path, text)
+        except config.ConfigError as exc:
+            raise errors.invalid(f"routes cannot be saved: {exc}") from exc
+        atomic_write(path, text)
     return models.RoutesDocument(text=body.text)
+
+
+def _settings_text(core: Core) -> str:
+    return (core.home / config.CONFIG_FILE).read_text(encoding="utf-8")
 
 
 # 이벤트

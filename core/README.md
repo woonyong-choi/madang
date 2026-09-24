@@ -30,17 +30,18 @@ uv run madang init [--home PATH]
 
 ```
 <home>/
-├ config/
-│  ├ madang.yaml     전역 설정과 프로젝트 목록(projects)
-│  ├ routes.yaml     라우팅 표
-│  └ runners.yaml    도구·모델 목록과 실행 방법
-├ root.md            모든 실행이 읽는 공통 메모(메모리 1층)
+├ profile.md         기억: 나 (언어, 금지 규칙, 커밋 규칙, 취향). 모든 실행이 읽는다
+├ config.yaml        설정: 앱 동작, 프로젝트 목록(projects), 라우팅 표(routes), 러너(runners)
+├ viewers.yaml       뷰어 등록부(뷰어 폴더 참조 목록)
+├ cache/             pinned 뷰어 사본
 ├ templates/         사용자 설치 템플릿(있으면)
 ├ core.db            흐름 체크포인트(core가 만든다)
 └ core.port          실행 중인 core의 포트
 ```
 
-이미 초기화된 홈에서 다시 실행하면 기존 파일을 덮어쓰지 않고 빠진 파일만 만든다. 페이지를 앱 홈 안(`spaces/`)에 두던 예전 구조를 만나면 옮기는 방법과 함께 거부한다.
+기억(md)과 설정(yaml)은 섞지 않는다. 에이전트는 Profile·Brief·Ledger 세 md와 요청만 받고, config.yaml은 core만 읽는다. config.yaml에 빠진 최상위 절(`routes`, `runners` 등)은 내장 기본값으로 채운다. 설정이 스키마와 맞지 않으면 `파일:줄: 키 경로: 설명` 형식의 오류로 거부한다.
+
+이미 초기화된 홈에서 다시 실행하면 기존 파일을 덮어쓰지 않고 빠진 파일만 만든다. 예전 구조(페이지를 두던 `spaces/`, 설정을 나눠 두던 `config/`, `root.md`)를 만나면 옮기는 방법과 함께 거부한다. 자동으로 옮기지 않는다.
 
 ### 프로젝트와 페이지 만들기
 
@@ -50,24 +51,44 @@ uv run madang project list [--home PATH]
 uv run madang page new --project <아이디> --title "제목" [--kind build] [--slug 슬러그] [--home PATH]
 ```
 
-프로젝트는 로컬 폴더(보통 git 저장소)다. `project add`는 폴더에 기록 폴더 `.madang/`을 만들고 `config/madang.yaml`의 `projects`에 등록한 뒤 아이디를 출력한다. 아이디를 생략하면 폴더 이름을 쓰고, 겹치면 `-2`처럼 번호를 붙인다. 이미 있는 `.madang/` 파일은 덮어쓰지 않는다.
+프로젝트는 로컬 폴더(보통 git 저장소)다. `project add`는 폴더에 기록 폴더 `.madang/`을 만들고 앱 홈 `config.yaml`의 `projects`에 등록한 뒤 아이디를 출력한다. 아이디를 생략하면 폴더 이름을 쓰고, 겹치면 `-2`처럼 번호를 붙인다. 이미 있는 `.madang/` 파일은 덮어쓰지 않는다.
 
 ```
 <project>/
 └ .madang/
-   ├ .gitignore      기본 "*": 기록을 커밋하지 않는다
-   ├ project.md      프로젝트 메모(메모리 2층)
+   ├ brief.md        기억: 이 프로젝트 (목적, 스택, 규칙, 하지 말 것)
+   ├ config.yaml     설정: track, runs, policy, publish, viewers (없으면 기본값)
    ├ pages/<page-id>/
    │  ├ page.md      머리부: 제목, 상태, blocks 순서
-   │  ├ state.md     메모리 3층
+   │  ├ ledger.md    페이지 기억 Ledger
    │  ├ log.md       대화 로그
    │  ├ blocks/  runs/  scratch/
    └ trash/          지운 페이지·블록(복원하면 제자리로 옮긴다)
 ```
 
-기록을 커밋할지는 사용자가 정한다. `config/madang.yaml`에서 `commit_records: true`로 두면 새 프로젝트의 `.gitignore`는 `pages/*/scratch/`와 `trash/`만 뺀다. core는 어떤 기록도 스스로 커밋하지 않는다.
+기록을 커밋할지는 프로젝트 `.madang/config.yaml`의 `track`이 정한다. 기본 `false`면 `project add`가 `.madang/`을 `.git/info/exclude`에 더하고, `true`면 `.madang/pages/*/scratch/`와 `.madang/trash/`만 뺀다. git 저장소가 아닌 폴더에서는 아무것도 하지 않는다. core는 어떤 기록도 스스로 커밋하지 않는다. `.madang/`에 예전 이름(`project.md`, 페이지의 `state.md`)이 있으면 바꿀 이름과 함께 거부한다.
 
-`page new`는 프로젝트의 `.madang/pages/<YYYY-MM-DD-슬러그>/`에 page.md, state.md, log.md를 만들고 페이지 id를 출력한다. `--kind`를 생략하면 routes.yaml의 기본 종류를 쓰고, 슬러그를 생략하면 제목에서 만든다.
+프로젝트 `config.yaml`은 모르는 키를 오류로 본다. 지금은 읽고 검증만 한다.
+
+```yaml
+track: false
+runs:                       # 선언된 실행 대상만 실행한다
+  - name: 이력서 사이트
+    cwd: resume/site
+    command: npm run dev
+    opens: http://localhost:5173
+policy:
+  auto_merge: {require_tests: true, require_no_conflict: true, test: npm test}
+  auto_publish: false
+  deny: ["push --force", "reset --hard", "clean -fd"]
+publish:
+  include: [docs/]
+  target: gh-pages
+viewers:                    # 뷰어 이름 -> 이 프로젝트에서 쓸 뷰어 폴더
+  resume/basic: ./viewers/resume
+```
+
+`page new`는 프로젝트의 `.madang/pages/<YYYY-MM-DD-슬러그>/`에 page.md, ledger.md, log.md를 만들고 페이지 id를 출력한다. `--kind`를 생략하면 `routes` 절의 기본 종류를 쓰고, 슬러그를 생략하면 제목에서 만든다.
 
 ### 페이지 실행
 
@@ -75,15 +96,15 @@ uv run madang page new --project <아이디> --title "제목" [--kind build] [--
 uv run madang run <page-id> "<요청>" --tool claude|codex --model <모델> [--effort medium] [--target b05] [--home PATH]
 ```
 
-페이지의 한 단계를 새 세션에서 실행한다. 프롬프트를 조립해 실행기(claude/codex CLI)에 넘기고, 끝나면 state.md를 검사한 뒤 결과를 `runs/N.json`에 기록한다. `--target`은 요청이 가리키는 블록 id이다. 작업 폴더는 페이지가 속한 프로젝트 폴더다. 실행이 만들었지만 등록하지 않은 파일은 전후 비교로 찾는다(프로젝트가 git 저장소면 `git status`, 아니면 파일 목록).
+페이지의 한 단계를 새 세션에서 실행한다. 프롬프트를 Profile, Brief, Ledger, 공통 작업 지시, 대상 블록, 요청 순서로 조립하고 부분별 토큰 추정을 실행 기록 `input.parts`에 남긴다(REST 응답에서는 `root`, `project`, `state` 이름으로 나간다). 조립한 프롬프트를 실행기(claude/codex CLI)에 넘기고, 끝나면 ledger.md를 검사한 뒤 결과를 `runs/N.json`에 기록한다. `--target`은 요청이 가리키는 블록 id이다. 작업 폴더는 페이지가 속한 프로젝트 폴더다. 실행이 만들었지만 등록하지 않은 파일은 전후 비교로 찾는다(프로젝트가 git 저장소면 `git status`, 아니면 파일 목록).
 
 ### 페이지 검사
 
 ```
-uv run madang validate <페이지 폴더 | state.md> [--repo PATH] [--json]
+uv run madang validate <페이지 폴더 | ledger.md> [--repo PATH] [--json]
 ```
 
-state.md(와 page.md)를 검사한다. 문제가 있으면 위치와 함께 출력하고 exit 1로 끝난다. `repo:` 산출물은 `--repo` 또는 페이지가 속한 프로젝트 폴더를 기준으로 확인한다.
+ledger.md(와 page.md)를 검사한다. 문제가 있으면 위치와 함께 출력하고 exit 1로 끝난다. `repo:` 산출물은 `--repo` 또는 페이지가 속한 프로젝트 폴더를 기준으로 확인한다.
 
 ### core API 서버
 
@@ -108,7 +129,7 @@ uv run madang push
 uv run madang view create --template resume --data b03 [--data overlay=b04]
 ```
 
-- state.md와 page.md를 고친 뒤에는 core가 검사기를 돌리고, 실패하면 변경을 되돌린 뒤 오류와 함께 exit 1로 끝난다. 본문은 그대로 두고 머리부만 고친다.
+- ledger.md와 page.md를 고친 뒤에는 core가 검사기를 돌리고, 실패하면 변경을 되돌린 뒤 오류와 함께 exit 1로 끝난다. 본문은 그대로 두고 머리부만 고친다.
 - `commit`, `push`는 페이지가 속한 프로젝트 폴더가 git 저장소일 때만 동작하며, 아니면 거부한다. `commit`은 비밀 파일로 보이는 이름(`.env`, `*.pem`, `id_rsa*` 등)이 있으면 거부한다.
 - `push`는 현재 브랜치를 같은 이름의 원격 브랜치로만 보내며 강제 푸시는 하지 않는다.
 - `view create`는 새 블록 id를 받아 `blocks/bNN-<template>.view.md`를 만들고 page.md `blocks` 끝에 붙이며, 만든 파일을 산출물로 등록한다. 템플릿은 앱 홈 `templates/`, `MADANG_TEMPLATES`, 내장 템플릿(table, decisions, tasks, resume) 순서로 찾는다.
@@ -121,7 +142,7 @@ uv run madang view create --template resume --data b03 [--data overlay=b04]
 madang/
 ├ cli.py        madang 명령 (typer)
 ├ cli_agent/    에이전트 명령 (core API 클라이언트)과 core가 쓰는 변경 로직
-├ config.py     앱 홈 경로, config/*.yaml 로딩
+├ config.py     앱 홈 경로, 전역·프로젝트 config.yaml 로딩과 검증
 ├ defaults/     앱 홈과 .madang/ 기본 파일
 ├ store/        프로젝트·페이지 기록 읽기·쓰기, 휴지통, git CLI 래퍼
 ├ api/  graph/  runners/  deciders/  validate/  procs/

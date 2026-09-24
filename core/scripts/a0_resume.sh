@@ -4,8 +4,10 @@
 # are new temporary folders; the project is a git repository whose .madang/
 # records stay out of git. Prints the input estimate and the reported usage of
 # each run, then checks that there are three run records, that every input
-# estimate stays within the budget, that the app home is not a git repository,
-# and that the project repository has no new commits and no .madang/ changes.
+# estimate stays within the budget, that the app home and the page use the
+# new memory names (profile.md, ledger.md), that the app home is not a git
+# repository, and that the project repository has no new commits and keeps
+# .madang/ out of git through .git/info/exclude.
 #
 # Usage: bash scripts/a0_resume.sh
 # Env:   A0_HOME     app home to use (default: a new temporary folder)
@@ -51,17 +53,17 @@ echo "page: $page"
 step design claude-opus-5-5 medium \
   "이력서 페이지를 설계한다. 대상은 5년 차 백엔드 개발자(가상의 인물)다. \
 섹션 구성과 각 섹션의 데이터 구조(JSON 필드)를 설계 문서 하나로 blocks/에 \
-남기고, state.md의 목표·결정 사항·다음 할 일을 작성 단계가 바로 시작할 수 \
+남기고, ledger.md의 목표·결정 사항·다음 할 일을 작성 단계가 바로 시작할 수 \
 있게 갱신한다."
 
 step write claude-sonnet-5 medium \
-  "state.md의 다음 할 일에 따라 설계 문서대로 이력서 데이터를 blocks/에 JSON \
+  "ledger.md의 다음 할 일에 따라 설계 문서대로 이력서 데이터를 blocks/에 JSON \
 파일로 작성하고 artifacts에 등록한다. 내용은 가상의 인물로 채운다. 끝나면 \
-state.md를 검토 단계에 맞게 갱신한다."
+ledger.md를 검토 단계에 맞게 갱신한다."
 
 step review claude-opus-5-5 low \
   "작성된 이력서 데이터를 설계 문서와 대조해 검토한다. 지적 사항을 검토 문서 \
-하나로 blocks/에 남기고 artifacts에 등록한 뒤, state.md의 현재 상태와 다음 \
+하나로 blocks/에 남기고 artifacts에 등록한 뒤, ledger.md의 현재 상태와 다음 \
 할 일을 갱신한다."
 
 uv run --quiet --project "$core" python - "$home" "$project" "$page" \
@@ -116,7 +118,16 @@ checks = {
     f"every input_est <= {budget}": all(
         r["input"]["total_est"] <= budget for r in records
     ),
+    "app home has profile.md, config.yaml, viewers.yaml, cache/": all(
+        (home / name).exists()
+        for name in ("profile.md", "config.yaml", "viewers.yaml", "cache")
+    ),
+    "page memory is ledger.md": (page_dir / "ledger.md").is_file()
+    and not (page_dir / "state.md").exists(),
+    "project memory is brief.md": (project / ".madang/brief.md").is_file(),
     "app home is not a git repository": not (home / ".git").exists(),
+    ".madang/ is in .git/info/exclude": ".madang/"
+    in (project / ".git/info/exclude").read_text().splitlines(),
     "no new project commits": git("log", "--format=%s").splitlines()
     == ["init"],
     "records stay out of git": ".madang" not in git(

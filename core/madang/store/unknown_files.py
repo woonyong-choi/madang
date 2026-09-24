@@ -1,4 +1,4 @@
-"""미등록 파일: 실행이 만들었지만 state.md 산출물로 등록하지 않은 파일.
+"""미등록 파일: 실행이 만들었지만 ledger.md 산출물로 등록하지 않은 파일.
 
 실행 기록(``runs/N.json``)의 ``unknown_files``를 모으고, 그 뒤 산출물로
 등록했거나, 그대로 두기로 했거나(page.md ``kept_files``), 지운 파일은 뺀다.
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from madang.store import pages, runs
-from madang.store.page import PAGE_FILE, STATE_FILE, project_root
+from madang.store.page import LEDGER_FILE, PAGE_FILE, project_root
 
 REPO_PREFIX = "repo:"
 KEPT_KEY = "kept_files"
@@ -71,7 +71,7 @@ def list_unknown(page_dir: Path) -> list[dict[str, Any]]:
 
 
 def _registered(page_dir: Path) -> set[str]:
-    items = pages.read_header(page_dir / STATE_FILE).get("artifacts")
+    items = pages.read_header(page_dir / LEDGER_FILE).get("artifacts")
     return {str(a) for a in items} if isinstance(items, list) else set()
 
 
@@ -83,7 +83,7 @@ def _kept(page_dir: Path) -> set[str]:
 def resolve(page_dir: Path, entry: str, action: str) -> None:
     """미등록 파일 하나를 등록하거나, 그대로 두거나, 지운다.
 
-    ``artifact``는 state.md ``artifacts``에, ``keep``은 page.md
+    ``artifact``는 ledger.md ``artifacts``에, ``keep``은 page.md
     ``kept_files``에 더한다. ``delete``는 파일을 지운다.
 
     Args:

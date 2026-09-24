@@ -20,12 +20,15 @@ from madang.cli_agent.context import AgentError, PageContext
 from madang.store import blocks, frontmatter, pages, summary, trash
 from madang.store import unknown_files as unknown
 from madang.store.files import atomic_write
-from madang.store.page import STATE_FILE, project_root
-from madang.validate import count_tokens, validate_state
+from madang.store.home import PROFILE_FILE
+from madang.store.page import LEDGER_FILE, project_root
+from madang.validate import count_tokens, validate_ledger
 
 router = Router()
-ROOT_FILE = "root.md"
+# REST 계약의 메모리 층 이름. root는 Profile, project는 Brief, state는
+# Ledger 파일이다.
 LAYERS = ("root", "project", "state")
+PROFILE_LAYER, BRIEF_LAYER, LEDGER_LAYER = LAYERS
 
 
 def page_detail(core: Core, page_dir: Path) -> models.PageDetail:
@@ -300,11 +303,11 @@ def delete_block(page: str, block: str, core: CoreDep) -> Response:
 
 
 def _memory_path(core: Core, page_dir: Path, layer: str) -> Path:
-    if layer == "root":
-        return core.home / ROOT_FILE
-    if layer == "project":
-        return core.project_of(page_dir).memory
-    return page_dir / STATE_FILE
+    if layer == PROFILE_LAYER:
+        return core.home / PROFILE_FILE
+    if layer == BRIEF_LAYER:
+        return core.project_of(page_dir).brief
+    return page_dir / LEDGER_FILE
 
 
 def _memory_file(
@@ -317,15 +320,15 @@ def _memory_file(
         "path": str(path),
         "content": content,
         "tokens": count_tokens(content),
-        "token_limit": limit if layer == "state" else None,
+        "token_limit": limit if layer == LEDGER_LAYER else None,
     }
 
 
 @router.get("/pages/{page}/memory", tags=["memory"], operation_id="getMemory")
 def get_memory(page: str, core: CoreDep) -> models.Memory:
-    """root.md, project.md, state.md."""
+    """profile.md, brief.md, ledger.md."""
     page_dir = core.page_dir(page)
-    limit = core.config().madang.limits.state_tokens
+    limit = core.config().madang.limits.ledger_tokens
     return models.Memory.model_validate(
         {layer: _memory_file(core, page_dir, layer, limit) for layer in LAYERS}
     )
@@ -345,18 +348,18 @@ def save_memory(
     cfg = core.config()
     path = _memory_path(core, page_dir, layer)
     with core.lock:
-        if layer == "state":
-            _check_state(page_dir, body.content, cfg)
+        if layer == LEDGER_LAYER:
+            _check_ledger(page_dir, body.content, cfg)
         else:
             _check_front_matter(path, body.content)
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write(path, body.content)
-    limit = cfg.madang.limits.state_tokens
+    limit = cfg.madang.limits.ledger_tokens
     saved = _memory_file(core, page_dir, layer, limit)
     core.announce_memory(layer, saved["tokens"], page_dir)
-    if layer == "state":
+    if layer == LEDGER_LAYER:
         core.announce_page(page_dir, events.PAGE_UPDATED)
-    elif layer == "project":
+    elif layer == BRIEF_LAYER:
         project = core.project_of(page_dir)
         core.hub.emit(
             events.PROJECT_UPDATED,
@@ -366,24 +369,25 @@ def save_memory(
     return models.MemoryFile.model_validate(saved)
 
 
-def _check_state(page_dir: Path, content: str, cfg: Any) -> None:
-    probe = page_dir / f".{STATE_FILE}.check"
+def _check_ledger(page_dir: Path, content: str, cfg: Any) -> None:
+    probe = page_dir / f".{LEDGER_FILE}.check"
     probe.write_text(content, encoding="utf-8")
     try:
-        issues = validate_state(
+        issues = validate_ledger(
             probe,
             repo=project_root(page_dir),
-            token_limit=cfg.madang.limits.state_tokens,
+            token_limit=cfg.madang.limits.ledger_tokens,
             kinds=cfg.routes.kinds,
         )
     finally:
         os.unlink(probe)
     if issues:
         found = [
-            {**errors.issue_dict(issue), "path": STATE_FILE} for issue in issues
+            {**errors.issue_dict(issue), "path": LEDGER_FILE}
+            for issue in issues
         ]
         raise errors.ValidationFailureError(
-            f"{STATE_FILE} failed validation", found
+            f"{LEDGER_FILE} failed validation", found
         )
 
 

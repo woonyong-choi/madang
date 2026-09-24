@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from importlib import resources
 
-VERSION = "v1"
+VERSION = "v2"
 
 
 def text(version: str = VERSION) -> str:

@@ -1,6 +1,6 @@
 """Codex CLI 어댑터: ``codex exec --json``.
 
-runners.yaml의 codex args에 ``["--add-dir", "{home}"]``를 추가하면
+config.yaml runners 절의 codex args에 ``["--add-dir", "{home}"]``를 추가하면
 에이전트가 앱 홈에 쓸 수 있다.
 """
 

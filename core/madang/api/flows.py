@@ -24,7 +24,7 @@ from madang.graph.nodes import (
     WAIT_RUN_LIMIT,
 )
 from madang.store import pages, projects, runs, summary
-from madang.store.page import STATE_FILE
+from madang.store.page import LEDGER_FILE
 from madang.validate import count_tokens
 
 log = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ PROMPTS = {
     WAIT_KIND: "요청 종류를 정하지 못했습니다. 어떤 종류로 처리할까요?",
     WAIT_BLOCKED: "마지막 단계까지 올려도 막혔습니다. 다시 시도할까요?",
     WAIT_RUN_LIMIT: "메시지 하나의 실행 한도에 닿았습니다. 계속할까요?",
-    WAIT_REPAIR: "state.md 보정에 실패했습니다. 어떻게 할까요?",
+    WAIT_REPAIR: "ledger.md 보정에 실패했습니다. 어떻게 할까요?",
     WAIT_REVIEW: "리뷰 실행이 실패했습니다. 다시 시도할까요?",
 }
 
@@ -327,8 +327,9 @@ class Flows:
             active.known = self._core.announce_blocks(
                 page_dir, active.known, run=n
             )
-        if STATE_FILE in record.changed_files:
-            text = (page_dir / STATE_FILE).read_text(encoding="utf-8")
+        if LEDGER_FILE in record.changed_files:
+            text = (page_dir / LEDGER_FILE).read_text(encoding="utf-8")
+            # REST 계약에서 Ledger 층의 이름은 state다.
             self._core.announce_memory("state", count_tokens(text), page_dir)
         self._core.announce_page(page_dir, events.PAGE_UPDATED)
 

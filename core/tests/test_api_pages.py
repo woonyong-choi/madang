@@ -29,13 +29,17 @@ def test_project_lifecycle(client, home, tmp_path, contract) -> None:
     assert created["id"] == "jobs" and created["title"] == "지원"
     assert created["path"] == str((tmp_path / "jobs").resolve())
     assert created["color"] == "#3a5bd9" and created["pages"] == 0
-    assert (tmp_path / "jobs/.madang/.gitignore").is_file()
+    assert (tmp_path / "jobs/.madang/brief.md").is_file()
     contract.check(
         client.post("/projects", json={"path": str(tmp_path / "jobs")}), 409
     )
     contract.check(
         client.post("/projects", json={"path": str(tmp_path / "nope")}), 400
     )
+    (tmp_path / "bad/.madang").mkdir(parents=True)
+    (tmp_path / "bad/.madang/config.yaml").write_text("track: maybe\n")
+    bad = client.post("/projects", json={"path": str(tmp_path / "bad")})
+    assert "track" in contract.check(bad, 400)["message"]
     contract.check(
         client.post(
             "/projects", json={"path": str(tmp_path / "cv"), "id": "Bad Id"}
@@ -78,7 +82,7 @@ def test_project_lifecycle(client, home, tmp_path, contract) -> None:
     contract.check(client.delete("/projects/jobs"), 409)  # 하위 프로젝트
     contract.check(client.delete("/projects/sub"), 204)
     contract.check(client.delete("/projects/sub"), 404)
-    assert (tmp_path / "cv/.madang/project.md").is_file()
+    assert (tmp_path / "cv/.madang/brief.md").is_file()
     contract.check(client.delete("/projects/jobs"), 204)
 
 
@@ -418,8 +422,8 @@ def test_memory_read_and_save(
     client, home, project_root, page, contract
 ) -> None:
     memory = contract.check(client.get(f"/pages/{page}/memory"), 200)
-    assert memory["root"]["path"] == str(home.resolve() / "root.md")
-    assert memory["project"]["path"] == str(project_root / ".madang/project.md")
+    assert memory["root"]["path"] == str(home.resolve() / "profile.md")
+    assert memory["project"]["path"] == str(project_root / ".madang/brief.md")
     assert memory["project"]["layer"] == "project"
     assert memory["state"]["token_limit"] == 2000
     assert "token_limit" not in memory["root"]
@@ -442,8 +446,8 @@ def test_memory_read_and_save(
         400,
     )
     assert {i["code"] for i in broken["issues"]} >= {"invalid-value"}
-    assert all(i["path"] == "state.md" for i in broken["issues"])
-    assert "status: doing" in (page_dir(home, page) / "state.md").read_text()
+    assert all(i["path"] == "ledger.md" for i in broken["issues"])
+    assert "status: doing" in (page_dir(home, page) / "ledger.md").read_text()
 
     root = contract.check(
         client.put(
@@ -452,7 +456,7 @@ def test_memory_read_and_save(
         200,
     )
     assert root["tokens"] > 0
-    assert (home / "root.md").read_text() == "# 나\n한국어로.\n"
+    assert (home / "profile.md").read_text() == "# 나\n한국어로.\n"
     notes = contract.check(
         client.put(
             f"/pages/{page}/memory/project", json={"content": "프로젝트 메모\n"}
@@ -460,9 +464,7 @@ def test_memory_read_and_save(
         200,
     )
     assert notes["layer"] == "project"
-    assert (
-        project_root / ".madang/project.md"
-    ).read_text() == "프로젝트 메모\n"
+    assert (project_root / ".madang/brief.md").read_text() == "프로젝트 메모\n"
     contract.check(
         client.put(
             f"/pages/{page}/memory/project", json={"content": "---\n: [\n---\n"}

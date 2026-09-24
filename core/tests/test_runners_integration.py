@@ -16,7 +16,7 @@ pytestmark = pytest.mark.integration
 
 PROMPT = "Reply with exactly: ok"
 
-# 기본 제공 runners.yaml과 같은 명령에 입력을 작게 유지하는 옵션을 더했다.
+# 기본 설정의 runners 절과 같은 명령에 입력을 작게 유지하는 옵션을 더했다.
 # 도구, 사용자 설정, MCP 서버 없이 한 줄짜리 시스템 프롬프트만 쓴다.
 RUNNERS = {
     "claude": {
@@ -77,9 +77,9 @@ def logged_in(tool: str) -> bool:
 @pytest.fixture
 def page_dir(tmp_path: Path) -> Path:
     home = tmp_path / "home"
-    (home / "config").mkdir(parents=True)
-    (home / "config" / "runners.yaml").write_text(
-        yaml.safe_dump(RUNNERS), encoding="utf-8"
+    home.mkdir(parents=True)
+    (home / "config.yaml").write_text(
+        yaml.safe_dump({"runners": RUNNERS}), encoding="utf-8"
     )
     page = tmp_path / "work" / ".madang" / "pages" / "2026-09-24-ok"
     page.mkdir(parents=True)

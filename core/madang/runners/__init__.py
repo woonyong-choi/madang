@@ -18,7 +18,7 @@ RUNNERS: dict[str, type[CliRunner]] = {
 def make_runner(
     name: str, config: Config, *, core_url: str | None = None
 ) -> CliRunner:
-    """``config.runners``(runners.yaml)에서 러너 ``name``을 만든다.
+    """``config.runners``(config.yaml의 runners 절)에서 러너 ``name``을 만든다.
 
     Args:
         name: 러너 이름. ``RUNNERS``의 키.
@@ -36,7 +36,7 @@ def make_runner(
             f"unknown runner {name!r}; expected one of {sorted(RUNNERS)}"
         )
     if name not in config.runners:
-        raise ValueError(f"runner {name!r} is not configured in runners.yaml")
+        raise ValueError(f"runner {name!r} is not in config.yaml runners")
     return RUNNERS[name](
         config.runners[name], home=Path(config.home), core_url=core_url
     )

@@ -22,10 +22,10 @@ def isolated_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def home(tmp_path: Path) -> Path:
     root = tmp_path / "home"
     init_home(root)
-    (root / "root.md").write_text("ROOT-NOTES\n")
+    (root / "profile.md").write_text("PROFILE-NOTES\n")
     (tmp_path / "work").mkdir()
     project = projects.add(root, tmp_path / "work")
-    project.memory.write_text("PROJECT-NOTES\n")
+    project.brief.write_text("BRIEF-NOTES\n")
     return root
 
 
@@ -33,11 +33,11 @@ def home(tmp_path: Path) -> Path:
 def page(home: Path) -> Path:
     pages_dir = projects.get(home, "work").pages_dir
     page_dir = pages.create_page(pages_dir, "Resume", slug="resume")
-    state = page_dir / "state.md"
-    text = state.read_text()
+    ledger = page_dir / "ledger.md"
+    text = ledger.read_text()
     text = text.replace("## 막힌 점\n", "## 막힌 점\nBLOCKED-NOTE\n")
     text = text.replace("## 로그\n", "## 로그\nLOG-LINE\n")
-    state.write_text(text)
+    ledger.write_text(text)
     return page_dir
 
 
@@ -56,7 +56,7 @@ def build(page: Path, home: Path, **kw):
 
 
 def set_limit(home: Path, tokens: int) -> None:
-    path = home / "config/madang.yaml"
+    path = home / "config.yaml"
     path.write_text(
         path.read_text().replace(
             "block_input_tokens: 4000", f"block_input_tokens: {tokens}"
@@ -69,16 +69,16 @@ def test_parts_follow_the_fixed_order(home: Path, page: Path) -> None:
     out = build(page, home, target="b01")
     names = [p.name for p in out.parts]
     assert names == [
-        "root",
-        "project",
-        "state",
+        "profile",
+        "brief",
+        "ledger",
         "contract",
         "target",
         "request",
     ]
     markers = [
-        "ROOT-NOTES",
-        "PROJECT-NOTES",
+        "PROFILE-NOTES",
+        "BRIEF-NOTES",
         "BLOCKED-NOTE",
         "너는 Madang 페이지",
         "TARGET-BODY",
@@ -95,9 +95,9 @@ def test_estimate_adds_parts_and_system(home: Path, page: Path) -> None:
     assert parts["system_est"] == 23000
     assert set(parts) == {
         "system_est",
-        "root",
-        "project",
-        "state",
+        "profile",
+        "brief",
+        "ledger",
         "contract",
         "request",
     }
@@ -109,14 +109,10 @@ def test_estimate_adds_parts_and_system(home: Path, page: Path) -> None:
     json.dumps(record)
 
 
-def test_system_estimate_comes_from_runners_yaml(
-    home: Path, page: Path
-) -> None:
-    path = home / "config/runners.yaml"
+def test_system_estimate_comes_from_runners(home: Path, page: Path) -> None:
+    path = home / "config.yaml"
     path.write_text(
-        path.read_text().replace(
-            "  system_est: 23000\n", "  system_est: 12345\n"
-        )
+        path.read_text().replace("system_est: 23000\n", "system_est: 12345\n")
     )
     assert build(page, home).system_est == 12345
     assert build(page, home, runner="other").system_est == 0
@@ -125,16 +121,16 @@ def test_system_estimate_comes_from_runners_yaml(
 def test_system_estimate_falls_back_to_bundled_runners(
     home: Path, page: Path
 ) -> None:
-    path = home / "config/runners.yaml"
-    path.write_text(path.read_text().replace("  system_est: 24000\n", ""))
+    path = home / "config.yaml"
+    path.write_text(path.read_text().replace("    system_est: 24000\n", ""))
     assert build(page, home, runner="codex").system_est == 24000
 
 
 def test_contract_is_rendered(home: Path, page: Path) -> None:
     out = build(page, home)
     text = next(p.text for p in out.parts if p.name == "contract")
-    assert out.contract == contract.VERSION == "v1"
-    assert 'version="v1"' in text
+    assert out.contract == contract.VERSION == "v2"
+    assert 'version="v2"' in text
     for placeholder in ("{repo}", "{page}", "{templates}", "{n}"):
         assert placeholder not in text
     assert f"작업 폴더는 {page.parents[2]}이다" in text
@@ -143,16 +139,16 @@ def test_contract_is_rendered(home: Path, page: Path) -> None:
     assert "2회 연속 실패" in text
 
 
-def test_project_without_memory_is_empty(home: Path, tmp_path: Path) -> None:
+def test_project_without_brief_is_empty(home: Path, tmp_path: Path) -> None:
     repo = tmp_path / "code"
     repo.mkdir()
     project = projects.add(home, repo)
-    project.memory.unlink()
+    project.brief.unlink()
     page_dir = pages.create_page(project.pages_dir, "Task", slug="task")
     out = build(page_dir, home)
     assert f"작업 폴더는 {repo.resolve()}이다" in out.prompt
-    assert next(p for p in out.parts if p.name == "project").text == (
-        "<project>\n\n</project>"
+    assert next(p for p in out.parts if p.name == "brief").text == (
+        "<brief>\n\n</brief>"
     )
 
 
@@ -200,12 +196,12 @@ def test_promoted_run_reads_only_blocked_and_next(
     first = build(page, home, tier=1)
     assert "LOG-LINE" in first.prompt and "## 목표" in first.prompt
     promoted = build(page, home, tier=2)
-    state = next(p.text for p in promoted.parts if p.name == "state")
-    assert "## 막힌 점" in state and "BLOCKED-NOTE" in state
-    assert "## 다음 할 일" in state
-    assert "LOG-LINE" not in state
-    assert "## 목표" not in state
-    assert "status:" not in state
+    ledger = next(p.text for p in promoted.parts if p.name == "ledger")
+    assert "## 막힌 점" in ledger and "BLOCKED-NOTE" in ledger
+    assert "## 다음 할 일" in ledger
+    assert "LOG-LINE" not in ledger
+    assert "## 목표" not in ledger
+    assert "status:" not in ledger
 
 
 def test_tokenizer_fallback_is_marked(
