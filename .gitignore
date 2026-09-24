@@ -1,0 +1,26 @@
+# macOS / editors
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+# Python (core)
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Kotlin / Gradle (app)
+.gradle/
+**/build/
+local.properties
+.kotlin/
+
+# Madang runtime (never in repo)
+*.log
+core.db
+core.port
+secrets.yaml
+scratch/
