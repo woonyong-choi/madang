@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -72,9 +73,20 @@ fun BlockItem(block: BlockHeader, content: String?, folded: Boolean, onToggle: (
     }
 }
 
+/** 보냈지만 core 페이지에 아직 없는 사용자 메시지. 흐리게 보인다. */
 @Composable
-private fun UserMessage(text: String, folded: Boolean, onToggle: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+fun PendingMessageItem(text: String) {
+    UserMessage(text, folded = false, onToggle = {}, modifier = Modifier.alpha(PENDING_ALPHA))
+}
+
+@Composable
+private fun UserMessage(
+    text: String,
+    folded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Box(
             modifier = Modifier
                 .widthIn(max = 520.dp)
@@ -368,3 +380,5 @@ fun runSummary(run: RunRecord, strings: NavigatorStrings): String {
 
 private const val DOC_LINES_BEFORE_MORE = 24
 private const val RAW_PREVIEW_CHARS = 600
+
+private const val PENDING_ALPHA = 0.6f

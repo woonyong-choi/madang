@@ -7,10 +7,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import madang.shared.main.ListSource
 import madang.shared.main.MainViewModel
 
 /** 레이어 0에서 여는 대화상자. */
@@ -26,6 +28,10 @@ sealed interface MainDialog {
     data class EditTags(val page: String, val tags: List<String>) : MainDialog
 
     data class DeletePage(val page: String, val title: String) : MainDialog
+
+    data object Trash : MainDialog
+
+    data object Search : MainDialog
 }
 
 @Composable
@@ -72,6 +78,16 @@ fun MainDialogView(dialog: MainDialog, viewModel: MainViewModel, onDismiss: () -
             ConfirmDialog(strings.deletePageConfirm(dialog.title), onDismiss) {
                 viewModel.deletePage(dialog.page)
             }
+
+        MainDialog.Trash -> TrashDialog(viewModel.trash, onDismiss)
+
+        MainDialog.Search -> {
+            val state by viewModel.state.collectAsState()
+            SearchDialog(state.cards, state.spaces, onDismiss = onDismiss, onOpen = { card ->
+                viewModel.select(ListSource.InSpace(card.space))
+                viewModel.openPage(card.id, advance = true)
+            })
+        }
     }
 }
 

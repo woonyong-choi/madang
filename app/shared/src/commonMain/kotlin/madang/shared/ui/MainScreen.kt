@@ -48,13 +48,21 @@ import madang.shared.main.NavKey
 import madang.shared.main.Pane
 import madang.shared.main.visiblePanes
 
-/** 메인 화면: 레이어 0의 3열(공간 / 페이지 목록 / 페이지 본문)과 아래 상태 줄. */
+/**
+ * 메인 화면: 레이어 0의 3열(공간 / 페이지 목록 / 페이지 본문)과 아래 상태 줄.
+ *
+ * 입력창이나 메모리 편집기에 포커스가 있으면 글자·화살표 키는 그쪽이 받고, Cmd/Ctrl 단축키와
+ * Esc만 화면이 받는다.
+ */
 @Composable
 fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
     val state by viewModel.state.collectAsState()
+    val composer by viewModel.composer.state.collectAsState()
+    val memory by viewModel.memory.state.collectAsState()
     val strings = LocalStrings.current.navigator
     val focus = remember { FocusRequester() }
     var dialog by remember { mutableStateOf<MainDialog?>(null) }
+    var editing by remember { mutableStateOf(false) }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val drag = remember(viewModel) {
         DragDropState { card, target ->
@@ -74,7 +82,23 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
                 .focusRequester(focus)
                 .focusable()
                 .onPreviewKeyEvent { event ->
-                    navKey(event)?.let(viewModel::onKey) != null
+                    when (val shortcut = shortcut(event, editing, memory.isOpen)) {
+                        null -> false
+
+                        Shortcut.Search -> true.also { dialog = MainDialog.Search }
+
+                        Shortcut.Memory -> true.also { viewModel.toggleMemory() }
+
+                        Shortcut.CloseMemory -> true.also {
+                            viewModel.memory.close()
+                            focus.requestFocus()
+                        }
+
+                        is Shortcut.Nav -> true.also {
+                            if (editing) focus.requestFocus()
+                            viewModel.onKey(shortcut.key)
+                        }
+                    }
                 }
         ) {
             val panes = visiblePanes(maxWidth.value, state.pane)
@@ -100,12 +124,13 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
 
                             Pane.PAGE -> PageColumn(
                                 state,
-                                PageActions(
-                                    toggleExpandAll = viewModel::toggleExpandAll,
-                                    toggleFold = viewModel::toggleFold,
-                                    cancelRun = viewModel::cancelRun,
-                                    back = { viewModel.focusPane(Pane.LIST) }
-                                        .takeIf { Pane.LIST !in panes }
+                                composer,
+                                memory,
+                                pageActions(
+                                    viewModel,
+                                    panes,
+                                    onEditing = { editing = it },
+                                    onEscape = { focus.requestFocus() }
                                 ),
                                 width
                             )
@@ -127,6 +152,12 @@ fun MainScreen(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
         }
     }
     dialog?.let { MainDialogView(it, viewModel) { dialog = null } }
+    val unknownFiles = state.page?.detail?.unknownFiles.orEmpty()
+    if (state.unknownFilesOpen && unknownFiles.isNotEmpty()) {
+        UnknownFilesDialog(unknownFiles, viewModel::resolveUnknownFile) {
+            viewModel.showUnknownFiles(false)
+        }
+    }
 }
 
 private fun paneModifier(pane: Pane, count: Int): Modifier = when {
@@ -152,7 +183,37 @@ private fun spacesActions(
     rename = { show(MainDialog.RenameSpace(it.space.slug, it.space.title)) },
     linkRepo = { show(MainDialog.LinkRepo(it.space.slug, it.space.repo.orEmpty())) },
     delete = { show(MainDialog.DeleteSpace(it.space.slug, it.space.title)) },
+    openTrash = { show(MainDialog.Trash) },
     openSettings = onOpenSettings
+)
+
+private fun pageActions(
+    viewModel: MainViewModel,
+    panes: List<Pane>,
+    onEditing: (Boolean) -> Unit,
+    onEscape: () -> Unit
+) = PageActions(
+    toggleExpandAll = viewModel::toggleExpandAll,
+    toggleFold = viewModel::toggleFold,
+    cancelRun = viewModel::cancelRun,
+    back = { viewModel.focusPane(Pane.LIST) }.takeIf { Pane.LIST !in panes },
+    toggleMemory = viewModel::toggleMemory,
+    showUnknownFiles = { viewModel.showUnknownFiles(true) },
+    answer = viewModel::answer,
+    composer = ComposerActions(
+        setText = viewModel.composer::setText,
+        complete = viewModel.composer::complete,
+        send = viewModel::send,
+        onEditing = onEditing,
+        onEscape = onEscape
+    ),
+    memory = MemoryActions(
+        select = viewModel.memory::select,
+        edit = viewModel.memory::edit,
+        save = viewModel.memory::save,
+        close = viewModel.memory::close,
+        onEditing = onEditing
+    )
 )
 
 private fun listActions(viewModel: MainViewModel, panes: List<Pane>, show: (MainDialog) -> Unit) =
@@ -168,9 +229,36 @@ private fun listActions(viewModel: MainViewModel, panes: List<Pane>, show: (Main
         back = { viewModel.focusPane(Pane.SPACES) }.takeIf { Pane.SPACES !in panes }
     )
 
+/** 메인 화면이 가로채는 키. */
+private sealed interface Shortcut {
+    data object Search : Shortcut
+
+    data object Memory : Shortcut
+
+    data object CloseMemory : Shortcut
+
+    data class Nav(val key: NavKey) : Shortcut
+}
+
+/**
+ * 키 입력을 메인 화면 동작으로. [editing]이면 Cmd/Ctrl 단축키와 Esc만 받는다. 화면이 받지 않는
+ * 키는 null.
+ */
+private fun shortcut(event: KeyEvent, editing: Boolean, memoryOpen: Boolean): Shortcut? {
+    if (event.type != KeyEventType.KeyDown) return null
+    val command = event.isMetaPressed || event.isCtrlPressed
+    val plain = !command && !event.isAltPressed && !event.isShiftPressed
+    return when {
+        command && event.key == Key.K -> Shortcut.Search
+        event.key == Key.Escape && memoryOpen -> Shortcut.CloseMemory
+        editing && !command -> null
+        plain && event.key == Key.M -> Shortcut.Memory
+        else -> navKey(event)?.let(Shortcut::Nav)
+    }
+}
+
 /** 키 입력을 레이어 0 동작으로. 입력이 없는 키는 null. */
 private fun navKey(event: KeyEvent): NavKey? {
-    if (event.type != KeyEventType.KeyDown) return null
     if (event.isMetaPressed || event.isCtrlPressed) {
         return when (event.key) {
             Key.One -> NavKey.FOCUS_SPACES

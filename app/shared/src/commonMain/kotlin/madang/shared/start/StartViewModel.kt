@@ -50,6 +50,16 @@ class StartViewModel(
 
     fun retry() = start()
 
+    /** 앱 설정에 저장된 core 주소. 없으면 빈 문자열. */
+    fun configuredAddress(): String = deps.settings.load().coreUrl.orEmpty()
+
+    /** core 주소를 앱 설정에 저장하고 다시 찾는다. 비우면 자동으로 찾는다. */
+    fun retryWith(address: String) {
+        val settings = deps.settings.load()
+        deps.settings.save(settings.copy(coreUrl = address.trim().ifEmpty { null }))
+        start()
+    }
+
     private suspend fun connect() {
         val settings = deps.settings.load()
         val locator = CoreLocator(

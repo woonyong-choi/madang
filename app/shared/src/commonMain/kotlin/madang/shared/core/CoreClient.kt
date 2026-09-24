@@ -7,12 +7,15 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.util.reflect.typeInfo
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import madang.api.client.RunnersApi
 import madang.api.client.SystemApi
 import madang.api.infrastructure.HttpResponse
 import madang.api.model.ApiError
 import madang.api.model.Health
+import madang.api.model.Issue
 
 /**
  * madang-core 연결 하나.
@@ -58,13 +61,29 @@ class CoreClient(baseUrl: String = DEFAULT_BASE_URL, engine: HttpClientEngine? =
     }
 }
 
-/** core가 2xx가 아닌 응답을 돌려줬다. [error]는 본문이 `ApiError`일 때만 있다. */
-class CoreApiException(val status: Int, val error: ApiError?) :
-    RuntimeException(error?.let { "${it.error}: ${it.message}" } ?: "HTTP $status")
+/**
+ * core가 2xx가 아닌 응답을 돌려줬다. [error]는 본문이 `ApiError`일 때만 있다.
+ *
+ * [issues]는 검사 실패(400 `ValidationFailure`)일 때 core가 알려 준 위치별 문제다.
+ */
+class CoreApiException(
+    val status: Int,
+    val error: ApiError?,
+    val issues: List<Issue> = emptyList()
+) : RuntimeException(error?.let { "${it.error}: ${it.message}" } ?: "HTTP $status")
 
 /** 성공 응답이면 본문을, 아니면 [CoreApiException]을 던진다. */
 suspend fun <T : Any> HttpResponse<T>.bodyOrThrow(): T {
     if (success) return body()
-    val error = runCatching { typedBody<ApiError>(typeInfo<ApiError>()) }
-    throw CoreApiException(status, error.getOrNull())
+    val body = runCatching { typedBody<JsonObject>(typeInfo<JsonObject>()) }.getOrNull()
+    throw coreApiException(status, body)
+}
+
+private fun coreApiException(status: Int, body: JsonObject?): CoreApiException {
+    val json = CoreClient.CoreJson
+    val error = body?.let { runCatching { json.decodeFromJsonElement(ApiError.serializer(), it) } }
+    val issues = body?.get("issues")?.let {
+        runCatching { json.decodeFromJsonElement(ListSerializer(Issue.serializer()), it) }
+    }
+    return CoreApiException(status, error?.getOrNull(), issues?.getOrNull().orEmpty())
 }

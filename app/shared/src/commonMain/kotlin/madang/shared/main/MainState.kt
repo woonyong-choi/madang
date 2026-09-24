@@ -14,8 +14,46 @@ sealed interface EventLink {
     data class Retrying(val cause: String?, val retryIn: Duration) : EventLink
 }
 
-/** 3열에 열린 페이지. [contents]는 doc·data 블록 id별 파일 내용이다. */
-data class OpenPage(val detail: PageDetail, val contents: Map<String, String> = emptyMap())
+/**
+ * 보냈지만 core의 페이지에 아직 없는 사용자 메시지(낙관적 추가).
+ *
+ * @property localId 앱이 붙인 임시 key.
+ * @property messageId core가 저장한 메시지 블록 id. 응답을 받기 전에는 null.
+ */
+data class PendingMessage(val localId: String, val text: String, val messageId: String? = null)
+
+/**
+ * 3열에 열린 페이지.
+ *
+ * @property contents doc·data 블록 id별 파일 내용.
+ * @property pending 낙관적으로 붙인 메시지. core 페이지에 같은 블록이 생기면 빠진다.
+ * @property answered 답을 보낸 사람 결정 id. flow가 다시 돌거나 새 질문이 오면 지운다.
+ */
+data class OpenPage(
+    val detail: PageDetail,
+    val contents: Map<String, String> = emptyMap(),
+    val pending: List<PendingMessage> = emptyList(),
+    val answered: String? = null
+) {
+    /** 블록 흐름 끝에 아직 core에 없는 메시지를 붙인 것. */
+    val flowItems: List<FlowItem>
+        get() = pageFlow(detail) + unconfirmed().map { FlowItem.Pending(it) }
+
+    /** 새로 받은 페이지로 바꾼다. 페이지에 들어온 메시지는 낙관적 목록에서 뺀다. */
+    fun withDetail(next: PageDetail): OpenPage = copy(detail = next).pruned()
+
+    /** core가 메시지를 받았다. 이벤트로 이미 페이지에 들어왔으면 바로 뺀다. */
+    fun withAccepted(localId: String, messageId: String): OpenPage = copy(
+        pending = pending.map { if (it.localId == localId) it.copy(messageId = messageId) else it }
+    ).pruned()
+
+    private fun unconfirmed(): List<PendingMessage> {
+        val ids = detail.blocks.mapTo(mutableSetOf()) { it.id }
+        return pending.filter { it.messageId == null || it.messageId !in ids }
+    }
+
+    private fun pruned(): OpenPage = copy(pending = unconfirmed())
+}
 
 /**
  * 레이어 0 상태.
@@ -26,6 +64,7 @@ data class OpenPage(val detail: PageDetail, val contents: Map<String, String> = 
  * @property pane 키보드 포커스가 있는 열.
  * @property toggled 접힘 규칙과 반대로 둔 본문 항목의 key.
  * @property activeRuns 페이지 id별 진행 중인 run.
+ * @property unknownFilesOpen 열린 페이지의 미등록 파일 목록을 펼쳤다.
  */
 data class MainState(
     val baseUrl: String,
@@ -44,7 +83,8 @@ data class MainState(
     val pane: Pane = Pane.SPACES,
     val expandAll: Boolean = false,
     val toggled: Set<String> = emptySet(),
-    val activeRuns: Map<String, ActiveRun> = emptyMap()
+    val activeRuns: Map<String, ActiveRun> = emptyMap(),
+    val unknownFilesOpen: Boolean = false
 ) {
     val spaceRows: List<SpaceRow> get() = spaceRows(spaces, expandedSpaces, focusSpace)
 

@@ -74,10 +74,14 @@ class FakeCore(
 
             path == "/config/routes" && request.method == HttpMethod.Put -> saveRoutes(body)
 
-            else -> fixture?.handle(request.method.value, path, body)?.let { fixtureResponse(it) }
+            else -> fixture?.handle(request.method.value, path, body, query(request))
+                ?.let { fixtureResponse(it) }
                 ?: contractResponse(request.method.value, path)
         }
     }
+
+    private fun query(request: HttpRequestData): Map<String, String> =
+        request.url.parameters.names().associateWith { request.url.parameters[it].orEmpty() }
 
     private fun MockRequestHandleScope.fixtureResponse(
         response: FixtureResponse

@@ -1,18 +1,21 @@
 package madang.shared.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -21,6 +24,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,31 +33,61 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import madang.api.model.RunStreamEvent
 import madang.shared.main.ActiveRun
+import madang.shared.main.ComposerState
 import madang.shared.main.FlowItem
 import madang.shared.main.MainState
+import madang.shared.main.MemoryState
 import madang.shared.main.RunActivity
 import madang.shared.main.foldedKeys
 import madang.shared.main.isFoldable
-import madang.shared.main.pageFlow
 
 /** 3열 조작. */
 class PageActions(
     val toggleExpandAll: () -> Unit,
     val toggleFold: (String) -> Unit,
     val cancelRun: () -> Unit,
-    val back: (() -> Unit)?
+    val back: (() -> Unit)?,
+    val toggleMemory: () -> Unit,
+    val showUnknownFiles: () -> Unit,
+    val answer: (String) -> Unit,
+    val composer: ComposerActions,
+    val memory: MemoryActions
 )
 
-/** 3열: 제목과 상태, 미등록 파일 띠, 블록 흐름, 끝에 진행 중인 run 카드. */
+/**
+ * 3열: 제목과 상태, 미등록 파일 띠, 사람 결정 카드, 블록 흐름, 끝에 진행 중인 run 카드, 아래
+ * 입력창. 메모리 패널이 열리면 오른쪽에 붙는다.
+ */
 @Composable
-fun PageColumn(state: MainState, actions: PageActions, modifier: Modifier) {
+fun PageColumn(
+    state: MainState,
+    composer: ComposerState,
+    memory: MemoryState,
+    actions: PageActions,
+    modifier: Modifier
+) {
+    Row(modifier = modifier) {
+        PageBody(state, composer, actions, Modifier.weight(1f).fillMaxHeight())
+        if (memory.isOpen && state.page != null) {
+            VerticalDivider()
+            MemoryPanel(memory, actions.memory, Modifier.width(MEMORY_WIDTH).fillMaxHeight())
+        }
+    }
+}
+
+@Composable
+private fun PageBody(
+    state: MainState,
+    composer: ComposerState,
+    actions: PageActions,
+    modifier: Modifier
+) {
     val strings = LocalStrings.current.navigator
     val open = state.page
     Column(modifier = modifier) {
@@ -88,6 +122,9 @@ fun PageColumn(state: MainState, actions: PageActions, modifier: Modifier) {
             TextButton(onClick = actions.toggleExpandAll) {
                 Text(if (state.expandAll) strings.foldByRule else strings.expandAll)
             }
+            TextButton(onClick = actions.toggleMemory) {
+                Text(LocalStrings.current.page.memory)
+            }
         }
         if (page.tags.isNotEmpty()) {
             Text(
@@ -97,12 +134,21 @@ fun PageColumn(state: MainState, actions: PageActions, modifier: Modifier) {
                 modifier = Modifier.padding(start = 16.dp)
             )
         }
-        if (page.unknownFiles.isNotEmpty()) UnknownFilesBand(page.unknownFiles.size)
+        if (page.unknownFiles.isNotEmpty()) {
+            UnknownFilesBand(page.unknownFiles.size, actions.showUnknownFiles)
+        }
+        page.waiting?.let { waiting ->
+            val answered = waiting.decision?.id?.let { it == open.answered } == true
+            DecisionCard(waiting, answered, actions.answer)
+        }
         HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
-        val items = pageFlow(page)
+        val items = open.flowItems
         val folded = foldedKeys(items, state.expandAll, state.toggled)
         val run = state.activeRuns[page.id]
+        val listState = rememberLazyListState()
+        FollowNewItems(listState, page.id, items.size + if (run != null) 1 else 0)
         LazyColumn(
+            state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -115,27 +161,30 @@ fun PageColumn(state: MainState, actions: PageActions, modifier: Modifier) {
                         BlockItem(item.header, open.contents[item.header.id], isFolded, toggle)
 
                     is FlowItem.Run -> RunItem(item.record, isFolded, toggle)
+
+                    is FlowItem.Pending -> PendingMessageItem(item.message.text)
                 }
             }
             if (run != null) {
                 item(key = "active-run") { RunProgressCard(run, actions.cancelRun) }
             }
         }
+        HorizontalDivider()
+        ComposerBar(composer, actions.composer)
     }
 }
 
+/**
+ * 같은 페이지에서 항목이 늘면(보낸 메시지, run 카드) 끝으로 스크롤한다. 페이지를 새로 열 때는
+ * 문서처럼 처음부터 보인다.
+ */
 @Composable
-private fun UnknownFilesBand(count: Int) {
-    Text(
-        LocalStrings.current.navigator.unknownFiles(count),
-        style = MaterialTheme.typography.labelMedium,
-        color = Color(0xFF713F12),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .background(Color(0xFFFEF3C7), RoundedCornerShape(6.dp))
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    )
+private fun FollowNewItems(listState: LazyListState, page: String, count: Int) {
+    var seen by remember(page) { mutableStateOf(count) }
+    LaunchedEffect(page, count) {
+        if (count > seen) listState.animateScrollToItem(count - 1)
+        seen = count
+    }
 }
 
 /** 진행 중인 run: 도구/모델, 경과 시간, 마지막 이벤트 요약, 취소. */
@@ -202,3 +251,5 @@ private fun progressText(event: RunStreamEvent, strings: NavigatorStrings): Stri
 
         RunStreamEvent.Type.ERROR -> strings.runError(event.message.orEmpty())
     }
+
+private val MEMORY_WIDTH = 400.dp

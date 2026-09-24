@@ -3,9 +3,16 @@ package madang.desktop.fake
 import java.io.File
 import java.time.OffsetDateTime
 import java.time.temporal.ChronoUnit
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonElement
@@ -14,18 +21,42 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import madang.api.model.Block
+import madang.api.model.BlockHeader
 import madang.api.model.BlockType
+import madang.api.model.DecisionAnswer
+import madang.api.model.FlowWaitingData
+import madang.api.model.InputParts
+import madang.api.model.InputPreview
+import madang.api.model.Memory
+import madang.api.model.MemoryContent
+import madang.api.model.MemoryFile
+import madang.api.model.MemoryLayer
+import madang.api.model.MessageAccepted
+import madang.api.model.MessageCreate
 import madang.api.model.MessageRole
 import madang.api.model.PageCard
 import madang.api.model.PageCreate
 import madang.api.model.PageDetail
 import madang.api.model.PageStatus
 import madang.api.model.PageUpdate
+import madang.api.model.PendingDecision
+import madang.api.model.Question
+import madang.api.model.RunInput
+import madang.api.model.RunRecord
 import madang.api.model.RunRef
+import madang.api.model.RunResultStatus
+import madang.api.model.RunTrigger
+import madang.api.model.RunUsage
+import madang.api.model.RunVerify
 import madang.api.model.Space
 import madang.api.model.SpaceCreate
 import madang.api.model.SpaceSort
 import madang.api.model.SpaceUpdate
+import madang.api.model.TrashEntry
+import madang.api.model.TrashRestore
+import madang.api.model.UnknownFile
+import madang.api.model.UnknownFileAction
+import madang.api.model.ValidationFailure
 import madang.shared.core.CoreClient
 
 /** 가짜 core의 응답 하나. [body]가 null이면 본문이 없다. */
@@ -37,8 +68,12 @@ data class FixtureResponse(val status: Int, val body: String?)
  * 폴더 구성: `spaces.json`(Space 배열), `pages/<id>.json`(PageDetail),
  * `blocks/<페이지 id>/<블록 id>.<확장자>`(doc·data 내용), 선택 `events.jsonl`(연결되면 보낼 이벤트).
  * 카드와 공간의 페이지 수는 페이지에서 계산한다. 바꾸는 요청은 메모리에만 반영하고 이벤트를 낸다.
+ *
+ * 메시지를 받으면 run 하나를 흉내 낸다. [runStep]마다 `run.*` 이벤트를 내고, 끝나면 router·agent
+ * 메시지와 run 기록을 붙이고 미등록 파일 하나를 남긴다. 문장에 "결정"이 있으면 도중에
+ * `flow.waiting`으로 사람 결정을 묻고, 답을 받으면 마저 끝낸다.
  */
-class FixtureHome(private val dir: File) {
+class FixtureHome(private val dir: File, private val runStep: Duration = 600.milliseconds) {
 
     private val json = CoreClient.CoreJson
     private val lock = Any()
@@ -57,6 +92,11 @@ class FixtureHome(private val dir: File) {
     val initialEvents: List<String> = File(dir, "events.jsonl").takeIf { it.isFile }
         ?.readLines()?.filter { it.isNotBlank() }.orEmpty()
 
+    private val memory = FixtureMemory()
+    private val trash = FixtureTrash()
+    private val waitingRuns = mutableMapOf<String, FixtureRun>()
+    private val runScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     private val _events = MutableSharedFlow<String>(
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
@@ -65,10 +105,38 @@ class FixtureHome(private val dir: File) {
     /** 바꾸는 요청 뒤에 나는 이벤트. */
     val events: SharedFlow<String> = _events
 
-    /** [method] [path] 요청에 답한다. 픽스처가 모르는 경로면 null. */
-    fun handle(method: String, path: String, body: String?): FixtureResponse? = synchronized(lock) {
+    /** [method] [path] 요청에 답한다. [query]는 쿼리 파라미터. 픽스처가 모르는 경로면 null. */
+    fun handle(
+        method: String,
+        path: String,
+        body: String?,
+        query: Map<String, String> = emptyMap()
+    ): FixtureResponse? = synchronized(lock) {
         val parts = path.trim('/').split('/')
         when {
+            parts == listOf("trash") && method == "GET" ->
+                ok(json.encodeToString(ListSerializer(TrashEntry.serializer()), trash.entries()))
+
+            parts.size == 3 && parts[0] == "trash" && parts[2] == "restore" && method == "POST" ->
+                restore(parts[1])
+
+            parts.size == 3 && parts[0] == "pages" -> pageAction(
+                method,
+                parts[1],
+                parts[2],
+                body,
+                query
+            )
+
+            parts.size == 4 && parts[0] == "pages" && parts[2] == "memory" && method == "PUT" ->
+                saveMemory(parts[1], parts[3], body)
+
+            parts.size == 4 && parts[0] == "pages" && parts[2] == "unknown-files" &&
+                method == "POST" -> resolveUnknownFile(parts[1], decodeSegment(parts[3]), body)
+
+            parts.size == 5 && parts[0] == "pages" && parts[2] == "decisions" &&
+                parts[4] == "answer" && method == "POST" -> answer(parts[1], parts[3], body)
+
             parts == listOf("spaces") && method == "GET" -> ok(spacesJson())
 
             parts == listOf(
@@ -199,6 +267,7 @@ class FixtureHome(private val dir: File) {
 
             "DELETE" -> {
                 pages.remove(id)
+                trash.add(page, now())
                 emit("page.deleted", page.space, id, buildJsonObject { put("id", id) })
                 FixtureResponse(204, null)
             }
@@ -228,6 +297,300 @@ class FixtureHome(private val dir: File) {
         }
         emit("run.failed", page.space, pageId, data, run)
         return FixtureResponse(202, null)
+    }
+
+    private fun pageAction(
+        method: String,
+        id: String,
+        action: String,
+        body: String?,
+        query: Map<String, String>
+    ): FixtureResponse? {
+        val page = pages[id] ?: return notFound("page $id")
+        return when {
+            action == "messages" && method == "POST" ->
+                sendMessage(page, decode(body, MessageCreate.serializer()).text)
+
+            action == "preview-input" && method == "GET" ->
+                ok(json.encodeToString(InputPreview.serializer(), preview(page, query["text"])))
+
+            action == "memory" && method == "GET" -> ok(
+                json.encodeToString(Memory.serializer(), memoryOf(page))
+            )
+
+            action == "unknown-files" && method == "GET" -> ok(unknownFilesJson(page))
+
+            else -> null
+        }
+    }
+
+    /** 사용자 메시지를 붙이고 run을 흉내 내기 시작한다. */
+    private fun sendMessage(page: PageDetail, text: String): FixtureResponse {
+        if (page.waiting != null) return error(409, "conflict", "page is waiting for a decision")
+        val message = BlockHeader(
+            id = nextBlockId(page),
+            type = BlockType.MESSAGE,
+            role = MessageRole.USER,
+            ts = now(),
+            text = text
+        )
+        val changed = page.copy(blocks = page.blocks + message, updated = now())
+        pages[page.id] = changed
+        emitBlock(changed, message.id)
+        val run = FixtureRun(page.id, page.runs.size + 1, message.id, text)
+        runScope.launch { play(run) }
+        val accepted = json.encodeToString(
+            MessageAccepted.serializer(),
+            MessageAccepted(message.id)
+        )
+        return FixtureResponse(202, accepted)
+    }
+
+    private suspend fun play(run: FixtureRun) {
+        val route = routeFor(run.text)
+        step(run, "run.started") {
+            buildJsonObject {
+                put("runner", route.runner)
+                put("model", route.model)
+                put("kind", route.kind)
+                put("tier", 1)
+                put("trigger", buildJsonObject { put("message", run.message) })
+            }
+        }
+        step(run, "run.assembled") { page ->
+            val input = preview(page, run.text)
+            buildJsonObject {
+                put("parts", json.encodeToJsonElement(InputParts.serializer(), input.parts))
+                put("total_est", input.totalEst)
+            }
+        }
+        step(run, "run.progress") {
+            buildJsonObject {
+                put("type", "tool_call")
+                put("name", "apply_patch")
+                put("summary", "blocks/scratch-${run.n}.txt")
+            }
+        }
+        if (DECISION_WORD in run.text) ask(run) else finishAfterStep(run)
+    }
+
+    /** [runStep]만큼 기다린 뒤 페이지가 남아 있으면 이벤트 하나를 낸다. */
+    private suspend fun step(run: FixtureRun, type: String, data: (PageDetail) -> JsonElement) {
+        delay(runStep)
+        synchronized(lock) {
+            val page = pages[run.page] ?: return
+            emit(type, page.space, page.id, data(page), run.n)
+        }
+    }
+
+    private suspend fun ask(run: FixtureRun) {
+        delay(runStep)
+        synchronized(lock) {
+            val page = pages[run.page] ?: return
+            val waiting = FlowWaitingData(
+                decision = PendingDecision(
+                    id = "q${run.n}",
+                    run = run.n,
+                    question = Question(
+                        kind = Question.Kind.CHOICE,
+                        prompt = "state.md 보정에 실패했습니다. 어떻게 할까요?",
+                        options = listOf("retry", "next_tier", "stop")
+                    )
+                )
+            )
+            pages[page.id] = page.copy(waiting = waiting)
+            waitingRuns[page.id] = run
+            emit(
+                "flow.waiting",
+                page.space,
+                page.id,
+                json.encodeToJsonElement(FlowWaitingData.serializer(), waiting),
+                run.n
+            )
+        }
+    }
+
+    private fun answer(pageId: String, decision: String, body: String?): FixtureResponse {
+        val page = pages[pageId] ?: return notFound("page $pageId")
+        if (page.waiting?.decision?.id != decision) return error(409, "conflict", "not waiting")
+        decode(body, DecisionAnswer.serializer())
+        pages[pageId] = page.copy(waiting = null)
+        waitingRuns.remove(pageId)?.let { run -> runScope.launch { finishAfterStep(run) } }
+        return FixtureResponse(202, null)
+    }
+
+    private suspend fun finishAfterStep(run: FixtureRun) {
+        delay(runStep)
+        synchronized(lock) { finish(run) }
+    }
+
+    /** run을 끝낸다: router·agent 메시지, run 기록, 미등록 파일 하나. */
+    private fun finish(run: FixtureRun) {
+        val page = pages[run.page] ?: return
+        val route = routeFor(run.text)
+        val input = preview(page, run.text)
+        val router = BlockHeader(
+            id = nextBlockId(page),
+            type = BlockType.MESSAGE,
+            role = MessageRole.ROUTER,
+            ts = now(),
+            run = run.n,
+            text = "kind=${route.kind} conf=1.00 → ${route.runner}/${route.model}"
+        )
+        val agent = router.copy(
+            id = nextBlockId(page, offset = 1),
+            role = MessageRole.AGENT,
+            text = "요청을 반영했습니다. 확인할 파일: blocks/scratch-${run.n}.txt"
+        )
+        val scratch = "blocks/scratch-${run.n}.txt"
+        val record = RunRecord(
+            n = run.n,
+            started = now(),
+            finished = now(),
+            trigger = RunTrigger(message = run.message),
+            kind = route.kind,
+            tier = 1,
+            runner = route.runner,
+            model = route.model,
+            input = RunInput(input.parts, input.totalEst),
+            usage = RunUsage(input = input.totalEst, cached = 0, output = OUTPUT_TOKENS),
+            changedFiles = listOf("state.md"),
+            unknownFiles = listOf(scratch),
+            verify = RunVerify(),
+            resultStatus = RunResultStatus.REVIEW
+        )
+        val finished = page.copy(
+            blocks = page.blocks + router + agent,
+            runs = page.runs + record,
+            unknownFiles = page.unknownFiles + UnknownFile(scratch, run.n),
+            status = PageStatus.REVIEW,
+            updated = now()
+        )
+        pages[page.id] = finished
+        emitBlock(finished, router.id, run.n)
+        emitBlock(finished, agent.id, run.n)
+        emit(
+            "run.finished",
+            page.space,
+            page.id,
+            json.encodeToJsonElement(RunRecord.serializer(), record),
+            run.n
+        )
+        emit(
+            "page.unknown_files",
+            page.space,
+            page.id,
+            buildJsonObject {
+                put("files", json.parseToJsonElement(unknownFilesJson(finished)))
+            },
+            run.n
+        )
+        emitPage("page.updated", finished)
+    }
+
+    private fun preview(page: PageDetail, text: String?): InputPreview {
+        val route = routeFor(text.orEmpty())
+        val memory = memoryOf(page)
+        val parts = InputParts(
+            systemEst = SYSTEM_TOKENS,
+            root = memory.root.tokens,
+            space = memory.space.tokens,
+            state = memory.state.tokens,
+            contract = CONTRACT_TOKENS,
+            target = 0,
+            request = FixtureMemory.tokens(text.orEmpty())
+        )
+        val total = parts.systemEst + parts.root + parts.space + parts.state + parts.contract +
+            parts.target + parts.request
+        return InputPreview(
+            kind = route.kind,
+            tier = 1,
+            runner = route.runner,
+            model = route.model,
+            parts = parts,
+            totalEst = total,
+            effort = "high"
+        )
+    }
+
+    private fun memoryOf(page: PageDetail): Memory {
+        val title = spaces.firstOrNull { it.slug == page.space }?.title ?: page.space
+        return Memory(memory.root(), memory.space(page.space, title), memory.state(page))
+    }
+
+    private fun saveMemory(pageId: String, layerName: String, body: String?): FixtureResponse {
+        val page = pages[pageId] ?: return notFound("page $pageId")
+        val layer = MemoryLayer.entries.firstOrNull { it.value == layerName }
+            ?: return notFound("layer $layerName")
+        val content = decode(body, MemoryContent.serializer()).content
+        val issues = memory.save(page, layer, content)
+        if (issues.isNotEmpty()) {
+            val failure = ValidationFailure(
+                error = ValidationFailure.Error.INVALID,
+                message = "${layer.value}.md failed validation",
+                issues = issues
+            )
+            return FixtureResponse(
+                400,
+                json.encodeToString(ValidationFailure.serializer(), failure)
+            )
+        }
+        val saved = when (layer) {
+            MemoryLayer.ROOT -> memoryOf(page).root
+            MemoryLayer.SPACE -> memoryOf(page).space
+            MemoryLayer.STATE -> memoryOf(page).state
+        }
+        emit(
+            "memory.updated",
+            page.space,
+            page.id,
+            buildJsonObject {
+                put("layer", layer.value)
+                put("tokens", saved.tokens)
+            }
+        )
+        return ok(json.encodeToString(MemoryFile.serializer(), saved))
+    }
+
+    private fun resolveUnknownFile(pageId: String, path: String, body: String?): FixtureResponse {
+        val page = pages[pageId] ?: return notFound("page $pageId")
+        if (page.unknownFiles.none { it.path == path }) return notFound("unknown file $path")
+        decode(body, UnknownFileAction.serializer())
+        val changed = page.copy(unknownFiles = page.unknownFiles.filter { it.path != path })
+        pages[pageId] = changed
+        return ok(unknownFilesJson(changed))
+    }
+
+    private fun restore(commit: String): FixtureResponse {
+        val page = trash.restore(commit) ?: return notFound("commit $commit")
+        if (page.id in pages) return error(409, "conflict", "page ${page.id} exists")
+        pages[page.id] = page
+        emitPage("page.created", page)
+        val restored = TrashRestore(trash.nextCommit(), listOf(FixtureTrash.pagePath(page)))
+        return ok(json.encodeToString(TrashRestore.serializer(), restored))
+    }
+
+    private fun unknownFilesJson(page: PageDetail): String =
+        json.encodeToString(ListSerializer(UnknownFile.serializer()), page.unknownFiles)
+
+    /** 다음 블록 id. `b07` 꼴이고 [offset]만큼 건너뛴다. */
+    private fun nextBlockId(page: PageDetail, offset: Int = 0): String {
+        val last = page.blocks.mapNotNull { it.id.removePrefix("b").toIntOrNull() }.maxOrNull() ?: 0
+        return "b" + (last + 1 + offset).toString().padStart(2, '0')
+    }
+
+    private fun emitBlock(page: PageDetail, blockId: String, run: Int? = null) {
+        val header = page.blocks.first { it.id == blockId }
+        emit(
+            "block.added",
+            page.space,
+            page.id,
+            buildJsonObject {
+                put("block", json.encodeToJsonElement(BlockHeader.serializer(), header))
+            },
+            run,
+            block = blockId
+        )
     }
 
     private fun spacesJson(): String =
@@ -276,7 +639,8 @@ class FixtureHome(private val dir: File) {
         space: String,
         page: String?,
         data: JsonElement,
-        run: Int? = null
+        run: Int? = null,
+        block: String? = null
     ) {
         val event = buildJsonObject {
             put("type", type)
@@ -284,6 +648,7 @@ class FixtureHome(private val dir: File) {
             put("space", space)
             page?.let { put("page", it) }
             run?.let { put("run", JsonPrimitive(it)) }
+            block?.let { put("block", it) }
             put("data", data)
         }
         _events.tryEmit(event.toString())
@@ -307,6 +672,38 @@ class FixtureHome(private val dir: File) {
         json.decodeFromString(serializer, file.readText())
 
     private fun now(): String = OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString()
+
+    /** 흉내 내는 run 하나. [message]는 run을 일으킨 메시지 블록이다. */
+    private data class FixtureRun(
+        val page: String,
+        val n: Int,
+        val message: String,
+        val text: String
+    )
+
+    private data class Route(val kind: String, val runner: String, val model: String)
+
+    private companion object {
+        const val DECISION_WORD = "결정"
+        const val SYSTEM_TOKENS = 24600
+        const val CONTRACT_TOKENS = 420
+        const val OUTPUT_TOKENS = 640
+
+        val ROUTES = mapOf(
+            "design" to Route("design", "claude", "claude-opus-5-5"),
+            "build" to Route("build", "codex", "gpt-6-sol"),
+            "small" to Route("small", "codex", "gpt-6-luna"),
+            "review" to Route("review", "claude", "claude-opus-5-5"),
+            "explore" to Route("explore", "codex", "gpt-6-luna")
+        )
+
+        /** `design:` 같은 접두어가 있으면 그 종류, 없으면 build. */
+        fun routeFor(text: String): Route = ROUTES[text.substringBefore(':', "").trim().lowercase()]
+            ?: checkNotNull(ROUTES["build"])
+
+        fun decodeSegment(segment: String): String =
+            java.net.URLDecoder.decode(segment.replace("+", "%2B"), Charsets.UTF_8)
+    }
 }
 
 /** 페이지로 목록 카드를 만든다. 미리보기는 router가 아닌 마지막 메시지의 첫 줄이다. */

@@ -6,24 +6,37 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import madang.api.client.BlocksApi
+import madang.api.client.DecisionsApi
+import madang.api.client.MemoryApi
+import madang.api.client.MessagesApi
 import madang.api.client.PagesApi
 import madang.api.client.RunsApi
 import madang.api.client.SpacesApi
+import madang.api.client.TrashApi
 import madang.api.model.BlockAddedEvent
 import madang.api.model.BlockDeletedEvent
 import madang.api.model.BlockType
 import madang.api.model.BlockUpdatedEvent
+import madang.api.model.DecisionAnswer
+import madang.api.model.FlowWaitingData
+import madang.api.model.FlowWaitingEvent
+import madang.api.model.MemoryUpdatedEvent
+import madang.api.model.MessageCreate
 import madang.api.model.PageCard
 import madang.api.model.PageCreate
 import madang.api.model.PageCreatedEvent
 import madang.api.model.PageDeletedEvent
+import madang.api.model.PageUnknownFilesEvent
 import madang.api.model.PageUpdate
 import madang.api.model.PageUpdatedEvent
 import madang.api.model.RunFailedEvent
 import madang.api.model.RunFinishedEvent
+import madang.api.model.RunStartedEvent
 import madang.api.model.Space
 import madang.api.model.SpaceCreate
 import madang.api.model.SpaceCreatedEvent
@@ -31,17 +44,23 @@ import madang.api.model.SpaceDeletedEvent
 import madang.api.model.SpaceSort
 import madang.api.model.SpaceUpdate
 import madang.api.model.SpaceUpdatedEvent
+import madang.api.model.UnknownFile
+import madang.api.model.UnknownFileAction
 import madang.shared.core.CoreClient
 import madang.shared.core.CoreEvent
 import madang.shared.core.EventStream
 import madang.shared.core.EventStreamItem
 import madang.shared.core.bodyOrThrow
+import madang.shared.core.resolveUnknownFile
 
 /**
  * 레이어 0(공간 / 페이지 목록 / 페이지 본문).
  *
  * 연결이 열릴 때마다 공간과 모든 페이지 카드를 다시 받고, 이후에는 이벤트로 고친다.
- * 사용자 조작은 core에 요청하고 core의 응답(수정된 공간·카드)으로 상태를 고친다.
+ * 사용자 조작은 core에 요청하고 core의 응답(수정된 공간·카드)으로 상태를 고친다. 응답과 같은
+ * 내용의 이벤트가 다시 와도 id로 덮어쓰므로 결과가 같다. 낙관적 갱신은 보낸 메시지뿐이다.
+ *
+ * 입력창([composer]), 메모리 패널([memory]), 최근 삭제([trash])는 열린 페이지를 따라간다.
  *
  * @param newPageTitle 새 페이지의 처음 제목.
  */
@@ -59,9 +78,19 @@ class MainViewModel(
     private val pagesApi = core.api(::PagesApi)
     private val blocksApi = core.api(::BlocksApi)
     private val runsApi = core.api(::RunsApi)
+    private val messagesApi = core.api(::MessagesApi)
+    private val decisionsApi = core.api(::DecisionsApi)
+    private var pendingCount = 0
+
+    val composer = ComposerViewModel(messagesApi, scope)
+    val memory = MemoryViewModel(core.api(::MemoryApi), scope)
+    val trash = TrashViewModel(core.api(::TrashApi), scope, onRestored = ::reloadAll)
 
     init {
         scope.launch { events.items().collect(::onItem) }
+        scope.launch {
+            state.map { it.page?.detail?.id }.distinctUntilChanged().collect(::onOpenPageChanged)
+        }
     }
 
     fun onKey(key: NavKey) {
@@ -188,6 +217,75 @@ class MainViewModel(
         request { runsApi.cancelRun(run.page, run.n).bodyOrThrow() }
     }
 
+    /** 입력창의 문장을 열린 페이지에 보낸다. 메시지는 core 응답 전에 본문 끝에 붙인다. */
+    fun send() {
+        val page = _state.value.page?.detail?.id ?: return
+        val text = composer.take() ?: return
+        val pending = PendingMessage("pending-${++pendingCount}", text)
+        updateOpen(page) { it.copy(pending = it.pending + pending) }
+        scope.launch {
+            try {
+                val accepted = messagesApi.sendMessage(page, MessageCreate(text)).bodyOrThrow()
+                updateOpen(page) { it.withAccepted(pending.localId, accepted.message) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateOpen(page) { open ->
+                    open.copy(pending = open.pending.filter { it.localId != pending.localId })
+                }
+                composer.restore(page, text)
+                showError(e)
+            }
+        }
+    }
+
+    /** 메모리 패널을 열거나 닫는다(M). 열린 페이지가 없으면 무시한다. */
+    fun toggleMemory() {
+        val page = _state.value.page?.detail?.id ?: return
+        if (memory.state.value.isOpen) memory.close() else memory.open(page)
+    }
+
+    fun showUnknownFiles(show: Boolean) = _state.update {
+        it.copy(unknownFilesOpen = show && !it.page?.detail?.unknownFiles.isNullOrEmpty())
+    }
+
+    /** 미등록 파일 하나를 산출물로 등록·유지·삭제한다. 남은 목록은 core 응답으로 바꾼다. */
+    fun resolveUnknownFile(path: String, action: UnknownFileAction.Action) {
+        val page = _state.value.page?.detail?.id ?: return
+        request {
+            setUnknownFiles(page, core.resolveUnknownFile(page, path, UnknownFileAction(action)))
+        }
+    }
+
+    /** 열린 페이지가 기다리는 사람 결정에 답한다. flow가 다시 돌면 카드가 사라진다. */
+    fun answer(choice: String) {
+        val open = _state.value.page ?: return
+        val decision = open.detail.waiting?.decision ?: return
+        if (open.answered == decision.id) return
+        val page = open.detail.id
+        updateOpen(page) { it.copy(answered = decision.id) }
+        scope.launch {
+            try {
+                decisionsApi.answerDecision(page, decision.id, DecisionAnswer(choice))
+                    .bodyOrThrow()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateOpen(page) {
+                    if (it.answered == decision.id) it.copy(answered = null) else it
+                }
+                showError(e)
+            }
+        }
+    }
+
+    private fun onOpenPageChanged(page: String?) {
+        composer.setPage(page)
+        _state.update { it.copy(unknownFilesOpen = false) }
+        if (!memory.state.value.isOpen) return
+        if (page == null) memory.close() else memory.open(page)
+    }
+
     private fun onItem(item: EventStreamItem) {
         when (item) {
             is EventStreamItem.Resync -> {
@@ -224,6 +322,14 @@ class MainViewModel(
 
             is BlockAddedEvent, is BlockUpdatedEvent, is BlockDeletedEvent,
             is RunFinishedEvent, is RunFailedEvent -> refreshIfOpen(event.envelope.page)
+
+            is RunStartedEvent -> setWaiting(payload.page, null)
+
+            is PageUnknownFilesEvent -> setUnknownFiles(payload.page, payload.data.files)
+
+            is FlowWaitingEvent -> setWaiting(payload.page, payload.data)
+
+            is MemoryUpdatedEvent -> memory.onUpdated(payload.page, payload.data.layer)
         }
     }
 
@@ -243,9 +349,9 @@ class MainViewModel(
         val detail = pagesApi.getPage(id).bodyOrThrow()
         if (_state.value.selectedPage != id) return@request
         _state.update { state ->
-            val kept = state.page?.takeIf { it.detail.id == id }?.contents.orEmpty()
-            val toggled = if (state.page?.detail?.id == id) state.toggled else emptySet()
-            state.copy(page = OpenPage(detail, kept), toggled = toggled)
+            val open = state.page?.takeIf { it.detail.id == id }
+            val toggled = if (open != null) state.toggled else emptySet()
+            state.copy(page = open?.withDetail(detail) ?: OpenPage(detail), toggled = toggled)
         }
         val contents = detail.blocks
             .filter { it.type == BlockType.DOC || it.type == BlockType.DATA }
@@ -254,6 +360,22 @@ class MainViewModel(
             val open = state.page?.takeIf { it.detail.id == id } ?: return@update state
             state.copy(page = open.copy(contents = contents))
         }
+    }
+
+    /** 열린 페이지가 [page]일 때만 고친다. */
+    private fun updateOpen(page: String?, change: (OpenPage) -> OpenPage) = _state.update { state ->
+        val open = state.page?.takeIf { it.detail.id == page } ?: return@update state
+        state.copy(page = change(open))
+    }
+
+    private fun setUnknownFiles(page: String, files: List<UnknownFile>) {
+        updateOpen(page) { it.copy(detail = it.detail.copy(unknownFiles = files)) }
+        if (files.isEmpty()) _state.update { it.copy(unknownFilesOpen = false) }
+    }
+
+    /** flow 대기 상태를 바꾼다. 새 질문이 오거나 flow가 다시 돌면 보낸 답 표시를 지운다. */
+    private fun setWaiting(page: String, waiting: FlowWaitingData?) = updateOpen(page) {
+        it.copy(detail = it.detail.copy(waiting = waiting), answered = null)
     }
 
     private fun updateSpace(slug: String, update: SpaceUpdate) = request {
@@ -301,8 +423,11 @@ class MainViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(loadError = e.message ?: e::class.simpleName) }
+                showError(e)
             }
         }
     }
+
+    private fun showError(e: Exception) =
+        _state.update { it.copy(loadError = e.message ?: e::class.simpleName) }
 }

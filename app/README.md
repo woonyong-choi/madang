@@ -36,14 +36,33 @@ app/
 | 왼쪽 · Backspace | 이전 열로(공간 열에서 왼쪽은 펼친 공간을 접거나 상위로) |
 | Cmd/Ctrl+1/2/3 | 공간 / 목록 / 본문 열 포커스 |
 | Cmd/Ctrl+N | 고른 공간에 새 페이지 |
+| Cmd/Ctrl+K | 페이지 검색(제목·마지막 메시지·#태그) |
+| M | 열린 페이지의 메모리 패널 열기·닫기 |
+| Esc | 메모리 패널 닫기, 입력창에서 나오기 |
 | 카드에 마우스 | 고정·태그·이동·삭제 빠른 동작 |
 | 카드를 공간·태그로 끌기 | 그 공간으로 이동, 그 태그 추가 |
-| 오른쪽 클릭 | 공간: 포커스·이름 변경·저장소 연결·삭제. 카드: 고정·태그·이동·삭제 |
+| 오른쪽 클릭 | 공간: 포커스·이름 변경·저장소 연결·최근 삭제·삭제. 카드: 고정·태그·이동·삭제 |
 
 목록은 고정된 페이지가 먼저이고, 공간별 정렬(갱신·생성·제목)을 따른다. 날짜순이면 오늘·어제·지난
 7일·지난 30일·월별로 묶는다. 필터는 상태와 태그로 건다. 본문의 router 메시지와 run 카드, 지난 대화의
 메시지는 한 줄로 접히며 클릭하거나 "모두 펼치기"로 펼친다. doc 블록은 Compose 마크다운으로 그리고,
 mermaid는 코드 블록으로 보인다.
+
+## 본문 아래 입력창과 페이지 도구
+
+- 입력창: Enter와 Cmd/Ctrl+Enter는 보내기, Shift+Enter는 줄바꿈. 첫 단어가 `de`처럼 종류 이름의
+  앞부분이면 `design:` 같은 접두어 후보가 뜨고 Tab이나 클릭으로 채운다. 입력을 멈추고 300ms 뒤
+  `GET /pages/{p}/preview-input`으로 다음 호출의 입력 토큰과 도구/모델을 받아 오른쪽에 보인다.
+- 보낸 메시지는 core 응답 전에 본문 끝에 흐리게 붙고, core 페이지에 같은 메시지 블록이 생기면
+  그 블록으로 바뀐다. 보내기에 실패하면 빠지고 입력창에 문장이 되돌아온다.
+- 메모리 패널(3열 위 "메모리" 또는 M): root / space / state를 고쳐 저장한다. core 검사기가 거부하면
+  문제 줄을 붉게 칠하고 그 줄 옆에 이유를, 줄이 없는 문제는 편집기 위에 보인다.
+- 미등록 파일: `page.unknown_files` 이벤트가 오면 제목 아래 노란 띠가 뜬다. 띠를 누르면 목록이
+  열리고 파일마다 산출물로 / 유지 / 삭제를 고른다.
+- 사람 결정: `flow.waiting` 이벤트가 오면 페이지 위에 질문과 선택지 카드가 뜬다. 고르면 답을 보내고
+  flow가 다시 돌면(`run.started`) 사라진다.
+- 최근 삭제: 공간 오른쪽 클릭 메뉴에서 연다. 지운 페이지·블록을 최신순으로 보고 복구한다.
+- 시작 화면에서 core에 연결하지 못하면 그 자리에서 core 주소를 고쳐 다시 연결할 수 있다.
 
 앱은 앱 홈 파일을 읽거나 쓰지 않는다(`core.port` 읽기만 예외). 앱이 쓰는 파일은 앱 설정
 `settings.json` 하나다(macOS `~/Library/Application Support/Madang`, Windows `%APPDATA%\Madang`,
@@ -91,8 +110,16 @@ MADANG_FAKE_CORE=1 MADANG_FAKE_HOME=1 ./gradlew :desktop:run   # 메인 화면�
 MADANG_FAKE_CORE=1 MADANG_FAKE_FIXTURE=src/test/resources/fixture-home ./gradlew :desktop:run
 ```
 
+픽스처 앱 홈은 메시지를 받으면 run 하나를 흉내 낸다. `run.*` 이벤트를 차례로 보내고, 끝나면
+router·agent 메시지와 run 기록을 붙이고 미등록 파일(`blocks/scratch-<n>.txt`) 하나를 남긴다.
+문장에 "결정"이 들어 있으면 도중에 `flow.waiting`으로 선택지를 묻고, 답하면 마저 끝낸다. 메모리
+저장은 state.md의 머리부 필수 키·status 값·필수 절·토큰 상한을 검사한다. 지운 페이지는 최근
+삭제에서 되살릴 수 있다.
+
 `./gradlew :desktop:test`는 이 픽스처로 메인 화면을 화면 밖에서 그려
 `desktop/build/screenshots/`에 `wide.png`(3열), `narrow.png`(2열), `page.png`(1열)를 남긴다.
+메시지를 보내 run 카드가 붙는 과정(`message-running.png`, `message-done.png`)과 사람 결정 카드·메모리
+검사 오류(`decision-memory.png`)도 남긴다.
 
 앱 홈 상태(`GET/POST /home`)와 라우팅 표(`GET/PUT /config/routes`)는 아직 계약 파일에 없다.
 `CoreSetupApi`가 이 경로를 쓰며, core가 `/home`을 모르면 앱 홈이 있다고 보고 메인으로 간다.

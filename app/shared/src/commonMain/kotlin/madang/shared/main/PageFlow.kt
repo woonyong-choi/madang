@@ -12,7 +12,7 @@ import madang.api.model.MessageRole
 import madang.api.model.PageDetail
 import madang.api.model.RunRecord
 
-/** 3열 본문의 한 항목. 블록 또는 run 기록. */
+/** 3열 본문의 한 항목. 블록, run 기록, 또는 보내는 중인 메시지. */
 sealed interface FlowItem {
     val key: String
 
@@ -22,6 +22,11 @@ sealed interface FlowItem {
 
     data class Run(val record: RunRecord) : FlowItem {
         override val key: String get() = "run-${record.n}"
+    }
+
+    /** 보냈지만 core 페이지에 아직 없는 사용자 메시지. */
+    data class Pending(val message: PendingMessage) : FlowItem {
+        override val key: String get() = message.localId
     }
 }
 
@@ -49,7 +54,8 @@ fun pageFlow(page: PageDetail): List<FlowItem> {
 fun foldedKeys(items: List<FlowItem>, expandAll: Boolean, toggled: Set<String>): Set<String> {
     if (expandAll) return emptySet()
     val lastUser = items.indexOfLast {
-        it is FlowItem.Block && it.header.isMessage(MessageRole.USER)
+        it is FlowItem.Pending ||
+            (it is FlowItem.Block && it.header.isMessage(MessageRole.USER))
     }
     return items.withIndex()
         .filter { (index, item) -> foldsByRule(item, index < lastUser) != (item.key in toggled) }
@@ -60,10 +66,13 @@ fun foldedKeys(items: List<FlowItem>, expandAll: Boolean, toggled: Set<String>):
 fun isFoldable(item: FlowItem): Boolean = when (item) {
     is FlowItem.Run -> true
     is FlowItem.Block -> item.header.type == BlockType.MESSAGE
+    is FlowItem.Pending -> false
 }
 
 private fun foldsByRule(item: FlowItem, old: Boolean): Boolean = when (item) {
     is FlowItem.Run -> true
+
+    is FlowItem.Pending -> false
 
     is FlowItem.Block -> when {
         item.header.type != BlockType.MESSAGE -> false

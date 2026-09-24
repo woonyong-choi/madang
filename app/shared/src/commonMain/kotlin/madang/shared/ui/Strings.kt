@@ -12,7 +12,6 @@ data class Strings(
     val waitingForStart: String,
     val connectFailed: String,
     val retry: String,
-    val openSettingsHint: String,
     val triedAddresses: String,
     val failureReason: (FailureReason?) -> String,
     val onboardingTitle: String,
@@ -55,7 +54,8 @@ data class Strings(
     val eventsConnecting: String,
     val eventsRetrying: String,
     val spaces: String,
-    val navigator: NavigatorStrings
+    val navigator: NavigatorStrings,
+    val page: PageStrings
 )
 
 val KoreanStrings = Strings(
@@ -65,7 +65,6 @@ val KoreanStrings = Strings(
     waitingForStart = "core가 준비되기를 기다리는 중",
     connectFailed = "core에 연결하지 못했습니다",
     retry = "다시 시도",
-    openSettingsHint = "core 주소나 실행 파일 경로는 앱 설정 파일에서 바꿀 수 있습니다.",
     triedAddresses = "확인한 주소",
     failureReason = {
         when (it) {
@@ -116,7 +115,8 @@ val KoreanStrings = Strings(
     eventsConnecting = "이벤트 연결 중",
     eventsRetrying = "이벤트 재연결 대기",
     spaces = "공간",
-    navigator = KoreanNavigatorStrings
+    navigator = KoreanNavigatorStrings,
+    page = KoreanPageStrings
 )
 
 val EnglishStrings = KoreanStrings.copy(
@@ -126,7 +126,6 @@ val EnglishStrings = KoreanStrings.copy(
     waitingForStart = "Waiting for core to be ready",
     connectFailed = "Could not connect to core",
     retry = "Retry",
-    openSettingsHint = "The core address and binary path live in the app settings file.",
     triedAddresses = "Addresses tried",
     failureReason = {
         when (it) {
@@ -177,7 +176,8 @@ val EnglishStrings = KoreanStrings.copy(
     eventsConnecting = "Connecting events",
     eventsRetrying = "Waiting to reconnect",
     spaces = "Spaces",
-    navigator = EnglishNavigatorStrings
+    navigator = EnglishNavigatorStrings,
+    page = EnglishPageStrings
 )
 
 fun stringsFor(language: Language): Strings = when (language) {

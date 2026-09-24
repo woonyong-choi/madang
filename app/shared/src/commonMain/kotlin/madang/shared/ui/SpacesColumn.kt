@@ -59,6 +59,7 @@ class SpacesActions(
     val rename: (SpaceRow) -> Unit,
     val linkRepo: (SpaceRow) -> Unit,
     val delete: (SpaceRow) -> Unit,
+    val openTrash: () -> Unit,
     val openSettings: () -> Unit
 )
 
@@ -146,6 +147,7 @@ private fun SpaceRowItem(
     actions: SpacesActions
 ) {
     val strings = LocalStrings.current.navigator
+    val trashLabel = LocalStrings.current.page.recentlyDeleted
     val slug = row.space.slug
     ContextMenuBox(
         actions = {
@@ -156,7 +158,8 @@ private fun SpaceRowItem(
                     MenuAction(strings.focus) { actions.focusOn(slug) }
                 },
                 MenuAction(strings.rename) { actions.rename(row) },
-                MenuAction(strings.linkRepo) { actions.linkRepo(row) }
+                MenuAction(strings.linkRepo) { actions.linkRepo(row) },
+                MenuAction(trashLabel, actions.openTrash)
             ) +
                 if (slug !=
                     ROOT_SPACE
