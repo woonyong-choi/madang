@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from madang import recorder
 from madang.cli_agent.context import AgentError, PageContext, guarded
 from madang.cli_agent.items import check_id, find_by_id, items_of
-from madang.store import pages
 from madang.store.page import LEDGER_FILE
 
 TASK_STATUSES = ("todo", "doing", "blocked", "review", "done")
@@ -63,4 +63,4 @@ def set_task(
         header["tasks"] = tasks
 
     with guarded(ctx, ctx.page_dir / LEDGER_FILE):
-        pages.update_state(ctx.page_dir, mutate)
+        recorder.update_ledger(ctx.page_dir, mutate)

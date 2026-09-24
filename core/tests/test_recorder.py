@@ -104,14 +104,29 @@ def test_run_keeps_raw_stream_and_separate_summary(
 
 
 def test_reads_are_written_to_ledger(
-    home: Path, page: Path, tmp_path: Path
+    home: Path, page: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    user = tmp_path / "user"
+    user.mkdir()
+    monkeypatch.setenv("HOME", str(user))
+    notes = user / "notes" / "todo.md"
     outside = tmp_path / "elsewhere.txt"
-    reads = [str(page / "ledger.md"), "src/app.py", "src/app.py", str(outside)]
+    reads = [
+        str(page / "ledger.md"),
+        "src/app.py",
+        "src/app.py",
+        str(notes),
+        str(outside),
+    ]
     run(page, home, FakeRunner(reads=reads))
 
     header = pages.read_header(page / "ledger.md")
-    assert header["reads"] == ["ledger.md", "repo:src/app.py", str(outside)]
+    assert header["reads"] == [
+        "ledger.md",
+        "repo:src/app.py",
+        "~/notes/todo.md",
+        outside.resolve().as_posix(),
+    ]
 
 
 def test_undo_restores_page_files(home: Path, page: Path) -> None:

@@ -194,8 +194,8 @@ def test_preview_input(client, home, project_root, page, contract) -> None:
     )
     assert plain["kind"] == "build" and plain["runner"] == "codex"
     assert plain["parts"]["target"] == 0
-    assert plain["parts"]["state"] > 0  # Ledger는 REST에서 state로 나간다
-    assert not {"profile", "brief", "ledger"} & set(plain["parts"])
+    assert plain["parts"]["ledger"] > 0
+    assert not {"root", "project", "state"} & set(plain["parts"])
     assert plain["total_est"] == sum(plain["parts"].values())
 
     forced = contract.check(

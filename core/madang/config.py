@@ -412,7 +412,19 @@ def load_project_config(root: Path) -> ProjectConfig:
     path = project_config_path(root)
     if not path.is_file():
         return ProjectConfig()
-    text = path.read_text(encoding="utf-8")
+    return parse_project_config(path, path.read_text(encoding="utf-8"))
+
+
+def parse_project_config(path: Path, text: str) -> ProjectConfig:
+    """프로젝트 ``config.yaml`` 텍스트를 검증해 설정으로 만든다.
+
+    Args:
+        path: 오류 메시지에 보일 파일 경로.
+        text: ``config.yaml`` 텍스트.
+
+    Raises:
+        ConfigError: 올바른 YAML이 아니거나 스키마와 맞지 않는 경우.
+    """
     return _validate(ProjectConfig, _mapping(path, text), path, text)
 
 

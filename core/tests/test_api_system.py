@@ -168,7 +168,7 @@ def test_only_local_clients_are_served(home) -> None:
         assert local.get("/health", headers=same).status_code == 200
         with local.websocket_connect(f"{WS}/events") as ws:
             client_hub = app.state.core.hub
-            client_hub.emit("memory.updated", {"layer": "root", "tokens": 1})
+            client_hub.emit("memory.updated", {"layer": "profile", "tokens": 1})
             assert ws.receive_json()["type"] == "memory.updated"
         with (
             pytest.raises(WebSocketDisconnect),

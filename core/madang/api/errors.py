@@ -18,6 +18,7 @@ CONFLICT = "conflict"
 INVALID = "invalid"
 BUSY = "busy"
 NO_REPO = "no_repo"
+DENIED = "denied"
 
 _CODES = {400: INVALID, 404: NOT_FOUND, 405: INVALID, 409: CONFLICT}
 
@@ -60,6 +61,11 @@ def not_found(message: str) -> HttpError:
 def conflict(message: str, error: str = CONFLICT) -> HttpError:
     """409 실패를 반환한다. ``error``는 ``conflict``, ``busy``, ``no_repo``."""
     return HttpError(409, error, message)
+
+
+def denied(reasons: Iterable[str]) -> HttpError:
+    """정책이 막은 부작용을 409 ``denied``로 반환한다."""
+    return HttpError(409, DENIED, "; ".join(reasons))
 
 
 def invalid(

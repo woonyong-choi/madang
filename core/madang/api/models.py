@@ -13,13 +13,15 @@ BlockType = Literal[
 ]
 MessageRole = Literal["user", "router", "agent"]
 TargetMode = Literal["view", "edit"]
-MemoryLayer = Literal["root", "project", "state"]
+MemoryLayer = Literal["profile", "brief", "ledger"]
 RunResultStatus = Literal[
     "planning", "doing", "blocked", "review", "done", "error", "cancelled"
 ]
 TaskStatus = Literal["todo", "doing", "blocked", "review", "done"]
 DecisionState = Literal["proposed", "confirmed", "superseded", "deferred"]
 ProjectSort = Literal["updated", "created", "title"]
+ViewerFollow = Literal["live", "pinned"]
+FileLens = Literal["all", "page", "changed"]
 COLOR = r"^#[0-9a-fA-F]{6}$"
 
 
@@ -288,9 +290,9 @@ class MemoryFile(_Out):
 class Memory(_Out):
     """세 층 메모리."""
 
-    root: MemoryFile
-    project: MemoryFile
-    state: MemoryFile
+    profile: MemoryFile
+    brief: MemoryFile
+    ledger: MemoryFile
 
 
 class MemoryContent(_Body):
@@ -319,9 +321,9 @@ class InputParts(_Out):
     """입력 부분별 추정 토큰."""
 
     system_est: int
-    root: int
-    project: int
-    state: int
+    profile: int
+    brief: int
+    ledger: int
     contract: int
     target: int
     request: int
@@ -441,7 +443,7 @@ class TaskUpdate(_Body):
     due: str | None = None
 
 
-class StateDecision(_Out):
+class LedgerDecision(_Out):
     """ledger.md 결정."""
 
     id: str
@@ -474,9 +476,11 @@ class ArtifactAdd(_Body):
 
 
 class RepoCommit(_Body):
-    """프로젝트 저장소 커밋 요청."""
+    """에이전트의 커밋 요청. 페이지에 워크트리가 있으면 그 안에 커밋한다."""
 
     message: str
+    page: str | None = None
+    in_run: bool = False
 
 
 class RepoCommitResult(_Out):
@@ -490,6 +494,282 @@ class RepoPushResult(_Out):
 
     branch: str
     remote: str | None = None
+
+
+class RepoPush(_Body):
+    """에이전트의 push 요청. 페이지에 워크트리가 있으면 그 브랜치를 보낸다."""
+
+    page: str | None = None
+
+
+# git
+
+
+class GitFile(_Out):
+    """바뀐 파일 하나."""
+
+    path: str
+    code: str
+
+
+class GitStatus(_Out):
+    """작업 트리 상태."""
+
+    repository: bool
+    folder: str
+    branch: str | None = None
+    head: str | None = None
+    files: list[GitFile]
+
+
+class GitDiff(_Out):
+    """통합 diff."""
+
+    text: str
+
+
+class GitStage(_Body):
+    """스테이징 요청."""
+
+    paths: list[str] | None = None
+
+
+class GitCommitCreate(_Body):
+    """git 탭의 커밋 요청."""
+
+    message: str
+    paths: list[str] | None = None
+
+
+class GitBranches(_Out):
+    """로컬 브랜치."""
+
+    current: str | None = None
+    branches: list[str]
+
+
+class GitWorktree(_Out):
+    """워크트리 하나."""
+
+    path: str
+    branch: str | None = None
+    head: str
+    main: bool
+    page: str | None = None
+
+
+class GitLogEntry(_Out):
+    """이력의 커밋 하나."""
+
+    hash: str
+    author: str
+    date: str
+    subject: str
+
+
+# 설정
+
+
+class ConfigDocument(_Body):
+    """설정 파일 원문."""
+
+    text: str
+
+
+# 되돌리기
+
+
+class UndoResult(_Out):
+    """실행 하나를 되돌린 결과."""
+
+    run: int
+    restored: list[str]
+    skipped: list[str]
+    reverted: list[str]
+    unpublished: list[int]
+
+
+# 게시
+
+
+class PublishedViewer(_Out):
+    """게시한 사이트에 담은 뷰어."""
+
+    name: str
+    pin: str
+
+
+class PublishRecord(_Out):
+    """게시 기록 하나."""
+
+    n: int
+    at: datetime
+    target: str
+    site: str
+    documents: list[str]
+    viewers: list[PublishedViewer]
+    branch: str | None = None
+    after_commit: str | None = None
+    pushed_to: str | None = None
+    undone: datetime | None = None
+    undo_commit: str | None = None
+
+
+class PublishStatus(_Out):
+    """프로젝트의 게시 설정과 마지막 게시."""
+
+    target: str | None = None
+    include: list[str]
+    auto_publish: bool
+    latest: PublishRecord | None = None
+
+
+class PublishOutcome(_Out):
+    """게시나 되감기 결과."""
+
+    target: str
+    changed: bool
+    site: str | None = None
+    documents: int
+    warnings: list[str]
+    push_error: str | None = None
+    record: PublishRecord | None = None
+
+
+# 실행 대상과 포트
+
+
+class ObservedPort(_Out):
+    """관찰한 열린 포트."""
+
+    port: int
+    host: str
+    pid: int
+    command: str | None = None
+    cwd: str | None = None
+    run: str | None = None
+
+
+class RunTarget(_Out):
+    """선언된 실행 대상."""
+
+    name: str
+    command: str
+    cwd: str
+    opens: str | None = None
+
+
+class RunTargetStatus(RunTarget):
+    """실행 대상과 지금 상태."""
+
+    running: bool
+    pid: int | None = None
+    ports: list[ObservedPort]
+
+
+class RunDeclare(_Body):
+    """실행 대상 선언 요청."""
+
+    name: str
+    command: str
+    cwd: str = "."
+    opens: str | None = None
+
+
+class PortDeclare(_Body):
+    """관찰한 포트를 실행 대상으로 선언하는 요청."""
+
+    name: str
+    command: str | None = None
+    cwd: str | None = None
+
+
+# 뷰어
+
+
+class ViewerStatus(_Out):
+    """뷰어 하나와 그 상태."""
+
+    name: str
+    source: str
+    follow: ViewerFollow
+    pinned: str | None = None
+    status: Literal["ok", "broken"]
+    scope: Literal["registry", "project"]
+    project: str | None = None
+    version: str | None = None
+
+
+class ViewerRegister(_Body):
+    """뷰어 등록 요청."""
+
+    source: str
+    follow: ViewerFollow = "live"
+
+
+# 사용량
+
+
+class UsageTotals(_Out):
+    """토큰 사용 합계."""
+
+    messages: int
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_creation_tokens: int
+
+
+class ModelUsage(UsageTotals):
+    """모델 하나의 사용 합계."""
+
+    model: str
+
+
+class DayUsage(UsageTotals):
+    """하루의 사용 합계."""
+
+    date: str
+
+
+class ToolUsage(UsageTotals):
+    """도구 하나의 사용 합계."""
+
+    tool: str
+    available: bool
+    sessions: int
+    models: list[ModelUsage]
+    days: list[DayUsage]
+
+
+class Usage(_Out):
+    """구독 도구의 사용 기록 요약."""
+
+    checked: datetime
+    since: str
+    tools: list[ToolUsage]
+
+
+# 파일 트리
+
+
+class FileEntry(_Out):
+    """파일 트리의 항목 하나."""
+
+    path: str
+    type: Literal["file", "dir"]
+    runs: list[str] | None = None
+    change: str | None = None
+
+
+class FileTree(_Out):
+    """렌즈로 거른 파일 트리."""
+
+    root: str
+    lens: FileLens
+    entries: list[FileEntry]
+    runs: list[str]
+    truncated: bool
 
 
 # 파일과 휴지통
@@ -581,6 +861,8 @@ class PendingDecision(_Out):
     id: str
     run: int | None = None
     question: Question
+    ask: str | None = None
+    reasons: list[str] | None = None
 
 
 class FlowWaitingData(_Out):

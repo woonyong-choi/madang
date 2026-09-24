@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from madang import recorder
 from madang.cli_agent.context import AgentError, PageContext, guarded
 from madang.cli_agent.items import items_of
-from madang.store import pages
 from madang.store.page import LEDGER_FILE
 
 REPO_PREFIX = "repo:"
@@ -85,4 +85,6 @@ def add_artifact(ctx: PageContext, raw: str) -> None:
     """
     entry = artifact_entry(ctx, raw)
     with guarded(ctx, ctx.page_dir / LEDGER_FILE):
-        pages.update_state(ctx.page_dir, lambda header: register(header, entry))
+        recorder.update_ledger(
+            ctx.page_dir, lambda header: register(header, entry)
+        )

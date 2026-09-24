@@ -1,4 +1,4 @@
-"""메시지와 실행 경로: 메시지, 실행 기록·이벤트·취소, 결정 답, 입력 추정."""
+"""메시지와 실행 경로: 메시지, 실행 기록·이벤트·취소·되돌리기, 답, 입력 추정."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ from typing import Annotated, Any
 
 from fastapi import Query, Response
 
-from madang.api import errors, models
+from madang import recorder
+from madang.api import errors, events, models
 from madang.api.routes import CoreDep, Router
 from madang.assemble import assemble
 from madang.deciders import Question, build_chain, target_kind
@@ -127,7 +128,63 @@ def _stream_events(
     return [event.to_dict() for event in found]
 
 
-# 결정
+@router.post(
+    "/pages/{page}/runs/{n}/undo", tags=["runs"], operation_id="undoRun"
+)
+def undo_run(page: str, n: int, core: CoreDep) -> models.UndoResult:
+    """실행 하나의 부작용(게시, 머지·커밋, 페이지 파일)을 역순으로 되감는다.
+
+    그 실행 뒤에 파일이 다시 바뀌었거나, 커밋이 이력에서 사라졌거나, 더
+    나중 게시가 있으면 아무것도 바꾸지 않고 409로 거부한다.
+    """
+    page_dir = core.page_dir(page)
+    _record(page_dir, n)
+    if core.flows.busy(page):
+        raise errors.conflict(
+            f"a flow is running on page '{page}'", errors.BUSY
+        )
+    project = core.project_of(page_dir)
+    with core.lock:
+        try:
+            result = recorder.undo(page_dir, n)
+        except recorder.UndoError as exc:
+            raise errors.conflict(str(exc)) from exc
+    for commit in result.reverted:
+        core.announce_git(project.id, project.root, "undo", commit=commit)
+    for number in result.unpublished:
+        core.hub.emit(
+            events.PUBLISH_DONE,
+            {"n": number, "undo": True},
+            project=project.id,
+            page=page,
+            run=n,
+        )
+    core.announce_page(page_dir, events.PAGE_UPDATED)
+    return models.UndoResult(
+        run=n,
+        restored=result.restored,
+        skipped=result.skipped,
+        reverted=result.reverted,
+        unpublished=result.unpublished,
+    )
+
+
+# 결정과 묻는 블록
+
+
+@router.post(
+    "/pages/{page}/asks/{id}/answer",
+    status_code=202,
+    tags=["decisions"],
+    operation_id="answerAsk",
+)
+def answer_ask(
+    page: str, id: str, body: models.DecisionAnswer, core: CoreDep
+) -> Response:
+    """page.md의 묻는 블록 ``id``에 답하고 멈춘 흐름을 이어 간다."""
+    page_dir = core.page_dir(page)
+    core.flows.answer_ask(page_dir, id, body.choice)
+    return Response(status_code=202)
 
 
 @router.post(

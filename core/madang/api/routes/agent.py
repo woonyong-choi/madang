@@ -1,20 +1,26 @@
 """에이전트 경로: madang CLI 명령이 부르는 ledger.md·프로젝트 저장소 변경.
 
 ledger.md를 고친 뒤에는 페이지를 검사하고, 실패하면 되돌린 뒤 400을
-돌려준다.
+돌려준다. 커밋과 push는 정책(``policy.deny``)을 지나 core ``git`` 모듈로
+한다.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from madang.api import errors, events, models
+from fastapi import Body
+
+from madang import git, recorder
+from madang.api import errors, events, models, workspace
 from madang.api.core import Core
 from madang.api.routes import CoreDep, Router
+from madang.api.routes.git import push_folder
 from madang.cli_agent import artifacts, decisions, tasks
 from madang.cli_agent import repo as coderepo
 from madang.cli_agent.context import AgentError, PageContext
+from madang.recorder.undo import COMMIT
 from madang.store import frontmatter, pages
 from madang.store.page import LEDGER_FILE
 
@@ -41,7 +47,7 @@ def _state_list(page_dir: Path, key: str) -> list[Any]:
     return list(items) if isinstance(items, list) else []
 
 
-@router.patch("/pages/{page}/state/tasks", operation_id="setTask")
+@router.patch("/pages/{page}/ledger/tasks", operation_id="setTask")
 def set_task(page: str, body: models.TaskUpdate, core: CoreDep) -> models.Task:
     """ledger.md에 작업을 추가하거나 갱신한다."""
     page_dir = core.page_dir(page)
@@ -68,13 +74,13 @@ def set_task(page: str, body: models.TaskUpdate, core: CoreDep) -> models.Task:
 
 
 @router.post(
-    "/pages/{page}/state/decisions",
+    "/pages/{page}/ledger/decisions",
     status_code=201,
     operation_id="recordDecision",
 )
 def record_decision(
     page: str, body: models.DecisionCreate, core: CoreDep
-) -> models.StateDecision:
+) -> models.LedgerDecision:
     """ledger.md에 결정을 기록한다."""
     page_dir = core.page_dir(page)
     with core.lock:
@@ -98,10 +104,10 @@ def record_decision(
         for d in _state_list(page_dir, "decisions")
         if isinstance(d, dict) and str(d.get("id")) == body.id
     )
-    return models.StateDecision.model_validate(decision)
+    return models.LedgerDecision.model_validate(decision)
 
 
-@router.post("/pages/{page}/state/artifacts", operation_id="addArtifact")
+@router.post("/pages/{page}/ledger/artifacts", operation_id="addArtifact")
 def add_artifact(
     page: str, body: models.ArtifactAdd, core: CoreDep
 ) -> list[str]:
@@ -119,33 +125,55 @@ def add_artifact(
 # 프로젝트 저장소
 
 
-def _require_repo(core: Core, project: str) -> Path:
-    core.config()
-    try:
-        return coderepo.require_repo(core.project(project).root)
-    except AgentError as exc:
-        raise errors.conflict(str(exc), errors.NO_REPO) from exc
-
-
 @router.post("/projects/{project}/repo/commit", operation_id="commitRepo")
 def commit_repo(
     project: str, body: models.RepoCommit, core: CoreDep
 ) -> models.RepoCommitResult:
-    """프로젝트 저장소의 모든 변경을 커밋한다."""
-    repo = _require_repo(core, project)
+    """에이전트가 일한 작업 트리의 모든 변경을 커밋한다.
+
+    ``page``에 워크트리가 있으면 그 워크트리(페이지 브랜치)에, 아니면
+    프로젝트 폴더에 커밋한다. 실행 안에서 온 요청이면 그 실행의 되돌리기
+    기록에 커밋을 남긴다.
+    """
+    core.config()
+    found = core.project(project)
+    page_dir = workspace.page_in(core, found, body.page)
+    repo = workspace.require_repo(workspace.work_folder(found, page_dir))
+    workspace.allow(found, "git commit")
+    before = _head(repo)
     try:
-        sha = coderepo.commit_all(repo, body.message)
-    except AgentError as exc:
+        short = coderepo.commit_all(repo, body.message)
+        sha = git.rev_parse(repo)
+    except (AgentError, git.GitError) as exc:
         raise errors.conflict(str(exc)) from exc
-    return models.RepoCommitResult(commit=sha)
+    run = (
+        core.active_run(page_dir, in_run=body.in_run)
+        if page_dir is not None
+        else None
+    )
+    if page_dir is not None and run is not None and before is not None:
+        with core.lock:
+            recorder.record_git(page_dir, run, COMMIT, repo, before, sha)
+    core.announce_git(found.id, repo, "commit", commit=sha)
+    return models.RepoCommitResult(commit=short)
 
 
 @router.post("/projects/{project}/repo/push", operation_id="pushRepo")
-def push_repo(project: str, core: CoreDep) -> models.RepoPushResult:
-    """프로젝트 저장소의 현재 브랜치를 강제 없이 push한다."""
-    repo = _require_repo(core, project)
+def push_repo(
+    project: str,
+    core: CoreDep,
+    body: Annotated[models.RepoPush, Body(default_factory=models.RepoPush)],
+) -> models.RepoPushResult:
+    """에이전트가 일한 작업 트리의 현재 브랜치를 정책을 지나 push한다."""
+    core.config()
+    found = core.project(project)
+    page_dir = workspace.page_in(core, found, body.page)
+    repo = workspace.require_repo(workspace.work_folder(found, page_dir))
+    return push_folder(core, found, repo)
+
+
+def _head(repo: Path) -> str | None:
     try:
-        remote, branch = coderepo.push_current(repo)
-    except AgentError as exc:
-        raise errors.conflict(str(exc)) from exc
-    return models.RepoPushResult(branch=branch, remote=remote)
+        return git.rev_parse(repo)
+    except git.GitError:
+        return None  # 아직 커밋이 없다

@@ -483,8 +483,8 @@ def test_commit_refusals(env: Env) -> None:
 def test_commit_refused_without_repo(env: Env) -> None:
     shutil.rmtree(env.repo / ".git")
     (env.page / "blocks" / "b01-x.md").write_text("x\n")
-    refused("commit", "-m", "x", match="git 저장소가 아니다")
-    refused("push", match="git 저장소가 아니다")
+    refused("commit", "-m", "x", match="is not a git repository")
+    refused("push", match="is not a git repository")
 
 
 # 푸시

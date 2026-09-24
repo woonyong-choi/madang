@@ -1,15 +1,62 @@
-"""파일 경로: 미등록 파일, 휴지통, 템플릿."""
+"""파일 경로: 파일 트리, 미등록 파일, 휴지통, 템플릿."""
 
 from __future__ import annotations
 
-from fastapi import Path as PathParam
+from typing import Annotated
 
-from madang.api import errors, events, models
+from fastapi import Path as PathParam
+from fastapi import Query
+
+from madang import config, git
+from madang import runs as targets
+from madang.api import errors, events, filetree, models, workspace
 from madang.api.routes import CoreDep, Router
 from madang.store import blocks, projects, templates, trash
 from madang.store import unknown_files as unknown
 
 router = Router()
+
+
+@router.get(
+    "/projects/{project}/files", tags=["files"], operation_id="listFiles"
+)
+def list_files(
+    project: str,
+    core: CoreDep,
+    lens: models.FileLens = "all",
+    page: Annotated[
+        str | None,
+        Query(description="이 페이지의 워크트리(있으면)와 기록을 쓴다."),
+    ] = None,
+) -> models.FileTree:
+    """작업 폴더의 파일 트리. 렌즈: 전체, 이 페이지, 변경됨."""
+    found = core.project(project)
+    page_dir = workspace.page_in(core, found, page)
+    folder = workspace.work_folder(found, page_dir)
+    changes: dict[str, str] | None = None
+    try:
+        if lens == "page":
+            if page_dir is None:
+                raise errors.invalid("lens 'page' needs a page")
+            files = filetree.page_files(page_dir, folder)
+        elif lens == "changed":
+            changes = filetree.changed_files(workspace.require_repo(folder))
+            files = sorted(changes)
+        else:
+            files = filetree.all_files(folder)
+        declared = targets.targets(found.root)
+    except git.GitError as exc:
+        raise errors.conflict(str(exc)) from exc
+    except (OSError, config.ConfigError) as exc:
+        raise errors.invalid(f"cannot list files: {exc}") from exc
+    entries, root_runs, truncated = filetree.tree(files, declared, changes)
+    return models.FileTree(
+        root=str(folder),
+        lens=lens,
+        entries=[models.FileEntry.model_validate(e) for e in entries],
+        runs=root_runs,
+        truncated=truncated,
+    )
 
 
 @router.get(

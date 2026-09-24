@@ -215,13 +215,11 @@ def _records(page_dir: Path) -> list[runs.RunRecord]:
     return found
 
 
-# 기록의 부분 이름(profile·brief·ledger) -> REST 계약의 부분 이름.
-API_PART_NAMES = {"profile": "root", "brief": "project", "ledger": "state"}
 INPUT_PARTS = (
     "system_est",
-    "root",
-    "project",
-    "state",
+    "profile",
+    "brief",
+    "ledger",
     "contract",
     "target",
     "request",
@@ -229,16 +227,13 @@ INPUT_PARTS = (
 
 
 def run_input(data: dict[str, Any] | None) -> dict[str, Any] | None:
-    """실행 입력 추정을 REST 부분 이름으로, 모든 부분이 있는 형태로 반환한다.
+    """실행 입력 추정을 모든 부분이 있는 형태로 반환한다.
 
     대상 블록이 없던 실행은 ``target``이 없으므로 0으로 채운다.
     """
     if not data:
         return None
-    parts = {
-        API_PART_NAMES.get(name, name): tokens
-        for name, tokens in (data.get("parts") or {}).items()
-    }
+    parts = dict(data.get("parts") or {})
     for name in INPUT_PARTS:
         parts.setdefault(name, 0)
     return {**data, "parts": parts, "total_est": data.get("total_est", 0)}

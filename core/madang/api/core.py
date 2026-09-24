@@ -1,4 +1,4 @@
-"""API 요청이 함께 쓰는 core 상태: 앱 홈, 이벤트, 흐름, 러너 확인.
+"""API 요청이 함께 쓰는 core 상태: 앱 홈, 이벤트, 흐름, 러너 확인, 실행 대상.
 
 core는 페이지 기록(``<project>/.madang/``)과 앱 홈 설정의 유일한
 작성자다. 요청의 쓰기는 ``lock`` 안에서 한다.
@@ -12,12 +12,17 @@ from pathlib import Path
 from typing import Any
 
 from madang import config
+from madang import runs as targets
 from madang.api import errors, events
 from madang.api.availability import Availability, Probe, probe_cli
+from madang.api.launch import relay_run_event
 from madang.graph.nodes import RunnerFactory
 from madang.runners import make_runner
 from madang.store import blocks, pages, projects, runs, summary
 from madang.store.home import LegacyHomeError, check_layout, is_initialized
+
+# 사용량 기록을 읽을 Claude Code 폴더.
+CLAUDE_DIR = "~/.claude"
 
 
 class Core:
@@ -29,6 +34,8 @@ class Core:
         lock: 페이지와 설정 쓰기를 차례로 하게 한다.
         make_runner: 러너 이름으로 러너를 만든다.
         availability: 러너 사용 가능 여부 캐시.
+        supervisor: core가 띄운 실행 대상 프로세스.
+        claude_dir: 사용량 기록을 읽을 Claude Code 폴더.
         port: 대기 중인 포트. ``serve``가 정한다.
     """
 
@@ -39,6 +46,7 @@ class Core:
         runners: RunnerFactory | None = None,
         probe: Probe = probe_cli,
         core_url: str | None = None,
+        claude_dir: Path | None = None,
     ) -> None:
         from madang.api.flows import Flows
 
@@ -55,6 +63,10 @@ class Core:
             ),
         )
         self.flows = Flows(self)
+        self.supervisor = targets.Supervisor(
+            lambda kind, payload: relay_run_event(self, kind, payload)
+        )
+        self.claude_dir = claude_dir or Path(CLAUDE_DIR).expanduser()
         self.port: int | None = None
 
     # 설정과 찾기
@@ -192,6 +204,23 @@ class Core:
             page=page_dir.name,
             block=header["id"],
             run=run if run is not None else header.get("run"),
+        )
+
+    def announce_git(
+        self, project: str, folder: Path, action: str, **data: Any
+    ) -> None:
+        """``git.changed``를 낸다.
+
+        Args:
+            project: 프로젝트 id.
+            folder: 바뀐 작업 트리.
+            action: 바꾼 동작(``commit``, ``push`` 등).
+            **data: 더 알릴 값(``commit`` 등).
+        """
+        self.hub.emit(
+            events.GIT_CHANGED,
+            {"folder": str(folder), "action": action, **data},
+            project=project,
         )
 
     def announce_memory(

@@ -14,7 +14,9 @@ from types import FrameType
 
 import uvicorn
 
+from madang import viewers
 from madang.api.app import create_app
+from madang.api.routes.viewers import announce_viewer
 
 LOOPBACK = "127.0.0.1"
 PORT_ATTEMPTS = 50
@@ -74,6 +76,14 @@ def serve(home: Path, port: int) -> None:
     core = app.state.core
     core.port = chosen
     core.write_port()
+    registry = viewers.Registry(core.home)
+    watcher = viewers.ViewerWatcher(
+        registry,
+        lambda name: announce_viewer(
+            core, name, registry.status(registry.get(name))
+        ),
+    )
+    watcher.start()
     log.info("madang core on http://%s:%d (home %s)", LOOPBACK, chosen, home)
     server = uvicorn.Server(uvicorn.Config(app, log_level="info"))
     # uvicorn은 멈춘 뒤 받은 신호를 원래 처리기로 다시 올린다. 기본 SIGTERM
@@ -85,6 +95,8 @@ def serve(home: Path, port: int) -> None:
         log.info("madang core stopped")
     finally:
         signal.signal(signal.SIGTERM, previous)
+        watcher.stop()
         core.flows.shutdown()
+        core.supervisor.stop_all()
         core.remove_port()
         sock.close()

@@ -25,9 +25,8 @@ from madang.store.page import LEDGER_FILE, project_root
 from madang.validate import count_tokens, validate_ledger
 
 router = Router()
-# REST 계약의 메모리 층 이름. root는 Profile, project는 Brief, state는
-# Ledger 파일이다.
-LAYERS = ("root", "project", "state")
+# 메모리 층: 앱 홈 profile.md, 프로젝트 brief.md, 페이지 ledger.md.
+LAYERS = ("profile", "brief", "ledger")
 PROFILE_LAYER, BRIEF_LAYER, LEDGER_LAYER = LAYERS
 
 
@@ -278,7 +277,7 @@ def _check_header(page_dir: Path, header: dict[str, Any]) -> None:
 def delete_block(page: str, block: str, core: CoreDep) -> Response:
     """블록 파일을 휴지통으로 옮기고 page.md 순서에서 뺀다.
 
-    메시지는 log.md에 기록으로 남기고 page.md 순서에서만 뺀다.
+    메시지는 page.md 본문에 기록으로 남기고 ``blocks`` 순서에서만 뺀다.
     """
     page_dir = core.page_dir(page)
     _block_or_404(page_dir, block)

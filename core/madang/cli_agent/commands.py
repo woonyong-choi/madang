@@ -46,9 +46,9 @@ madang 에이전트 명령($MADANG_PAGE 또는 --page <id>의 페이지에 작�
   madang artifact add <path>
       이 페이지가 만든 파일을 등록한다(blocks/... 또는 프로젝트 폴더의 파일).
   madang commit -m "message"
-      프로젝트 저장소의 모든 변경을 커밋한다.
+      작업 트리(코드 페이지면 그 워크트리)의 모든 변경을 커밋한다.
   madang push
-      프로젝트 저장소의 현재 브랜치를 푸시한다. 강제 푸시는 하지 않는다.
+      작업 트리의 현재 브랜치를 푸시한다. 강제 푸시는 하지 않는다.
   madang view create --template T --data bNN [--data slot=bNN]
       템플릿으로 데이터 블록을 보여 주는 뷰 블록을 만든다.
   madang runs add --name N --command C [--cwd DIR] [--opens URL]
@@ -233,16 +233,16 @@ def commit(
     page: PageOption = None,
     home: HomeOption = None,
 ) -> None:
-    """프로젝트 저장소의 모든 변경을 커밋한다."""
+    """작업 트리(코드 페이지면 그 워크트리)의 모든 변경을 커밋한다."""
 
     def act(core: CoreClient, from_env: bool) -> str:
-        return f"커밋했다: {core.commit(message)}"
+        return f"커밋했다: {core.commit(message, in_run=from_env)}"
 
     _run(page, home, act)
 
 
 def push(page: PageOption = None, home: HomeOption = None) -> None:
-    """프로젝트 저장소의 현재 브랜치를 푸시한다(강제 푸시 없음)."""
+    """작업 트리의 현재 브랜치를 푸시한다(강제 푸시 없음)."""
 
     def act(core: CoreClient, from_env: bool) -> str:
         pushed = core.push()

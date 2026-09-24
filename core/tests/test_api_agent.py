@@ -14,7 +14,7 @@ def test_tasks_decisions_and_artifacts(
     page,
     contract,
 ) -> None:
-    base = f"/pages/{page}/state"
+    base = f"/pages/{page}/ledger"
     task = contract.check(
         client.patch(
             f"{base}/tasks",

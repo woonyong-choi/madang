@@ -1,7 +1,6 @@
 import os
 import signal
 import socket
-import subprocess
 import sys
 import threading
 import time
@@ -9,11 +8,13 @@ from pathlib import Path
 
 import pytest
 import yaml
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from madang import config, runs
+from madang.api.app import create_app
 from madang.cli import app
-from madang.runs import pidfile
+from madang.cli_agent import client
 from madang.store import pages, projects
 from madang.store.home import init_home
 
@@ -219,10 +220,39 @@ def test_supervisor_refuses_unknown(project: Path) -> None:
         supervisor.stop(project, "nope")
 
 
-# 명령줄
+def test_declare_refuses_symlink_out_of_project(
+    project: Path, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (project / "link").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(runs.RunsError, match="inside the project"):
+        runs.declare(project, "x", "echo", cwd="link")
+    target = config.RunTarget(name="x", command="echo", cwd="link")
+    with pytest.raises(runs.RunsError, match="inside the project"):
+        runs.Process(target, project).start()
 
 
-def test_cli_add_and_list(home: Path, project: Path) -> None:
+# 명령줄(core API 경유)
+
+
+@pytest.fixture
+def core(home: Path, monkeypatch: pytest.MonkeyPatch):
+    """명령이 부를 core를 같은 프로세스에 띄운다."""
+    api = create_app(home)
+
+    def transport(method: str, path: str, payload):
+        response = http.request(method, path, json=payload)
+        body = response.json() if response.content else None
+        return response.status_code, body
+
+    with TestClient(api, base_url="http://127.0.0.1:7470") as http:
+        monkeypatch.setattr(client, "open_transport", lambda _home: transport)
+        yield api.state.core
+    api.state.core.supervisor.stop_all()
+
+
+def test_cli_add_and_list(core, project: Path) -> None:
     result = runner.invoke(
         app,
         [
@@ -244,12 +274,12 @@ def test_cli_add_and_list(home: Path, project: Path) -> None:
     result = runner.invoke(app, ["runs", "list", "--project", "site"])
     assert result.exit_code == 0, result.output
     assert result.output == (
-        "site\tpublic\tpython -m http.server\thttp://localhost:8000\n"
+        "site\tpublic\tpython -m http.server\thttp://localhost:8000\tstopped\n"
     )
 
 
 def test_cli_uses_page_project(
-    home: Path, project: Path, monkeypatch: pytest.MonkeyPatch
+    core, project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     page = pages.create_page(project / ".madang" / "pages", "build")
     monkeypatch.setenv("MADANG_PAGE", page.name)
@@ -260,7 +290,7 @@ def test_cli_uses_page_project(
     assert runs.find(project, "a").command == "echo a"
 
 
-def test_cli_refuses(home: Path, project: Path) -> None:
+def test_cli_refuses(core, project: Path) -> None:
     result = runner.invoke(app, ["runs", "list"])
     assert result.exit_code == 1
     assert "--project" in result.output
@@ -271,50 +301,35 @@ def test_cli_refuses(home: Path, project: Path) -> None:
     result = runner.invoke(app, ["runs", "start", "nope", "--project", "site"])
     assert result.exit_code == 1
     assert "not declared" in result.output
-    result = runner.invoke(app, ["runs", "stop", "nope", "--project", "site"])
+    runs.declare(project, "idle", "sleep 60")
+    result = runner.invoke(app, ["runs", "stop", "idle", "--project", "site"])
     assert result.exit_code == 1
     assert "not running" in result.output
 
 
-def test_cli_start_foreground(home: Path, project: Path) -> None:
-    runs.declare(project, "hi", "echo hello")
-    result = runner.invoke(app, ["runs", "start", "hi", "--project", "site"])
-    assert result.exit_code == 0, result.output
-    assert "hello" in result.output
-    assert pidfile.read(home, "site", "hi") is None
+def test_cli_start_is_checked_by_policy(core, project: Path) -> None:
+    runs.declare(project, "danger", "git push --force origin main")
+    result = runner.invoke(
+        app, ["runs", "start", "danger", "--project", "site"]
+    )
+    assert result.exit_code == 1
+    assert "push --force" in result.output
+    assert core.supervisor.running() == []
 
 
-def test_cli_start_opens_then_stop(home: Path, project: Path) -> None:
+def test_cli_start_opens_then_stop(core, project: Path) -> None:
     port = free_port()
     url = f"http://127.0.0.1:{port}/"
     runs.declare(project, "site", serve_command(port), opens=url)
-    env = {**os.environ, "MADANG_HOME": str(home)}
-    cli = [sys.executable, "-m", "madang.cli"]
-    started = subprocess.Popen(
-        [*cli, "runs", "start", "site", "--project", "site"],
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    try:
-        assert started.stderr is not None
-        told = [started.stderr.readline(), started.stderr.readline()]
-        stopped = subprocess.run(
-            [*cli, "runs", "stop", "site", "--project", "site"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        assert stopped.returncode == 0, stopped.stderr
-        _, rest = started.communicate(timeout=20)
-    finally:
-        if started.poll() is None:
-            started.kill()
-    assert told[0] == f"열기: {url}\n"
-    assert told[1].startswith(f"포트: 127.0.0.1:{port} (pid")
-    assert rest.startswith("종료: site")
-    assert pidfile.read(home, "site", "site") is None
+    result = runner.invoke(app, ["runs", "start", "site", "--project", "site"])
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("시작: site (pid ")
+    proc = core.supervisor.get(project, "site")
+    assert proc.wait_opens(timeout=20)
+    result = runner.invoke(app, ["runs", "list", "--project", "site"])
+    assert result.output.rstrip().endswith("running")
+    result = runner.invoke(app, ["runs", "stop", "site", "--project", "site"])
+    assert result.exit_code == 0, result.output
+    assert result.output == "정지: site\n"
+    assert not proc.running
     assert not runs.process.responds(url)

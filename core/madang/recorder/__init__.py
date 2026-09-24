@@ -13,6 +13,7 @@ from madang.recorder.ledger import (
     mark_route,
     set_reads,
     set_status,
+    update_ledger,
 )
 from madang.recorder.page import answer, ask, reply, request
 from madang.recorder.run import begin, save_run
@@ -42,4 +43,5 @@ __all__ = [
     "set_reads",
     "set_status",
     "undo",
+    "update_ledger",
 ]

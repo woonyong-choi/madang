@@ -1,6 +1,7 @@
-"""ledger.md 머리부 쓰기: 상태, 라우팅 표시, 산출물, 읽은 파일.
+"""ledger.md 머리부 쓰기: 상태, 라우팅 표시, 산출물, 읽은 파일, 결정·할 일.
 
-실행에 딸린 쓰기는 실행 번호를 받아 그 실행의 부작용으로 남긴다.
+ledger.md 머리부는 모두 이 모듈을 거쳐 쓴다. 실행에 딸린 쓰기는 실행
+번호를 받아 그 실행의 부작용으로 남긴다.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ def set_status(page_dir: Path, status: str, n: int | None = None) -> None:
         status: 새 상태.
         n: 이 변경을 부른 실행 번호. 없으면 None.
     """
-    _update(page_dir, lambda header: header.update(status=status), n)
+    update_ledger(page_dir, lambda header: header.update(status=status), n)
 
 
 def mark_route(
@@ -51,14 +52,15 @@ def mark_route(
         if owner is not None:
             header["owner"] = owner
 
-    _update(page_dir, mark, n)
+    update_ledger(page_dir, mark, n)
 
 
 def set_reads(page_dir: Path, n: int, paths: Sequence[str], cwd: Path) -> None:
     """실행 ``n``이 읽은 파일로 ledger.md ``reads``를 바꾼다.
 
-    ``artifacts``와 같은 규칙으로 적는다. 페이지 파일은 페이지 기준,
-    작업 폴더 파일은 ``repo:`` 접두, 그 밖은 받은 그대로다.
+    페이지 파일은 페이지 기준, 작업 폴더 파일은 ``repo:`` 접두 경로로
+    적는다. 그 밖의 파일은 사용자 홈 아래면 ``~/``로 줄이고, 아니면 절대
+    경로로 적는다.
 
     Args:
         page_dir: 페이지 폴더.
@@ -67,7 +69,7 @@ def set_reads(page_dir: Path, n: int, paths: Sequence[str], cwd: Path) -> None:
         cwd: 실행의 작업 폴더.
     """
     reads = list(dict.fromkeys(_entry(p, page_dir, cwd) for p in paths))
-    _update(page_dir, lambda header: header.update({READS_KEY: reads}), n)
+    update_ledger(page_dir, lambda header: header.update({READS_KEY: reads}), n)
 
 
 def add_artifact(page_dir: Path, entry: str) -> None:
@@ -80,7 +82,31 @@ def add_artifact(page_dir: Path, entry: str) -> None:
             items.append(entry)
         header[ARTIFACTS_KEY] = items
 
-    _update(page_dir, append, None)
+    update_ledger(page_dir, append, None)
+
+
+def update_ledger(
+    page_dir: Path,
+    mutate: Callable[[dict[str, Any]], None],
+    n: int | None = None,
+) -> dict[str, Any]:
+    """ledger.md 머리부를 ``mutate``로 고쳐 쓴다. 본문은 그대로다.
+
+    Args:
+        page_dir: 페이지 폴더.
+        mutate: 머리부 매핑을 제자리에서 바꾼다.
+        n: 이 변경을 부른 실행 번호. 주면 그 실행의 부작용으로 남는다.
+
+    Returns:
+        새 머리부.
+
+    Raises:
+        FrontmatterError: 머리부를 파싱할 수 없다.
+    """
+    header = pages.update_state(page_dir, mutate)
+    if n is not None:
+        undo.track(page_dir, n)
+    return header
 
 
 def _entry(path: str, page_dir: Path, cwd: Path) -> str:
@@ -88,14 +114,7 @@ def _entry(path: str, page_dir: Path, cwd: Path) -> str:
     for base, prefix in ((page_dir, ""), (cwd, undo.REPO_PREFIX)):
         if target.is_relative_to(base.resolve()):
             return prefix + target.relative_to(base.resolve()).as_posix()
-    return path
-
-
-def _update(
-    page_dir: Path,
-    mutate: Callable[[dict[str, Any]], None],
-    n: int | None,
-) -> None:
-    pages.update_state(page_dir, mutate)
-    if n is not None:
-        undo.track(page_dir, n)
+    home = Path.home().resolve()
+    if target.is_relative_to(home):
+        return "~/" + target.relative_to(home).as_posix()
+    return target.as_posix()

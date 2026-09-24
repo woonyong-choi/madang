@@ -73,7 +73,7 @@ def declare(
     )
     if not target.name or not target.command:
         raise RunsError("run name and command must not be empty")
-    check_cwd(target.cwd)
+    check_cwd(target.cwd, root)
     path = config.project_config_path(root)
     if not path.parent.is_dir():
         raise RunsError(f"{path.parent} does not exist; add the project first")
@@ -90,14 +90,25 @@ def declare(
     return target
 
 
-def check_cwd(cwd: str) -> None:
+def check_cwd(cwd: str, root: Path) -> None:
     """``cwd``가 프로젝트 폴더 안을 가리키는 상대 경로인지 검사한다.
 
+    심볼릭 링크를 따라간 실제 경로(``resolve()``)로 판단하므로 프로젝트
+    안의 링크로 밖을 가리켜도 거부한다.
+
+    Args:
+        cwd: 프로젝트 폴더 기준 상대 경로.
+        root: 프로젝트 폴더.
+
     Raises:
-        RunsError: 절대 경로이거나 ``..``으로 프로젝트 밖을 가리킨다.
+        RunsError: 절대 경로이거나, ``..``을 쓰거나, 실제 경로가 프로젝트
+            밖이다.
     """
-    parts = PurePosixPath(cwd).parts
-    if PurePosixPath(cwd).is_absolute() or ".." in parts:
+    path = PurePosixPath(cwd)
+    outside = path.is_absolute() or ".." in path.parts
+    if not outside:
+        outside = not (root / cwd).resolve().is_relative_to(root.resolve())
+    if outside:
         raise RunsError(f"run cwd '{cwd}' must stay inside the project")
 
 

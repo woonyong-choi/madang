@@ -87,7 +87,7 @@ class Process:
         """
         if self.running:
             raise RunsError(f"run '{self.target.name}' is already running")
-        check_cwd(self.target.cwd)
+        check_cwd(self.target.cwd, self.root)
         if not self.cwd.is_dir():
             raise RunsError(f"run cwd {self.cwd} does not exist")
         self._stopping = False
@@ -203,16 +203,6 @@ def responds(url: str, timeout: float = 1.0) -> bool:
         return True
     except (OSError, ValueError):
         return False
-
-
-def stop_group(pid: int, timeout: float = STOP_SECONDS) -> None:
-    """이 프로세스가 기다리지 않는 그룹 ``pid``를 끝낸다.
-
-    SIGTERM을 보내고, 시간 안에 그룹이 사라지지 않으면 SIGKILL을 보낸다.
-    그룹이 이미 없으면 아무것도 하지 않는다.
-    """
-    if _signal_group(pid, signal.SIGTERM) and not _await_group(pid, timeout):
-        _signal_group(pid, signal.SIGKILL)
 
 
 def _signal_group(pid: int, sig: signal.Signals) -> bool:

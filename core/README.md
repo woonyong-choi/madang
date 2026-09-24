@@ -59,16 +59,16 @@ uv run madang page new --project <아이디> --title "제목" [--kind build] [--
    ├ brief.md        기억: 이 프로젝트 (목적, 스택, 규칙, 하지 말 것)
    ├ config.yaml     설정: track, runs, policy, publish, viewers (없으면 기본값)
    ├ pages/<page-id>/
-   │  ├ page.md      머리부: 제목, 상태, blocks 순서
+   │  ├ page.md      머리부: 제목, 상태, blocks 순서. 본문에 요청·실행·결과 블록이 쌓인다
    │  ├ ledger.md    페이지 기억 Ledger
-   │  ├ log.md       대화 로그
-   │  ├ blocks/  runs/  scratch/
+   │  ├ runs/        실행 요약 <n>.json, 원본 스트림 <n>.jsonl, 되돌리기 기록 <n>.undo.json
+   │  ├ blocks/  scratch/
    └ trash/          지운 페이지·블록(복원하면 제자리로 옮긴다)
 ```
 
 기록을 커밋할지는 프로젝트 `.madang/config.yaml`의 `track`이 정한다. 기본 `false`면 `project add`가 `.madang/`을 `.git/info/exclude`에 더하고, `true`면 `.madang/pages/*/scratch/`와 `.madang/trash/`만 뺀다. git 저장소가 아닌 폴더에서는 아무것도 하지 않는다. core는 어떤 기록도 스스로 커밋하지 않는다. `.madang/`에 예전 이름(`project.md`, 페이지의 `state.md`)이 있으면 바꿀 이름과 함께 거부한다.
 
-프로젝트 `config.yaml`은 모르는 키를 오류로 본다. 지금은 읽고 검증만 한다.
+프로젝트 `config.yaml`은 모르는 키를 오류로 본다. `policy.deny`는 git 하위 명령(`push --force`처럼 `git` 뒤에 오는 부분)만 해석하며, 다른 셸 명령은 막지 않는다. core의 git 요청, 러너의 금지 규칙, 실행 대상 시작이 모두 이 목록을 확인한다.
 
 ```yaml
 track: false
@@ -80,7 +80,7 @@ runs:                       # 선언된 실행 대상만 실행한다
 policy:
   auto_merge: {require_tests: true, require_no_conflict: true, test: npm test}
   auto_publish: false
-  deny: ["push --force", "reset --hard", "clean -fd"]
+  deny: ["push --force", "reset --hard", "clean -fd"]   # git 하위 명령만 해석한다
 publish:
   include: [docs/]
   target: gh-pages
@@ -88,7 +88,7 @@ viewers:                    # 뷰어 이름 -> 이 프로젝트에서 쓸 뷰어
   resume/basic: ./viewers/resume
 ```
 
-`page new`는 프로젝트의 `.madang/pages/<YYYY-MM-DD-슬러그>/`에 page.md, ledger.md, log.md를 만들고 페이지 id를 출력한다. `--kind`를 생략하면 `routes` 절의 기본 종류를 쓰고, 슬러그를 생략하면 제목에서 만든다.
+`page new`는 프로젝트의 `.madang/pages/<YYYY-MM-DD-슬러그>/`에 page.md, ledger.md를 만들고 페이지 id를 출력한다. `--kind`를 생략하면 `routes` 절의 기본 종류를 쓰고, 슬러그를 생략하면 제목에서 만든다.
 
 ### 페이지 실행
 
@@ -96,7 +96,15 @@ viewers:                    # 뷰어 이름 -> 이 프로젝트에서 쓸 뷰어
 uv run madang run <page-id> "<요청>" --tool claude|codex --model <모델> [--effort medium] [--target b05] [--home PATH]
 ```
 
-페이지의 한 단계를 새 세션에서 실행한다. 프롬프트를 Profile, Brief, Ledger, 공통 작업 지시, 대상 블록, 요청 순서로 조립하고 부분별 토큰 추정을 실행 기록 `input.parts`에 남긴다(REST 응답에서는 `root`, `project`, `state` 이름으로 나간다). 조립한 프롬프트를 실행기(claude/codex CLI)에 넘기고, 끝나면 ledger.md를 검사한 뒤 결과를 `runs/N.json`에 기록한다. `--target`은 요청이 가리키는 블록 id이다. 작업 폴더는 페이지가 속한 프로젝트 폴더다. 실행이 만들었지만 등록하지 않은 파일은 전후 비교로 찾는다(프로젝트가 git 저장소면 `git status`, 아니면 파일 목록).
+페이지의 한 단계를 새 세션에서 실행한다. 프롬프트를 Profile, Brief, Ledger, 공통 작업 지시, 대상 블록, 요청 순서로 조립하고 부분별 토큰 추정을 실행 기록 `input.parts`에 `profile`, `brief`, `ledger` 이름으로 남긴다(REST 응답도 같은 이름이다). 조립한 프롬프트를 실행기(claude/codex CLI)에 넘기고, 끝나면 ledger.md를 검사한 뒤 결과를 `runs/N.json`에 기록한다. `--target`은 요청이 가리키는 블록 id이다. 작업 폴더는 페이지가 속한 프로젝트 폴더다. 실행이 만들었지만 등록하지 않은 파일은 전후 비교로 찾는다(프로젝트가 git 저장소면 `git status`, 아니면 파일 목록).
+
+### 되돌리기
+
+```
+uv run madang undo <page-id> <run> [--home PATH]
+```
+
+실행 하나가 남긴 부작용을 나중 것부터 되감는다. 게시는 게시 기록으로, git 커밋·머지는 되돌림 커밋(`reset`을 쓰지 않는다)으로, 페이지 파일은 실행 전 사본으로 되돌린다. 기록은 `runs/<n>.undo.json`에 있다. 그 실행 뒤에 파일이 다시 바뀌었거나, 커밋이 이력에서 사라졌거나, 더 나중 게시가 있으면 아무것도 바꾸지 않고 거부한다. 앱의 "되돌리기"는 같은 일을 `POST /pages/{page}/runs/{n}/undo`로 한다.
 
 ### 페이지 검사
 
@@ -127,11 +135,14 @@ uv run madang artifact add blocks/b05-race.md      # 또는 프로젝트 폴더 
 uv run madang commit -m "feat: add refresh lock"
 uv run madang push
 uv run madang view create --template resume --data b03 [--data overlay=b04]
+uv run madang runs add --name "이력서 사이트" --command "npm run dev" [--cwd resume/site] [--opens http://localhost:5173]
+uv run madang runs list | start <이름> | stop <이름>   # --project <id>로 페이지 밖에서도 쓴다
 ```
 
-- ledger.md와 page.md를 고친 뒤에는 core가 검사기를 돌리고, 실패하면 변경을 되돌린 뒤 오류와 함께 exit 1로 끝난다. 본문은 그대로 두고 머리부만 고친다.
-- `commit`, `push`는 페이지가 속한 프로젝트 폴더가 git 저장소일 때만 동작하며, 아니면 거부한다. `commit`은 비밀 파일로 보이는 이름(`.env`, `*.pem`, `id_rsa*` 등)이 있으면 거부한다.
-- `push`는 현재 브랜치를 같은 이름의 원격 브랜치로만 보내며 강제 푸시는 하지 않는다.
+- ledger.md와 page.md를 고친 뒤에는 core가 검사기를 돌리고, 실패하면 변경을 되돌린 뒤 오류와 함께 exit 1로 끝난다. 본문은 그대로 두고 머리부만 고친다. ledger.md 머리부는 core의 recorder가 쓰며, 실행 안에서 온 변경은 그 실행의 되돌리기 기록에 남는다.
+- `commit`, `push`는 에이전트가 일한 작업 트리에 작용한다. 코드 페이지라 워크트리(`<프로젝트>.wt/<page-id>/`)가 있으면 그 워크트리의 페이지 브랜치에, 아니면 프로젝트 폴더에 커밋한다. 작업 트리가 git 저장소가 아니면 거부한다. `commit`은 비밀 파일로 보이는 이름(`.env`, `*.pem`, `id_rsa*` 등)이 있으면 거부하고, 실행 안에서 한 커밋은 그 실행의 되돌리기 기록에 남는다.
+- `push`는 현재 브랜치를 같은 이름의 원격 브랜치로만 보내며 강제 푸시는 하지 않는다. 둘 다 프로젝트 정책(`policy.deny`)을 먼저 확인한다.
+- `runs`는 `config.yaml`의 `runs:`에 선언된 것만 다룬다. `start`는 core가 소유한 프로세스로 띄우고 바로 돌아오며, 출력과 열린 URL은 core가 앱에 이벤트로 보낸다. 명령이 `policy.deny`에 걸리면 시작하지 않는다.
 - `view create`는 새 블록 id를 받아 `blocks/bNN-<template>.view.md`를 만들고 page.md `blocks` 끝에 붙이며, 만든 파일을 산출물로 등록한다. 템플릿은 앱 홈 `templates/`, `MADANG_TEMPLATES`, 내장 템플릿(table, decisions, tasks, resume) 순서로 찾는다.
 - 블록 id는 `bNN`으로 늘어나며 삭제된 id도 다시 쓰지 않는다(`blocks/.last`).
 - `decide`와 `view create`는 `MADANG_PAGE`로 부를 때(에이전트 실행 안)만 진행 중인 실행 번호를 붙인다. 사람이 `--page`로 부르면 흐름이 돌고 있어도 붙이지 않는다. `decide`의 `by`는 `--by` > `MADANG_BY` > `agent`(`MADANG_PAGE` 사용 시) / `human` 순서로 정한다.
@@ -144,6 +155,8 @@ madang/
 ├ cli_agent/    에이전트 명령 (core API 클라이언트)과 core가 쓰는 변경 로직
 ├ config.py     앱 홈 경로, 전역·프로젝트 config.yaml 로딩과 검증
 ├ defaults/     앱 홈과 .madang/ 기본 파일
-├ store/        프로젝트·페이지 기록 읽기·쓰기, 휴지통, git CLI 래퍼
+├ store/        프로젝트·페이지 기록 읽기·쓰기, 휴지통, 페이지 워크트리
+├ git/          git을 실행하는 유일한 모듈
+├ policy/  recorder/  publish/  runs/  viewers/
 ├ api/  graph/  runners/  deciders/  validate/  procs/
 ```

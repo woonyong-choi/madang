@@ -19,15 +19,32 @@ from madang.api.availability import Probe, probe_cli
 from madang.api.contract import contract_document
 from madang.api.core import Core
 from madang.api.guard import LocalOnly
-from madang.api.routes import agent, files, messages, pages, projects, system
+from madang.api.routes import (
+    agent,
+    files,
+    git,
+    messages,
+    pages,
+    projects,
+    publish,
+    runs,
+    settings,
+    system,
+    viewers,
+)
 from madang.graph.nodes import RunnerFactory
 
 ROUTERS = (
     system.router,
+    settings.router,
     projects.router,
     pages.router,
     messages.router,
     files.router,
+    git.router,
+    runs.router,
+    publish.router,
+    viewers.router,
     agent.router,
 )
 
@@ -38,6 +55,7 @@ def create_app(
     runners: RunnerFactory | None = None,
     probe: Probe = probe_cli,
     core_url: str | None = None,
+    claude_dir: Path | None = None,
 ) -> FastAPI:
     """앱 홈 하나를 맡는 core API 앱을 만든다.
 
@@ -46,6 +64,7 @@ def create_app(
         runners: 러너 이름으로 러너를 만든다. 기본은 config.yaml의 runners 절.
         probe: 러너 사용 가능 여부 확인.
         core_url: 에이전트에 넘길 core 주소.
+        claude_dir: 사용량을 읽을 Claude Code 폴더. 기본은 ``~/.claude``.
 
     Returns:
         FastAPI 앱. ``app.state.core``에 ``Core``가 있다.
@@ -57,7 +76,13 @@ def create_app(
         redoc_url=None,
         separate_input_output_schemas=False,
     )
-    app.state.core = Core(home, runners=runners, probe=probe, core_url=core_url)
+    app.state.core = Core(
+        home,
+        runners=runners,
+        probe=probe,
+        core_url=core_url,
+        claude_dir=claude_dir,
+    )
     app.add_middleware(LocalOnly)
     errors.install(app)
     for router in ROUTERS:

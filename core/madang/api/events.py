@@ -24,6 +24,13 @@ BLOCK_UPDATED = "block.updated"
 BLOCK_DELETED = "block.deleted"
 MEMORY_UPDATED = "memory.updated"
 RUNNER_AVAILABILITY = "runner.availability"
+ASK_CREATED = "ask.created"
+RUN_LOG = "run.log"
+RUNS_OPENED = "runs.opened"
+PORTS_CHANGED = "ports.changed"
+GIT_CHANGED = "git.changed"
+PUBLISH_DONE = "publish.done"
+VIEWER_CHANGED = "viewer.changed"
 
 
 def make_event(

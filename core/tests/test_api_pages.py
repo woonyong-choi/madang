@@ -422,17 +422,17 @@ def test_memory_read_and_save(
     client, home, project_root, page, contract
 ) -> None:
     memory = contract.check(client.get(f"/pages/{page}/memory"), 200)
-    assert memory["root"]["path"] == str(home.resolve() / "profile.md")
-    assert memory["project"]["path"] == str(project_root / ".madang/brief.md")
-    assert memory["project"]["layer"] == "project"
-    assert memory["state"]["token_limit"] == 2000
-    assert "token_limit" not in memory["root"]
+    assert memory["profile"]["path"] == str(home.resolve() / "profile.md")
+    assert memory["brief"]["path"] == str(project_root / ".madang/brief.md")
+    assert memory["brief"]["layer"] == "brief"
+    assert memory["ledger"]["token_limit"] == 2000
+    assert "token_limit" not in memory["profile"]
 
-    state = memory["state"]["content"].replace(
+    state = memory["ledger"]["content"].replace(
         "status: planning", "status: doing"
     )
     saved = contract.check(
-        client.put(f"/pages/{page}/memory/state", json={"content": state}), 200
+        client.put(f"/pages/{page}/memory/ledger", json={"content": state}), 200
     )
     assert saved["content"] == state
     card = contract.check(client.get(PAGES), 200)[0]
@@ -440,7 +440,7 @@ def test_memory_read_and_save(
 
     broken = contract.check(
         client.put(
-            f"/pages/{page}/memory/state",
+            f"/pages/{page}/memory/ledger",
             json={"content": "---\nstatus: nope\n---\n"},
         ),
         400,
@@ -451,7 +451,8 @@ def test_memory_read_and_save(
 
     root = contract.check(
         client.put(
-            f"/pages/{page}/memory/root", json={"content": "# 나\n한국어로.\n"}
+            f"/pages/{page}/memory/profile",
+            json={"content": "# 나\n한국어로.\n"},
         ),
         200,
     )
@@ -459,19 +460,19 @@ def test_memory_read_and_save(
     assert (home / "profile.md").read_text() == "# 나\n한국어로.\n"
     notes = contract.check(
         client.put(
-            f"/pages/{page}/memory/project", json={"content": "프로젝트 메모\n"}
+            f"/pages/{page}/memory/brief", json={"content": "프로젝트 메모\n"}
         ),
         200,
     )
-    assert notes["layer"] == "project"
+    assert notes["layer"] == "brief"
     assert (project_root / ".madang/brief.md").read_text() == "프로젝트 메모\n"
     contract.check(
         client.put(
-            f"/pages/{page}/memory/project", json={"content": "---\n: [\n---\n"}
+            f"/pages/{page}/memory/brief", json={"content": "---\n: [\n---\n"}
         ),
         400,
     )
-    for layer in ("space", "other"):
+    for layer in ("space", "other", "root", "state"):
         contract.check(
             client.put(f"/pages/{page}/memory/{layer}", json={"content": "x"}),
             400,

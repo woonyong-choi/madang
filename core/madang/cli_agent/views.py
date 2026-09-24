@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from madang import recorder
 from madang.cli_agent.artifacts import register
 from madang.cli_agent.bindings import (
     Slots,
@@ -133,5 +134,5 @@ def create_view(
         path.write_text(frontmatter.dumps(header, ""), encoding="utf-8")
         pages.append_block(ctx.page_dir, block_id)
         entry = path.relative_to(ctx.page_dir).as_posix()
-        pages.update_state(ctx.page_dir, lambda h: register(h, entry))
+        recorder.update_ledger(ctx.page_dir, lambda h: register(h, entry), run)
     return block_id

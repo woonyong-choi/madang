@@ -102,6 +102,26 @@ def open_transport(home: Path | None) -> Transport:
     return http_transport(core_url(home))
 
 
+def call(
+    transport: Transport, method: str, path: str, payload: Any = None
+) -> Any:
+    """core에 요청을 보내고 응답 JSON을 반환한다.
+
+    Raises:
+        RejectedError: core가 4xx·5xx로 답했다.
+        CoreUnreachableError: core에 연결할 수 없다.
+    """
+    status, body = transport(method, path, payload)
+    if status >= 400:
+        raise _rejection(status, body)
+    return body
+
+
+def quoted(segment: str) -> str:
+    """경로 조각 하나를 URL에 넣을 수 있게 인코딩한다."""
+    return quote(segment, safe="")
+
+
 class CoreClient:
     """페이지 하나에 대한 core API 호출.
 
@@ -114,17 +134,17 @@ class CoreClient:
         self.page = page
 
     def _call(self, method: str, path: str, payload: Any = None) -> Any:
-        status, body = self._send(method, path, payload)
-        if status >= 400:
-            raise _rejection(status, body)
-        return body
+        return call(self._send, method, path, payload)
 
     def _page_path(self, tail: str = "") -> str:
-        return f"/pages/{quote(self.page, safe='')}{tail}"
+        return f"/pages/{quoted(self.page)}{tail}"
+
+    def project(self) -> str:
+        """페이지가 속한 프로젝트 id."""
+        return self._call("GET", self._page_path())["project"]
 
     def _project_path(self, tail: str) -> str:
-        project = self._call("GET", self._page_path())["project"]
-        return f"/projects/{quote(project, safe='')}{tail}"
+        return f"/projects/{quoted(self.project())}{tail}"
 
     def set_task(
         self,
@@ -139,28 +159,39 @@ class CoreClient:
             payload["title"] = title
         if due is not None:
             payload["due"] = due
-        return self._call("PATCH", self._page_path("/state/tasks"), payload)
+        return self._call("PATCH", self._page_path("/ledger/tasks"), payload)
 
     def decide(self, decision: dict[str, Any]) -> dict[str, Any]:
         """결정을 기록하고 저장된 결정을 반환한다."""
-        return self._call("POST", self._page_path("/state/decisions"), decision)
+        return self._call(
+            "POST", self._page_path("/ledger/decisions"), decision
+        )
 
     def add_artifact(self, path: str) -> list[str]:
         """산출물을 등록하고 전체 산출물 목록을 반환한다."""
         return self._call(
-            "POST", self._page_path("/state/artifacts"), {"path": path}
+            "POST", self._page_path("/ledger/artifacts"), {"path": path}
         )
 
-    def commit(self, message: str) -> str:
-        """프로젝트 저장소를 커밋하고 커밋 해시를 반환한다."""
-        result = self._call(
-            "POST", self._project_path("/repo/commit"), {"message": message}
-        )
+    def commit(self, message: str, *, in_run: bool = False) -> str:
+        """페이지의 작업 트리를 커밋하고 커밋 해시를 반환한다.
+
+        페이지에 워크트리가 있으면 core가 그 워크트리에 커밋한다.
+        ``in_run``이 참이면 진행 중인 실행의 되돌리기 기록에 남긴다.
+        """
+        payload = {"message": message, "page": self.page, "in_run": in_run}
+        result = self._call("POST", self._project_path("/repo/commit"), payload)
         return result["commit"]
 
     def push(self) -> dict[str, Any]:
-        """현재 브랜치를 푸시하고 ``branch``, ``remote``를 반환한다."""
-        return self._call("POST", self._project_path("/repo/push"))
+        """페이지 작업 트리의 현재 브랜치를 푸시한다.
+
+        Returns:
+            ``branch``, ``remote``.
+        """
+        return self._call(
+            "POST", self._project_path("/repo/push"), {"page": self.page}
+        )
 
     def create_view(
         self,

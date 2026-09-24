@@ -1,7 +1,8 @@
 """메시지 흐름을 백그라운드 스레드에서 돌리고 그 이벤트를 앱에 알린다.
 
 페이지마다 한 번에 흐름 하나만 돈다. 흐름 id는 ``<page-id>/<메시지 id>``
-이고, 사람을 기다리는 결정의 id는 그 메시지 id다.
+이고, 사람을 기다리는 결정의 id는 그 메시지 id다. 정책이 부작용을 멈추면
+page.md에 묻는 블록이 생기고, 그 블록 id로도 답할 수 있다.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from madang.graph import events as flow_events
 from madang.graph.nodes import (
     WAIT_BLOCKED,
     WAIT_KIND,
+    WAIT_POLICY,
     WAIT_REPAIR,
     WAIT_REVIEW,
     WAIT_RUN_LIMIT,
@@ -36,6 +38,10 @@ PROMPTS = {
     WAIT_RUN_LIMIT: "메시지 하나의 실행 한도에 닿았습니다. 계속할까요?",
     WAIT_REPAIR: "ledger.md 보정에 실패했습니다. 어떻게 할까요?",
     WAIT_REVIEW: "리뷰 실행이 실패했습니다. 다시 시도할까요?",
+    WAIT_POLICY: (
+        "정책(테스트·충돌·금지 명령)이 머지나 게시를 멈췄습니다. "
+        "묻는 블록의 이유를 보고 답해 주세요."
+    ),
 }
 
 
@@ -50,21 +56,23 @@ def waiting_data(
         decision: 흐름 상태의 ``pending_decision``.
 
     Returns:
-        ``{decision: {id, run, question}, reason}``.
+        ``{decision: {id, run, question, ask?, reasons?}, reason}``. 정책이
+        멈춘 결정이면 묻는 블록 id(``ask``)와 거부 사유가 있다.
     """
     reason = str(decision.get("reason") or "")
-    return {
-        "decision": {
-            "id": thread_id.rsplit("/", 1)[-1],
-            "run": runs.current(page_dir),
-            "question": {
-                "kind": "choice",
-                "prompt": PROMPTS.get(reason, "어떻게 할까요?"),
-                "options": list(decision.get("options") or []),
-            },
+    pending: dict[str, Any] = {
+        "id": thread_id.rsplit("/", 1)[-1],
+        "run": runs.current(page_dir),
+        "question": {
+            "kind": "choice",
+            "prompt": PROMPTS.get(reason, "어떻게 할까요?"),
+            "options": list(decision.get("options") or []),
         },
-        "reason": reason,
     }
+    if decision.get("block"):
+        pending["ask"] = str(decision["block"])
+        pending["reasons"] = [str(r) for r in decision.get("reasons") or []]
+    return {"decision": pending, "reason": reason}
 
 
 @dataclass
@@ -163,6 +171,27 @@ class Flows:
         self._launch(
             page_id, active, lambda: active.flow.resume(thread_id, choice)
         )
+
+    def answer_ask(self, page_dir: Path, block: str, choice: str) -> None:
+        """묻는 블록 ``block``을 기다리는 흐름에 답한다.
+
+        Raises:
+            HttpError: 그 블록을 기다리는 흐름이 없거나(404) 흐름이 이미
+                돌고 있다(409).
+            ValidationFailureError: 선택지에 없는 답이다.
+        """
+        if self.busy(page_dir.name):
+            raise errors.conflict(
+                f"a flow is already running on page '{page_dir.name}'",
+                errors.BUSY,
+            )
+        flow = Flow(self._core.config(), runners=self._core.make_runner)
+        for thread_id, decision in flow.waiting_on(page_dir.name):
+            if decision.get("block") == block:
+                message = thread_id.rsplit("/", 1)[-1]
+                self.answer(page_dir, message, choice)
+                return
+        raise errors.not_found(f"ask block '{block}' is not waiting")
 
     def cancel(self, page_dir: Path, n: int) -> bool:
         """진행 중인 실행 ``n``을 멈춘다.
@@ -301,7 +330,46 @@ class Flows:
             data = waiting_data(
                 page_dir, payload["thread_id"], payload["decision"]
             )
-            hub.emit(name, data, run=runs.current(page_dir), **where)
+            run = runs.current(page_dir)
+            hub.emit(name, data, run=run, **where)
+            if "ask" in data["decision"]:
+                self._ask_created(data["decision"], run, where)
+        elif name == flow_events.FLOW_SETTLED:
+            self._settled(page_dir, payload, where)
+
+    def _ask_created(
+        self, pending: dict[str, Any], run: int | None, where: dict[str, str]
+    ) -> None:
+        """정책이 멈춘 자리에 생긴 묻는 블록을 ``ask.created``로 알린다."""
+        data = {
+            "block": pending["ask"],
+            "decision": pending["id"],
+            "prompt": pending["question"]["prompt"],
+            "reasons": pending.get("reasons") or [],
+            "options": pending["question"]["options"],
+        }
+        self._core.hub.emit(
+            events.ASK_CREATED, data, run=run, block=pending["ask"], **where
+        )
+
+    def _settled(
+        self, page_dir: Path, payload: dict[str, Any], where: dict[str, str]
+    ) -> None:
+        """정책 단계가 한 머지와 게시를 ``git.changed``·``publish.done``으로."""
+        root = projects.owner(self._core.home, page_dir).root
+        if payload.get("merged"):
+            self._core.announce_git(
+                where["project"], root, "merge", commit=payload["merged"]
+            )
+        if payload.get("published") is not None:
+            data = {
+                "n": payload["published"],
+                "undo": False,
+                "push_error": payload.get("push_error"),
+            }
+            self._core.hub.emit(
+                events.PUBLISH_DONE, data, run=payload.get("n"), **where
+            )
 
     def _finished(
         self,
@@ -329,8 +397,7 @@ class Flows:
             )
         if LEDGER_FILE in record.changed_files:
             text = (page_dir / LEDGER_FILE).read_text(encoding="utf-8")
-            # REST 계약에서 Ledger 층의 이름은 state다.
-            self._core.announce_memory("state", count_tokens(text), page_dir)
+            self._core.announce_memory("ledger", count_tokens(text), page_dir)
         self._core.announce_page(page_dir, events.PAGE_UPDATED)
 
 

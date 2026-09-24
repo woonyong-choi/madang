@@ -1,13 +1,15 @@
-"""시스템·설정 경로: 상태, 러너, 앱 홈, 라우팅 표, 이벤트 스트림."""
+"""시스템·설정 경로: 상태, 러너, 사용량, 앱 홈, 라우팅 표, 이벤트 스트림."""
 
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta
+from typing import Annotated
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import Query, WebSocket, WebSocketDisconnect
 
 from madang import __version__, config
-from madang.api import errors, models
+from madang.api import errors, models, usage
 from madang.api.core import Core
 from madang.api.routes import CoreDep, Router
 from madang.store.files import atomic_write
@@ -29,6 +31,25 @@ def list_runners(core: CoreDep) -> models.RunnerAvailability:
     cfg = config.load_config(core.home)
     return models.RunnerAvailability.model_validate(
         core.availability.get(cfg.runners)
+    )
+
+
+@router.get("/usage", tags=["runners"], operation_id="getUsage")
+def get_usage(
+    core: CoreDep,
+    days: Annotated[
+        int, Query(ge=1, le=90, description="오늘을 포함해 셀 날 수.")
+    ] = usage.DEFAULT_DAYS,
+) -> models.Usage:
+    """구독 도구의 토큰 사용(Claude Code 대화 기록)."""
+    checked = datetime.now().astimezone().replace(microsecond=0)
+    since = checked.date() - timedelta(days=days - 1)
+    return models.Usage.model_validate(
+        {
+            "checked": checked,
+            "since": since.isoformat(),
+            "tools": [usage.claude_usage(core.claude_dir, since)],
+        }
     )
 
 

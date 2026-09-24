@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
   title: Madang core API
-  version: 1.0.0
+  version: 2.0.0
   summary: madang-core의 로컬 HTTP·WebSocket API.
   description: |
     데스크톱 앱은 이 API로 madang-core와 통신한다. 페이지 기록은 프로젝트
-    폴더의 `.madang/`에, 전역 설정과 root.md는 앱 홈(`~/.madang`)에 있다.
+    폴더의 `.madang/`에, 전역 설정(config.yaml)과 profile.md는 앱 홈(`~/.madang`)에 있다.
     둘 다 core가 쓰며 앱은 자체 문서를 두지 않는다. core는 기록을 git에
     커밋하지 않는다(커밋 여부는 사용자가 정한다).
 
@@ -42,8 +42,14 @@ tags:
   - name: trash
   - name: templates
   - name: runners
+  - name: git
+    description: 프로젝트 git(상태·디프·스테이지·커밋·브랜치·워크트리·이력·원격). core만 git을 실행한다.
+  - name: publish
+    description: 문서 렌더러로 만든 정적 사이트 게시와 되감기.
+  - name: viewers
+    description: 뷰어 등록부(참조)와 상태.
   - name: agent
-    description: madang CLI가 하는 상태·저장소 변경.
+    description: madang CLI가 하는 ledger.md·저장소 변경.
   - name: events
 
 paths:
@@ -77,6 +83,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/RunnerAvailability"
 
+  /usage:
+    get:
+      tags: [runners]
+      operationId: getUsage
+      summary: 구독 도구의 토큰 사용량.
+      description: |
+        Claude Code가 `~/.claude/projects/`에 남긴 대화 기록의 `usage`만
+        센다. 인증·설정 파일은 읽지 않는다. 한 응답이 여러 줄로 나뉘어도
+        `message.id`와 `requestId`로 한 번만 센다. 기록 폴더가 없으면 도구의
+        `available`이 거짓이다.
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: 오늘을 포함해 셀 날 수.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+          example: 7
+      responses:
+        "200":
+          description: 기간 안의 사용 합계.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Usage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+
   /home:
     get:
       tags: [setup]
@@ -100,7 +137,7 @@ paths:
       operationId: initHome
       summary: 앱 홈을 만들고(이미 있으면 그대로) core가 그 홈을 쓰게 한다.
       description: |
-        `path`에 전역 설정(`config/`)과 root.md를 만든다. git 저장소는 만들지
+        `path`에 전역 설정(config.yaml, viewers.yaml)과 profile.md를 만든다. git 저장소는 만들지
         않으며 기존 파일은 덮어쓰지 않는다. 예전 구조의 폴더이거나 앱 홈이
         아닌 폴더면 409. core는 이후 이 홈을 쓰고 `core.port`도 이 홈에
         둔다. 프로젝트는 `POST /projects`로 따로 등록한다.
@@ -126,7 +163,7 @@ paths:
     get:
       tags: [setup]
       operationId: getRoutes
-      summary: config/routes.yaml 원문.
+      summary: config.yaml의 routes 절 원문.
       responses:
         "200":
           description: 라우팅 표.
@@ -139,7 +176,7 @@ paths:
     put:
       tags: [setup]
       operationId: saveRoutes
-      summary: config/routes.yaml을 바꾼다. 검사를 통과해야 저장된다.
+      summary: config.yaml의 routes 절을 바꾼다. 검사를 통과해야 저장된다.
       description: |
         YAML 문법, 필수 키(`kinds`, `default_kind`, `tiers`), 스키마, 종류와
         runner 참조를 검사한다. 실패하면 파일은 그대로다.
@@ -156,6 +193,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RoutesDocument"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /config:
+    get:
+      tags: [setup]
+      operationId: getConfig
+      summary: 앱 홈 config.yaml 원문.
+      description: 파일이 없으면 내장 기본값의 원문이다. 에이전트는 이 파일을 받지 않는다.
+      responses:
+        "200":
+          description: 설정 원문.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDocument"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    put:
+      tags: [setup]
+      operationId: saveConfig
+      summary: 앱 홈 config.yaml을 검사해 통째로 바꾼다.
+      description: |
+        스키마와 맞지 않으면 저장하지 않고 400과 함께 줄 번호·키 경로를 담은
+        `issues`를 돌려준다(`code`는 `invalid-yaml` 또는 `invalid-value`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigDocument"
+      responses:
+        "200":
+          description: 저장한 원문.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDocument"
         "400":
           $ref: "#/components/responses/Invalid"
         "409":
@@ -180,11 +257,11 @@ paths:
       operationId: createProject
       summary: 로컬 폴더를 프로젝트로 등록하고 `.madang/`을 만든다.
       description: |
-        폴더에 `.madang/`(project.md, pages/, trash/, .gitignore)을 만들고
-        앱 홈 `config/madang.yaml`의 `projects`에 등록한다. 이미 있는
-        `.madang/` 파일은 덮어쓰지 않는다. `.gitignore`는 기본으로 `*`라
-        기록을 커밋하지 않는다(`commit_records: true`면 scratch/, trash/만
-        뺀다). id를 생략하면 폴더 이름의 슬러그를 쓰고, 겹치면 `-2`처럼
+        폴더에 `.madang/`(brief.md, config.yaml, pages/)을 만들고 앱 홈
+        `config.yaml`의 `projects`에 등록한다. 이미 있는 `.madang/` 파일은
+        덮어쓰지 않는다. 프로젝트 `config.yaml`의 `track`이 거짓(기본)이면
+        `.madang/`을 `.git/info/exclude`에 더하고, 참이면 scratch/, trash/만
+        뺀다. id를 생략하면 폴더 이름의 슬러그를 쓰고, 겹치면 `-2`처럼
         번호를 붙인다.
       requestBody:
         required: true
@@ -213,7 +290,7 @@ paths:
       tags: [projects]
       operationId: updateProject
       summary: 프로젝트의 제목, 상위 프로젝트, 아이콘, 색, 정렬을 바꾼다.
-      description: 표시 설정은 앱 홈 `config/madang.yaml`에 둔다. 폴더 경로는 바꾸지 않는다.
+      description: 표시 설정은 앱 홈 `config.yaml`의 `projects`에 둔다. 폴더 경로는 바꾸지 않는다.
       requestBody:
         required: true
         content:
@@ -268,7 +345,7 @@ paths:
     post:
       tags: [pages]
       operationId: createPage
-      summary: "`.madang/pages/`에 page.md, state.md, log.md를 갖춘 페이지를 만든다."
+      summary: "`.madang/pages/`에 page.md, ledger.md를 갖춘 페이지를 만든다."
       requestBody:
         required: true
         content:
@@ -289,14 +366,642 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /projects/{project}/config:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [setup]
+      operationId: getProjectConfig
+      summary: 프로젝트 `.madang/config.yaml` 원문.
+      description: 파일이 없으면 빈 문자열이다(모든 값이 기본값).
+      responses:
+        "200":
+          description: 설정 원문.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDocument"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [setup]
+      operationId: saveProjectConfig
+      summary: 프로젝트 `.madang/config.yaml`을 검사해 통째로 바꾼다.
+      description: |
+        `track`, `runs`, `policy`, `publish`, `viewers` 외의 키나 틀린 값은
+        저장하지 않고 400 `issues`로 알린다. 저장하면 `project.updated`를
+        낸다. `policy.deny`는 git 하위 명령만 해석한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigDocument"
+            example:
+              text: |
+                track: false
+                runs:
+                  - name: 이력서 사이트
+                    cwd: resume/site
+                    command: npm run dev
+                    opens: http://localhost:5173
+                policy:
+                  auto_merge: {require_tests: true, require_no_conflict: true, test: npm test}
+                  auto_publish: true
+                  deny: ["push --force", "reset --hard", "clean -fd"]
+                publish:
+                  include: [docs/]
+                  target: gh-pages
+      responses:
+        "200":
+          description: 저장한 원문.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDocument"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/files:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [files]
+      operationId: listFiles
+      summary: 작업 폴더의 파일 트리를 렌즈로 거른다.
+      description: |
+        `page`를 주면 그 페이지의 워크트리(있으면)를, 아니면 프로젝트 폴더를
+        훑는다. git 저장소면 git이 추적하거나 무시하지 않는 파일, 아니면 모든
+        파일이다. `.madang/`은 맨 앞에 온다. 렌즈:
+        - `all`: 전체.
+        - `page`: 페이지 ledger.md의 `artifacts`·`reads`와 run이 바꾼 파일 중
+          있는 것(`page` 필요).
+        - `changed`: git이 알려 준 변경 파일(git 저장소가 아니면 409 `no_repo`).
+
+        실행 배지(`runs`)는 `runs:`에 선언된 `cwd` 폴더에만 붙는다. 짐작하지
+        않는다. 항목이 5000개를 넘으면 자르고 `truncated`가 참이다.
+      parameters:
+        - name: lens
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/FileLens"
+          example: all
+        - $ref: "#/components/parameters/PageQuery"
+      responses:
+        "200":
+          description: 파일 트리.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileTree"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/status:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [git]
+      operationId: getGitStatus
+      summary: 작업 트리의 변경 파일, 브랜치, HEAD.
+      description: |
+        git 저장소가 아니면 `repository`가 거짓이고 앱은 "git 시작"
+        (`POST /projects/{project}/git/init`)만 보여 준다. 앱 밖에서 한 git
+        조작은 여기서 상태로만 보인다.
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+      responses:
+        "200":
+          description: 상태.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/diff:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [git]
+      operationId: getGitDiff
+      summary: 통합 diff 텍스트(디프 탭).
+      description: |
+        기본은 작업 트리와 인덱스의 차이다. `staged`면 인덱스와 HEAD,
+        `base`·`target`을 주면 두 커밋의 차이다.
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+        - name: staged
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: base
+          in: query
+          required: false
+          description: 비교 기준 커밋이나 브랜치.
+          schema:
+            type: string
+        - name: target
+          in: query
+          required: false
+          description: 비교 대상 커밋이나 브랜치.
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: false
+          description: 이 경로들로 제한한다. 반복할 수 있다.
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        "200":
+          description: diff.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitDiff"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/stage:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    post:
+      tags: [git]
+      operationId: stageGit
+      summary: 변경을 스테이징한다.
+      description: "`paths`가 없으면 모든 변경이다. 끝나면 `git.changed`를 낸다."
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitStage"
+      responses:
+        "200":
+          description: 스테이징 뒤의 상태.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/commit:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    post:
+      tags: [git]
+      operationId: commitGit
+      summary: 스테이징된 변경을 커밋한다.
+      description: |
+        `paths`를 주면 그 경로만 커밋한다. 스테이징된 것이 없거나 비밀로
+        보이는 파일(`.env`, `*.pem` 등)이 바뀌어 있으면 409. 정책이 막으면
+        409 `denied`. 끝나면 `git.changed`를 낸다.
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitCommitCreate"
+      responses:
+        "200":
+          description: 새 커밋.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCommitResult"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/branches:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [git]
+      operationId: listGitBranches
+      summary: 로컬 브랜치와 메인 체크아웃의 현재 브랜치.
+      responses:
+        "200":
+          description: 브랜치.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitBranches"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/worktrees:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [git]
+      operationId: listGitWorktrees
+      summary: 메인 체크아웃과 워크트리, 그 워크트리를 쓰는 페이지.
+      description: |
+        코드 페이지의 워크트리는 `<프로젝트>.wt/<page-id>/`에 있고 `page`에
+        그 페이지 id가 있다. 메인 체크아웃은 `main`이 참이다.
+      responses:
+        "200":
+          description: 워크트리 목록.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GitWorktree"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/log:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [git]
+      operationId: getGitLog
+      summary: "`ref`에서 거슬러 올라가는 커밋, 최근 것부터."
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+        - name: ref
+          in: query
+          required: false
+          schema:
+            type: string
+            default: HEAD
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        "200":
+          description: 커밋 목록.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GitLogEntry"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/push:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    post:
+      tags: [git]
+      operationId: pushGit
+      summary: 현재 브랜치를 같은 이름의 원격 브랜치로 강제 없이 보낸다.
+      description: |
+        브랜치에 설정된 원격, 없으면 `origin`으로 보낸다. 정책이 막으면 409
+        `denied`, 원격이 없거나 거부되면 409. 끝나면 `git.changed`를 낸다.
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+      responses:
+        "200":
+          description: push했다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoPushResult"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/pull:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    post:
+      tags: [git]
+      operationId: pullGit
+      summary: 빨리 감기로만 당겨 온다.
+      description: 갈라졌거나 원격이 없으면 409. 끝나면 `git.changed`를 낸다.
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+      responses:
+        "200":
+          description: 당긴 뒤의 상태.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/git/init:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    post:
+      tags: [git]
+      operationId: initGit
+      summary: 프로젝트 폴더를 git 저장소로 만든다("git 시작").
+      description: |
+        `.madang/`은 프로젝트 `config.yaml`의 `track`대로 `.git/info/exclude`에
+        더한다. 이미 저장소면 409. 커밋은 만들지 않는다.
+      responses:
+        "201":
+          description: 새 저장소의 상태.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/runs:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [runs]
+      operationId: listRunTargets
+      summary: 선언된 실행 대상(`runs:`)과 지금 상태.
+      description: 선언 순서다. 선언되지 않은 것은 실행 대상이 아니다.
+      responses:
+        "200":
+          description: 실행 대상 목록.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RunTargetStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [runs]
+      operationId: declareRunTarget
+      summary: 실행 대상을 `runs:`에 선언한다.
+      description: |
+        다른 절과 주석은 그대로 둔다. 이름이 겹치거나 `cwd`가 프로젝트 밖
+        (심볼릭 링크를 따라간 실제 경로 기준)이면 400. 에이전트의
+        `madang runs add`도 이 경로를 쓴다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunDeclare"
+      responses:
+        "201":
+          description: 선언한 실행 대상.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunTargetStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{project}/runs/{name}/start:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+      - $ref: "#/components/parameters/RunName"
+    post:
+      tags: [runs]
+      operationId: startRunTarget
+      summary: 선언된 실행 대상을 core 소유 프로세스로 시작한다.
+      description: |
+        명령이 정책의 금지 명령에 걸리면 409 `denied`. 출력은 `run.log`로
+        보내고, `opens`가 응답하면 `runs.opened`와 `ports.changed`를 낸다.
+        이미 돌고 있으면 409.
+      responses:
+        "200":
+          description: 시작한 실행 대상.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunTargetStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/runs/{name}/stop:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+      - $ref: "#/components/parameters/RunName"
+    post:
+      tags: [runs]
+      operationId: stopRunTarget
+      summary: core가 띄운 실행 대상을 자손 프로세스까지 정지한다.
+      description: 돌고 있지 않으면 409.
+      responses:
+        "200":
+          description: 정지한 실행 대상.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunTargetStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/ports:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [runs]
+      operationId: listPorts
+      summary: 프로젝트에서 지금 열린 포트(관찰).
+      description: |
+        운영체제가 알려 준 LISTEN 소켓만 쓴다. core가 띄운 실행 대상의
+        프로세스 트리와, 작업 폴더가 프로젝트 폴더(또는 `<프로젝트>.wt/`) 안인
+        프로세스가 대상이다. 포트 번호나 명령을 짐작하지 않는다.
+      responses:
+        "200":
+          description: 열린 포트, 포트 순.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ObservedPort"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{project}/ports/{port}/declare:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+      - name: port
+        in: path
+        required: true
+        description: 관찰한 포트 번호.
+        schema:
+          type: integer
+        example: 5173
+    post:
+      tags: [runs]
+      operationId: declarePort
+      summary: 관찰한 포트를 연 프로세스를 `runs:`에 선언한다("선언으로 저장").
+      description: |
+        `command`와 `cwd`를 주지 않으면 그 프로세스의 실제 명령줄과 작업
+        폴더를 쓴다. `opens`는 `http://localhost:<port>`다. 지금 열려 있지
+        않은 포트면 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortDeclare"
+      responses:
+        "201":
+          description: 선언한 실행 대상.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunTargetStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{project}/publish:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    get:
+      tags: [publish]
+      operationId: getPublishStatus
+      summary: 게시 설정과 마지막 게시 기록.
+      responses:
+        "200":
+          description: 게시 상태.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    post:
+      tags: [publish]
+      operationId: publishProject
+      summary: 프로젝트 `publish:`대로 정적 사이트를 만들어 게시한다.
+      description: |
+        문서 렌더러 하나(앱 문서 탭과 같은 것)로 문서를 싣고, 문서가 쓰는
+        뷰어는 게시 시점 해시로 고정한 사본을 담는다. 대상은 `gh-pages`
+        브랜치나 `folder:<경로>`다. 브랜치를 원격에 미는 것은 정책
+        (`policy.deny`)이 막지 않을 때만이며, 밀다 실패하면 `push_error`에
+        남는다. 대상이 이미 같으면 기록하지 않는다(`changed: false`). 설정·대상
+        문제는 409이고 `error`는 게시 오류 코드(`target-missing`, `target-invalid`, `include-missing` 등)다.
+        끝나면 `publish.done`을 낸다.
+      responses:
+        "200":
+          description: 게시 결과.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishOutcome"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /projects/{project}/publish/undo:
+    parameters:
+      - $ref: "#/components/parameters/Project"
+    post:
+      tags: [publish]
+      operationId: undoPublish
+      summary: 가장 최근 게시를 되감는다.
+      description: |
+        되감을 게시가 없으면 409 `nothing-to-undo`, 게시 뒤에 대상이 바뀌었으면
+        409 `target-changed`. 끝나면 `publish.done`(`undo: true`)을 낸다.
+      responses:
+        "200":
+          description: 되감은 결과.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishOutcome"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /projects/{project}/repo/commit:
     parameters:
       - $ref: "#/components/parameters/Project"
     post:
       tags: [agent]
       operationId: commitRepo
-      summary: 프로젝트 저장소의 모든 변경을 커밋한다.
-      description: 프로젝트 폴더가 git 저장소가 아니면 409 `no_repo`.
+      summary: 에이전트(`madang commit`)가 일한 작업 트리의 모든 변경을 커밋한다.
+      description: |
+        `page`에 워크트리가 있으면(코드 페이지) 그 워크트리의 페이지 브랜치에,
+        아니면 프로젝트 폴더에 커밋한다. `in_run`이 참이고 그 페이지에서 흐름이
+        돌고 있으면 커밋을 그 run의 되돌리기 기록에 남긴다. 작업 트리가 git
+        저장소가 아니면 409 `no_repo`, 정책이 막으면 409 `denied`. 끝나면
+        `git.changed`를 낸다.
       requestBody:
         required: true
         content:
@@ -310,6 +1015,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RepoCommitResult"
+        "400":
+          $ref: "#/components/responses/Invalid"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -321,8 +1028,17 @@ paths:
     post:
       tags: [agent]
       operationId: pushRepo
-      summary: 프로젝트 저장소의 현재 브랜치를 push한다.
-      description: force push는 하지 않으며 다른 브랜치도 push하지 않는다.
+      summary: 에이전트(`madang push`)가 일한 작업 트리의 현재 브랜치를 push한다.
+      description: |
+        `page`에 워크트리가 있으면 그 브랜치를 보낸다. force push는 하지 않으며
+        다른 브랜치도 push하지 않는다. 정책(`policy.deny`)이 막으면 409
+        `denied`. 본문은 없어도 된다.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoPush"
       responses:
         "200":
           description: push했다.
@@ -330,6 +1046,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RepoPushResult"
+        "400":
+          $ref: "#/components/responses/Invalid"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -489,7 +1207,7 @@ paths:
       summary: 에이전트가 매 호출마다 읽는 3층 memory.
       responses:
         "200":
-          description: root.md(앱 홈), project.md(`.madang/`), state.md(페이지).
+          description: profile.md(앱 홈), brief.md(`.madang/`), ledger.md(페이지).
           content:
             application/json:
               schema:
@@ -598,7 +1316,7 @@ paths:
     get:
       tags: [runs]
       operationId: listRunEvents
-      summary: run의 이벤트 로그(runs/N.events.jsonl).
+      summary: run의 이벤트 로그(runs/N.jsonl).
       description: |
         runner 이벤트를 도착 순서대로 돌려준다. 진행 중인 run이면 그때까지의
         이벤트다. 레이어 1의 run 패널이 읽는다.
@@ -625,6 +1343,72 @@ paths:
                       text: work 순서를 바꿨습니다. 펄어비스 경력이 맨 위입니다.
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /pages/{page}/runs/{n}/undo:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - $ref: "#/components/parameters/RunNumber"
+    post:
+      tags: [runs]
+      operationId: undoRun
+      summary: run 하나의 부작용을 역순으로 되감는다("되돌리기").
+      description: |
+        recorder가 남긴 `runs/N.undo.json`대로 게시(게시 기록), git 커밋·머지
+        (되돌림 커밋, `reset`을 쓰지 않는다), 페이지 파일(실행 전 사본)을
+        나중 것부터 되감는다. 그 run 뒤에 파일이 다시 바뀌었거나, 커밋이
+        이력에서 사라졌거나, 더 나중 게시가 있거나, 이미 되돌렸으면 아무것도
+        바꾸지 않고 409. 흐름이 돌고 있으면 409 `busy`. 끝나면
+        `page.updated`, 되돌림 커밋마다 `git.changed`, 되감은 게시마다
+        `publish.done`(`undo: true`)을 낸다.
+      responses:
+        "200":
+          description: 되감은 것.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UndoResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /pages/{page}/asks/{id}/answer:
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - name: id
+        in: path
+        required: true
+        description: page.md 묻는 블록의 id(`ask.created`의 `block`).
+        schema:
+          type: string
+        example: b12
+    post:
+      tags: [decisions]
+      operationId: answerAsk
+      summary: 정책이 멈춘 자리의 묻는 블록에 답하고 흐름을 이어 간다.
+      description: |
+        정책(테스트·충돌·금지 명령·게시 실패)이 부작용을 멈추면 page.md에 묻는
+        블록이 생기고 사람은 거기서만 답한다. 답은 page.md에 블록으로 남는다.
+        선택지(`merge`, `retry`, `stop` 등)에 없는 답은 400, 그 블록을 기다리는
+        흐름이 없으면 404, 흐름이 돌고 있으면 409 `busy`. 같은 결정은
+        `POST /pages/{page}/decisions/{id}/answer`로도 답할 수 있다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionAnswer"
+            example:
+              choice: merge
+      responses:
+        "202":
+          description: 받았다. 흐름 이벤트가 이어진다.
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /pages/{page}/decisions/{id}/answer:
     parameters:
@@ -757,13 +1541,13 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /pages/{page}/state/tasks:
+  /pages/{page}/ledger/tasks:
     parameters:
       - $ref: "#/components/parameters/Page"
     patch:
       tags: [agent]
       operationId: setTask
-      summary: state.md에 작업을 추가하거나 갱신한다.
+      summary: ledger.md에 작업을 추가하거나 갱신한다.
       requestBody:
         required: true
         content:
@@ -782,13 +1566,13 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /pages/{page}/state/decisions:
+  /pages/{page}/ledger/decisions:
     parameters:
       - $ref: "#/components/parameters/Page"
     post:
       tags: [agent]
       operationId: recordDecision
-      summary: state.md에 결정을 기록한다.
+      summary: ledger.md에 결정을 기록한다.
       requestBody:
         required: true
         content:
@@ -801,19 +1585,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StateDecision"
+                $ref: "#/components/schemas/LedgerDecision"
         "400":
           $ref: "#/components/responses/Invalid"
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /pages/{page}/state/artifacts:
+  /pages/{page}/ledger/artifacts:
     parameters:
       - $ref: "#/components/parameters/Page"
     post:
       tags: [agent]
       operationId: addArtifact
-      summary: state.md의 artifacts에 파일을 등록한다.
+      summary: ledger.md의 artifacts에 파일을 등록한다.
       requestBody:
         required: true
         content:
@@ -916,6 +1700,64 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /viewers:
+    get:
+      tags: [viewers]
+      operationId: listViewers
+      summary: 등록된 뷰어와 상태(끊김 포함).
+      description: |
+        등록부(`~/.madang/viewers.yaml`)의 항목은 정본 폴더를 가리키는
+        참조다. 정본 폴더가 없거나 규격이 깨졌으면 `status`가 `broken`
+        (끊김)이며, 그 뷰어를 쓰는 문서는 데이터를 표로 대신 보여 준다.
+        `project`를 주면 그 프로젝트 `.madang/viewers/`의 뷰어가 먼저 온다
+        (같은 이름이면 그 프로젝트 안에서 우선).
+      parameters:
+        - name: project
+          in: query
+          required: false
+          description: 프로젝트 전용 뷰어도 넣을 프로젝트 id.
+          schema:
+            type: string
+          example: jobs
+      responses:
+        "200":
+          description: 뷰어 목록.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ViewerStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    post:
+      tags: [viewers]
+      operationId: registerViewer
+      summary: 뷰어 폴더를 `viewer.json`의 이름으로 등록한다.
+      description: |
+        복사하지 않고 폴더를 참조한다. `pinned`면 지금 내용의 해시로
+        `cache/`에 사본을 만든다. 규격이 틀리면 400, 같은 이름이 이미 있으면
+        409. 등록하면 `viewer.changed`를 낸다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ViewerRegister"
+      responses:
+        "201":
+          description: 등록한 뷰어.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ViewerStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /events:
     x-websocket:
       protocol: websocket
@@ -971,6 +1813,23 @@ components:
         minimum: 1
       example: 2
 
+    RunName:
+      name: name
+      in: path
+      required: true
+      description: "`runs:`에 선언한 실행 대상 이름(URL 인코딩)."
+      schema:
+        type: string
+      example: 이력서 사이트
+    PageQuery:
+      name: page
+      in: query
+      required: false
+      description: 이 페이지의 워크트리(있으면)에서 일한다. 없으면 프로젝트 폴더.
+      schema:
+        type: string
+      example: 2026-09-24-lock
+
   responses:
     Invalid:
       description: 요청 또는 결과 파일이 검사에 실패했다.
@@ -1008,12 +1867,15 @@ components:
           type: string
           description: >-
             기계가 읽는 사유: `not_found`, `conflict`, `invalid`, `busy`,
-            `no_repo`.
+            `no_repo`, `denied`(정책의 금지 명령), 게시 오류 코드
+            (`target-missing`, `nothing-to-undo`, `target-changed` 등).
         message:
           type: string
       examples:
         - error: conflict
           message: a run is already in progress on this page
+        - error: denied
+          message: "금지 명령: push --force"
 
     Issue:
       type: object
@@ -1040,7 +1902,7 @@ components:
         - code: missing-section
           message: "missing required section '## 다음 할 일'"
           line: null
-          path: state.md
+          path: ledger.md
 
     ValidationFailure:
       type: object
@@ -1057,16 +1919,16 @@ components:
             $ref: "#/components/schemas/Issue"
       examples:
         - error: invalid
-          message: state.md failed validation
+          message: ledger.md failed validation
           issues:
             - code: invalid-value
               message: "status: expected planning | doing | blocked | review | done"
               line: 2
-              path: state.md
+              path: ledger.md
             - code: token-limit
-              message: state.md is 2310 tokens (limit 2000); summarize the log
+              message: ledger.md is 2310 tokens (limit 2000); summarize the log
               line: null
-              path: state.md
+              path: ledger.md
 
     # 시스템
 
@@ -1118,7 +1980,7 @@ components:
 
     RoutesDocument:
       type: object
-      description: config/routes.yaml 원문.
+      description: config.yaml의 routes 절 원문.
       required: [text]
       properties:
         text:
@@ -1142,7 +2004,7 @@ components:
       properties:
         name:
           type: string
-          description: runners.yaml의 runner 이름.
+          description: config.yaml runners 절의 runner 이름.
         available:
           type: boolean
         auth:
@@ -1191,7 +2053,7 @@ components:
       type: object
       description: |
         페이지 기록을 `<path>/.madang/`에 담는 로컬 폴더(보통 git 저장소).
-        제목과 표시 설정은 앱 홈 `config/madang.yaml`의 `projects`에 있다.
+        제목과 표시 설정은 앱 홈 `config.yaml`의 `projects`에 있다.
       required: [id, title, path]
       properties:
         id:
@@ -1386,7 +2248,7 @@ components:
           type: string
         kind:
           type: string
-          description: 기본값은 routes.yaml의 `default_kind`.
+          description: 기본값은 config.yaml routes 절의 `default_kind`.
       examples:
         - title: 이력서
           kind: build
@@ -1510,14 +2372,14 @@ components:
               model: claude-opus-5-5
               effort: high
               input:
-                parts: {system_est: 24600, root: 110, project: 1840, state: 380, contract: 420, target: 0, request: 12}
+                parts: {system_est: 24600, profile: 110, brief: 1840, ledger: 380, contract: 420, target: 0, request: 12}
                 total_est: 27362
               usage: {input: 27410, cached: 0, output: 3120}
-              changed_files: [blocks/b04-resume.view.md, blocks/b05-base.json, blocks/b06-pearlabyss.json, state.md]
+              changed_files: [blocks/b04-resume.view.md, blocks/b05-base.json, blocks/b06-pearlabyss.json, ledger.md]
               unknown_files: []
               verify: {cmd: null, ok: null}
               result_status: review
-              events_log: runs/1.events.jsonl
+              events_log: runs/1.jsonl
             - n: 2
               started: "2026-09-24T09:31:00+09:00"
               finished: "2026-09-24T09:31:41+09:00"
@@ -1528,14 +2390,14 @@ components:
               model: gpt-6-luna
               effort: high
               input:
-                parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
+                parts: {system_est: 24600, profile: 110, brief: 1840, ledger: 1320, contract: 420, target: 900, request: 40}
                 total_est: 29230
               usage: {input: 29104, cached: 24310, output: 612}
               changed_files: [blocks/b05-base.json]
               unknown_files: []
               verify: {cmd: null, ok: null}
               result_status: review
-              events_log: runs/2.events.jsonl
+              events_log: runs/2.jsonl
           unknown_files: []
 
     # 블록
@@ -1586,7 +2448,7 @@ components:
           $ref: "#/components/schemas/BlockType"
         file:
           type: [string, "null"]
-          description: 페이지 기준 파일. 메시지는 log.md에 있어 null.
+          description: 페이지 기준 파일. 메시지는 page.md 본문에 있어 null.
         title:
           type: string
         created_by:
@@ -1781,8 +2643,10 @@ components:
 
     MemoryLayer:
       type: string
-      description: 메모리 층. root는 앱 홈 root.md, project는 `.madang/project.md`, state는 페이지 state.md.
-      enum: [root, project, state]
+      description: >-
+        메모리 층. profile은 앱 홈 profile.md(나), brief는 프로젝트
+        `.madang/brief.md`, ledger는 페이지 ledger.md.
+      enum: [profile, brief, ledger]
 
     MemoryFile:
       type: object
@@ -1801,10 +2665,10 @@ components:
           description: 토큰 수(tiktoken cl100k_base).
         token_limit:
           type: [integer, "null"]
-          description: 저장 시 강제하는 한도(state.md만).
+          description: 저장 시 강제하는 한도(ledger.md만).
       examples:
-        - layer: state
-          path: /Users/me/Documents/jobs/.madang/pages/2026-09-24-resume/state.md
+        - layer: ledger
+          path: /Users/me/Documents/jobs/.madang/pages/2026-09-24-resume/ledger.md
           content: |
             ---
             status: review
@@ -1834,33 +2698,34 @@ components:
 
     Memory:
       type: object
-      required: [root, project, state]
+      description: 에이전트가 받는 기억 세 층. 앱은 이 순서로 보여 준다.
+      required: [profile, brief, ledger]
       properties:
-        root:
+        profile:
           $ref: "#/components/schemas/MemoryFile"
-        project:
+        brief:
           $ref: "#/components/schemas/MemoryFile"
-        state:
+        ledger:
           $ref: "#/components/schemas/MemoryFile"
       examples:
-        - root:
-            layer: root
-            path: /Users/me/.madang/root.md
+        - profile:
+            layer: profile
+            path: /Users/me/.madang/profile.md
             content: |
               # 나에 대해
               한국어로 답한다. 확인 질문 없이 진행한다.
             tokens: 18
             token_limit: null
-          project:
-            layer: project
-            path: /Users/me/Documents/jobs/.madang/project.md
+          brief:
+            layer: brief
+            path: /Users/me/Documents/jobs/.madang/brief.md
             content: |
               지원서와 이력서를 다룬다. 사실은 base 데이터만 믿는다.
             tokens: 41
             token_limit: null
-          state:
-            layer: state
-            path: /Users/me/Documents/jobs/.madang/pages/2026-09-24-resume/state.md
+          ledger:
+            layer: ledger
+            path: /Users/me/Documents/jobs/.madang/pages/2026-09-24-resume/ledger.md
             content: |
               ---
               status: review
@@ -1915,18 +2780,20 @@ components:
     InputParts:
       type: object
       description: 입력 부분별 추정 토큰.
-      required: [system_est, root, project, state, contract, target, request]
+      required: [system_est, profile, brief, ledger, contract, target, request]
       properties:
         system_est:
           type: integer
           description: runner 자체의 시스템 프롬프트와 도구(상수).
-        root:
+        profile:
           type: integer
-        project:
+          description: profile.md 본문.
+        brief:
           type: integer
-          description: project.md 본문.
-        state:
+          description: brief.md 본문.
+        ledger:
           type: integer
+          description: ledger.md(머리부와 본문).
         contract:
           type: integer
           description: 내장 작업 지시문.
@@ -1935,7 +2802,7 @@ components:
         request:
           type: integer
       examples:
-        - {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
+        - {system_est: 24600, profile: 110, brief: 1840, ledger: 1320, contract: 420, target: 900, request: 40}
 
     RunInput:
       type: object
@@ -1946,7 +2813,7 @@ components:
         total_est:
           type: integer
       examples:
-        - parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
+        - parts: {system_est: 24600, profile: 110, brief: 1840, ledger: 1320, contract: 420, target: 900, request: 40}
           total_est: 29230
 
     InputPreview:
@@ -1974,7 +2841,7 @@ components:
           runner: codex
           model: gpt-6-luna
           effort: high
-          parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
+          parts: {system_est: 24600, profile: 110, brief: 1840, ledger: 1320, contract: 420, target: 900, request: 40}
           total_est: 29230
 
     # 실행
@@ -1983,7 +2850,7 @@ components:
       type: string
       description: >-
         runner가 끝난 방식(`error`, `cancelled`, 시간 초과는 `blocked`), 또는
-        정상 종료 뒤 state.md의 status.
+        정상 종료 뒤 ledger.md의 status.
       enum: [planning, doing, blocked, review, done, error, cancelled]
 
     RunTrigger:
@@ -2081,14 +2948,14 @@ components:
           model: gpt-6-luna
           effort: high
           input:
-            parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
+            parts: {system_est: 24600, profile: 110, brief: 1840, ledger: 1320, contract: 420, target: 900, request: 40}
             total_est: 29230
           usage: {input: 29104, cached: 24310, output: 612}
           changed_files: [blocks/b05-base.json]
           unknown_files: []
           verify: {cmd: null, ok: null}
           result_status: review
-          events_log: runs/2.events.jsonl
+          events_log: runs/2.jsonl
 
     RunStreamEvent:
       type: object
@@ -2138,7 +3005,7 @@ components:
             type: string
       examples:
         - kind: choice
-          prompt: state.md 보정에 실패했습니다. 어떻게 할까요?
+          prompt: ledger.md 보정에 실패했습니다. 어떻게 할까요?
           options: [retry, next_tier, stop]
 
     PendingDecision:
@@ -2152,12 +3019,30 @@ components:
           type: [integer, "null"]
         question:
           $ref: "#/components/schemas/Question"
+        ask:
+          type: string
+          description: >-
+            정책이 멈춘 질문이면 page.md 묻는 블록의 id. 그 블록으로도 답할 수
+            있다(`POST /pages/{page}/asks/{id}/answer`).
+        reasons:
+          type: array
+          description: 정책이 거부한 이유. 묻는 블록이 있을 때만.
+          items:
+            type: string
       examples:
+        - id: b09
+          run: 3
+          question:
+            kind: choice
+            prompt: 정책(테스트·충돌·금지 명령)이 머지나 게시를 멈췄습니다. 묻는 블록의 이유를 보고 답해 주세요.
+            options: [merge, retry, stop]
+          ask: b12
+          reasons: ["테스트 실패(종료 코드 1)"]
         - id: q1
           run: 2
           question:
             kind: choice
-            prompt: state.md 보정에 실패했습니다. 어떻게 할까요?
+            prompt: ledger.md 보정에 실패했습니다. 어떻게 할까요?
             options: [retry, next_tier, stop]
 
     DecisionAnswer:
@@ -2215,9 +3100,9 @@ components:
       type: string
       enum: [proposed, confirmed, superseded, deferred]
 
-    StateDecision:
+    LedgerDecision:
       type: object
-      description: state.md `decisions`의 항목 하나.
+      description: ledger.md `decisions`의 항목 하나.
       required: [id, topic, choice, options, state]
       properties:
         id:
@@ -2303,8 +3188,18 @@ components:
       properties:
         message:
           type: string
+        page:
+          type: [string, "null"]
+          description: 요청한 페이지. 워크트리가 있으면 그 안에 커밋한다.
+        in_run:
+          type: boolean
+          default: false
+          description: 에이전트 실행 안에서 보냈으면 참(`$MADANG_PAGE`).
       examples:
         - message: "docs: add resume layout notes"
+        - message: "feat(session): add refresh lock"
+          page: 2026-09-24-lock
+          in_run: true
 
     RepoCommitResult:
       type: object
@@ -2326,6 +3221,712 @@ components:
       examples:
         - branch: main
           remote: origin
+
+    RepoPush:
+      type: object
+      description: 에이전트의 push 요청. 본문은 없어도 된다.
+      properties:
+        page:
+          type: string
+          description: 이 페이지의 워크트리(있으면) 브랜치를 보낸다.
+      examples:
+        - page: 2026-09-24-lock
+
+    # 설정 파일
+
+    ConfigDocument:
+      type: object
+      description: 설정 파일(config.yaml) 원문. 주석과 순서를 그대로 둔다.
+      required: [text]
+      properties:
+        text:
+          type: string
+      examples:
+        - text: |
+            track: false
+            runs:
+              - name: 이력서 사이트
+                cwd: resume/site
+                command: npm run dev
+                opens: http://localhost:5173
+            policy:
+              auto_merge: {require_tests: true, require_no_conflict: true}
+              auto_publish: true
+              deny: ["push --force", "reset --hard", "clean -fd"]
+
+    # git
+
+    GitFile:
+      type: object
+      description: 바뀐 파일 하나.
+      required: [path, code]
+      properties:
+        path:
+          type: string
+          description: 작업 트리 기준 경로.
+        code:
+          type: string
+          description: "`git status --porcelain`의 두 글자 코드(인덱스, 작업 트리). 추적 안 되는 파일은 `??`."
+      examples:
+        - path: src/session/lock.ts
+          code: " M"
+
+    GitStatus:
+      type: object
+      description: 작업 트리 상태. git 저장소가 아니면 `repository`만 거짓이다.
+      required: [repository, folder, files]
+      properties:
+        repository:
+          type: boolean
+        folder:
+          type: string
+          description: 작업 트리의 절대 경로(프로젝트 폴더 또는 페이지 워크트리).
+        branch:
+          type: string
+          description: 체크아웃된 브랜치. HEAD가 분리됐으면 없다.
+        head:
+          type: string
+          description: HEAD 커밋의 전체 해시. 커밋이 없으면 없다.
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/GitFile"
+      examples:
+        - repository: true
+          folder: /Users/me/src/madang.wt/2026-09-24-lock
+          branch: page/2026-09-24-lock
+          head: 7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708
+          files:
+            - {path: src/session/lock.ts, code: " M"}
+            - {path: src/session/lock.test.ts, code: "??"}
+        - repository: false
+          folder: /Users/me/Documents/jobs
+          files: []
+
+    GitDiff:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: 통합 diff 텍스트(색 없음).
+      examples:
+        - text: |
+            diff --git a/src/session/lock.ts b/src/session/lock.ts
+            --- a/src/session/lock.ts
+            +++ b/src/session/lock.ts
+            @@ -1 +1,2 @@
+             export {}
+            +export const refreshLock = new Mutex()
+
+    GitStage:
+      type: object
+      properties:
+        paths:
+          type: [array, "null"]
+          description: 스테이징할 경로. 없으면 모든 변경.
+          items:
+            type: string
+      examples:
+        - paths: [src/session/lock.ts]
+        - {}
+
+    GitCommitCreate:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        paths:
+          type: [array, "null"]
+          description: 이 경로들만 커밋한다.
+          items:
+            type: string
+      examples:
+        - message: "feat(session): add refresh lock"
+
+    GitBranches:
+      type: object
+      required: [branches]
+      properties:
+        current:
+          type: string
+          description: 메인 체크아웃의 브랜치. HEAD가 분리됐으면 없다.
+        branches:
+          type: array
+          items:
+            type: string
+      examples:
+        - current: main
+          branches: [main, page/2026-09-24-lock]
+
+    GitWorktree:
+      type: object
+      required: [path, head, main]
+      properties:
+        path:
+          type: string
+        branch:
+          type: string
+          description: 체크아웃된 브랜치. 분리됐으면 없다.
+        head:
+          type: string
+          description: HEAD 해시. 커밋이 없으면 빈 문자열.
+        main:
+          type: boolean
+          description: 메인 체크아웃이면 참.
+        page:
+          type: string
+          description: 이 워크트리를 쓰는 페이지 id.
+      examples:
+        - path: /Users/me/src/madang
+          branch: main
+          head: 7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708
+          main: true
+        - path: /Users/me/src/madang.wt/2026-09-24-lock
+          branch: page/2026-09-24-lock
+          head: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+          main: false
+          page: 2026-09-24-lock
+
+    GitLogEntry:
+      type: object
+      required: [hash, author, date, subject]
+      properties:
+        hash:
+          type: string
+        author:
+          type: string
+        date:
+          type: string
+          format: date-time
+        subject:
+          type: string
+          description: 메시지 첫 줄.
+      examples:
+        - hash: 7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708
+          author: choi
+          date: "2026-09-24T09:40:00+09:00"
+          subject: "feat(session): add refresh lock"
+
+    # 되돌리기
+
+    UndoResult:
+      type: object
+      description: run 하나를 되감은 결과.
+      required: [run, restored, skipped, reverted, unpublished]
+      properties:
+        run:
+          type: integer
+        restored:
+          type: array
+          description: 실행 전 내용으로 되감은 페이지 파일(페이지 기준).
+          items:
+            type: string
+        skipped:
+          type: array
+          description: 되감지 않는 부작용(`repo:` 작업 트리 파일 등). 커밋·머지 되돌림이 대신 되감는다.
+          items:
+            type: string
+        reverted:
+          type: array
+          description: git 커밋·머지를 되감은 되돌림 커밋 해시.
+          items:
+            type: string
+        unpublished:
+          type: array
+          description: 되감은 게시 번호.
+          items:
+            type: integer
+      examples:
+        - run: 3
+          restored: [ledger.md, page.md]
+          skipped: ["repo:src/session/lock.ts"]
+          reverted: [9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5]
+          unpublished: []
+
+    # 게시
+
+    PublishedViewer:
+      type: object
+      required: [name, pin]
+      properties:
+        name:
+          type: string
+          description: 뷰어 이름(`프로젝트/뷰어`).
+        pin:
+          type: string
+          description: 게시 시점 해시(커밋 또는 내용 해시).
+      examples:
+        - name: resume/basic
+          pin: 3f2a9c1
+
+    PublishRecord:
+      type: object
+      description: "`.madang/published/<n>.json`의 요약."
+      required: [n, at, target, site, documents, viewers]
+      properties:
+        n:
+          type: integer
+          description: 게시 번호.
+        at:
+          type: string
+          format: date-time
+        target:
+          type: string
+          description: 설정의 대상(`gh-pages` 또는 `folder:<경로>`).
+        site:
+          type: string
+          description: 사이트 내용 해시.
+        documents:
+          type: array
+          description: 게시한 문서(프로젝트 기준 경로).
+          items:
+            type: string
+        viewers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedViewer"
+        branch:
+          type: string
+          description: gh-pages 대상의 브랜치.
+        after_commit:
+          type: string
+          description: 게시 커밋(브랜치 대상).
+        pushed_to:
+          type: string
+          description: 밀어 넣은 원격. 밀지 않았으면 없다.
+        undone:
+          type: string
+          format: date-time
+          description: 되감은 시각. 아직이면 없다.
+        undo_commit:
+          type: string
+          description: 브랜치 대상을 되감은 커밋.
+      additionalProperties: true
+      examples:
+        - n: 4
+          at: "2026-09-24T10:02:00+09:00"
+          target: gh-pages
+          site: 5e1c0a9b
+          documents: [docs/index.md, docs/resume.md]
+          viewers: [{name: resume/basic, pin: 3f2a9c1}]
+          branch: gh-pages
+          after_commit: 0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e
+          pushed_to: origin
+
+    PublishStatus:
+      type: object
+      required: [include, auto_publish]
+      properties:
+        target:
+          type: string
+          description: "`publish.target`. 없으면 게시할 수 없다."
+        include:
+          type: array
+          description: 게시할 경로(프로젝트 기준). `.madang/`은 늘 빠진다.
+          items:
+            type: string
+        auto_publish:
+          type: boolean
+          description: 문서가 바뀐 send 뒤에 정책이 자동으로 게시하는지.
+        latest:
+          $ref: "#/components/schemas/PublishRecord"
+          description: 마지막 게시. 없으면 없다.
+      examples:
+        - target: gh-pages
+          include: [docs]
+          auto_publish: true
+
+    PublishOutcome:
+      type: object
+      required: [target, changed, documents, warnings]
+      properties:
+        target:
+          type: string
+        changed:
+          type: boolean
+          description: 새로 게시(또는 되감기)해 기록을 남겼으면 참. 대상이 이미 같으면 거짓.
+        site:
+          type: string
+          description: 사이트 내용 해시. 되감기면 없다.
+        documents:
+          type: integer
+          description: 게시한 문서 수.
+        warnings:
+          type: array
+          description: 표로 대체된 뷰어 펜스 등.
+          items:
+            type: string
+        push_error:
+          type: string
+          description: 게시 브랜치를 밀다 실패한 이유.
+        record:
+          $ref: "#/components/schemas/PublishRecord"
+      examples:
+        - target: folder:site
+          changed: true
+          site: 5e1c0a9b
+          documents: 2
+          warnings: []
+          record:
+            n: 4
+            at: "2026-09-24T10:02:00+09:00"
+            target: folder:site
+            site: 5e1c0a9b
+            documents: [docs/index.md, docs/resume.md]
+            viewers: []
+
+    # 실행 대상과 포트
+
+    ObservedPort:
+      type: object
+      description: 관찰한 LISTEN 포트 하나(운영체제가 알려 준 사실).
+      required: [port, host, pid]
+      properties:
+        port:
+          type: integer
+        host:
+          type: string
+          description: 대기 주소.
+        pid:
+          type: integer
+          description: 포트를 연 프로세스.
+        command:
+          type: string
+          description: 그 프로세스의 명령줄.
+        cwd:
+          type: string
+          description: 그 프로세스의 작업 폴더(프로젝트 또는 워크트리 기준).
+        run:
+          type: string
+          description: core가 띄운 실행 대상의 이름. 선언 밖 프로세스면 없다.
+      examples:
+        - port: 5173
+          host: 127.0.0.1
+          pid: 48213
+          command: node /Users/me/jobs/resume/site/node_modules/.bin/vite
+          cwd: resume/site
+          run: 이력서 사이트
+
+    RunTargetStatus:
+      type: object
+      description: "`runs:`에 선언한 실행 대상과 지금 상태."
+      required: [name, command, cwd, running, ports]
+      properties:
+        name:
+          type: string
+        command:
+          type: string
+          description: 셸 명령.
+        cwd:
+          type: string
+          description: 프로젝트 기준 실행 폴더.
+        opens:
+          type: string
+          description: 준비되면 브라우저 탭으로 열 URL.
+        running:
+          type: boolean
+          description: core가 띄운 프로세스가 돌고 있는지.
+        pid:
+          type: integer
+        ports:
+          type: array
+          description: 그 프로세스 트리가 연 포트.
+          items:
+            $ref: "#/components/schemas/ObservedPort"
+      examples:
+        - name: 이력서 사이트
+          command: npm run dev
+          cwd: resume/site
+          opens: http://localhost:5173
+          running: true
+          pid: 48201
+          ports: [{port: 5173, host: 127.0.0.1, pid: 48213, run: 이력서 사이트}]
+
+    RunDeclare:
+      type: object
+      required: [name, command]
+      properties:
+        name:
+          type: string
+          description: 프로젝트 안에서 겹치지 않는 이름.
+        command:
+          type: string
+        cwd:
+          type: string
+          default: "."
+          description: 프로젝트 기준 상대 경로. 밖을 가리키면 400.
+        opens:
+          type: [string, "null"]
+      examples:
+        - name: 이력서 사이트
+          command: npm run dev
+          cwd: resume/site
+          opens: http://localhost:5173
+
+    PortDeclare:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        command:
+          type: [string, "null"]
+          description: 없으면 포트를 연 프로세스의 명령줄.
+        cwd:
+          type: [string, "null"]
+          description: 없으면 그 프로세스의 작업 폴더.
+      examples:
+        - name: vite 개발 서버
+        - name: 문서 미리보기
+          command: npm run docs
+          cwd: docs
+
+    # 뷰어
+
+    ViewerStatus:
+      type: object
+      required: [name, source, follow, status, scope]
+      properties:
+        name:
+          type: string
+          description: "`프로젝트/뷰어` 이름."
+        source:
+          type: string
+          description: 정본 뷰어 폴더(복사하지 않는다).
+        follow:
+          type: string
+          enum: [live, pinned]
+          description: live는 정본 변경을 따라가고, pinned는 해시 사본을 쓴다.
+        pinned:
+          type: string
+          description: pinned일 때 사본의 해시.
+        status:
+          type: string
+          enum: [ok, broken]
+          description: 정본 폴더가 없거나 규격이 깨졌으면 broken(끊김).
+        scope:
+          type: string
+          enum: [registry, project]
+          description: 등록부 항목인지, 프로젝트 `.madang/viewers/`의 뷰어인지.
+        project:
+          type: string
+          description: scope가 project일 때 프로젝트 id.
+        version:
+          type: string
+          description: viewer.json의 버전. 끊겼으면 없다.
+      examples:
+        - name: resume/basic
+          source: /Users/me/src/viewers/resume-basic
+          follow: live
+          status: ok
+          scope: registry
+          version: "1.0.0"
+        - name: jobs/cards
+          source: /Users/me/old/cards
+          follow: pinned
+          pinned: 3f2a9c1
+          status: broken
+          scope: registry
+
+    ViewerRegister:
+      type: object
+      required: [source]
+      properties:
+        source:
+          type: string
+          description: 뷰어 폴더(viewer.json이 있는 곳). `~`는 사용자 홈으로 푼다.
+        follow:
+          type: string
+          enum: [live, pinned]
+          default: live
+      examples:
+        - source: ~/src/viewers/resume-basic
+          follow: live
+
+    # 사용량
+
+    ModelUsage:
+      type: object
+      required: [model, messages, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens]
+      properties:
+        model:
+          type: string
+        messages:
+          type: integer
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        cache_read_tokens:
+          type: integer
+        cache_creation_tokens:
+          type: integer
+      examples:
+        - {model: claude-opus-5-5, messages: 30, input_tokens: 900, output_tokens: 30000, cache_read_tokens: 1800000, cache_creation_tokens: 70000}
+
+    DayUsage:
+      type: object
+      required: [date, messages, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens]
+      properties:
+        date:
+          type: string
+          format: date
+          description: 로컬 날짜.
+        messages:
+          type: integer
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        cache_read_tokens:
+          type: integer
+        cache_creation_tokens:
+          type: integer
+      examples:
+        - {date: "2026-09-24", messages: 12, input_tokens: 300, output_tokens: 9000, cache_read_tokens: 600000, cache_creation_tokens: 20000}
+
+    ToolUsage:
+      type: object
+      description: 도구 하나(지금은 claude)의 사용 합계.
+      required: [tool, available, sessions, models, days, messages, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens]
+      properties:
+        tool:
+          type: string
+          enum: [claude]
+        available:
+          type: boolean
+          description: 사용 기록 폴더가 있으면 참.
+        sessions:
+          type: integer
+          description: 기간 안에 사용량이 있는 세션 수.
+        messages:
+          type: integer
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        cache_read_tokens:
+          type: integer
+        cache_creation_tokens:
+          type: integer
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelUsage"
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayUsage"
+      examples:
+        - tool: claude
+          available: true
+          sessions: 5
+          messages: 42
+          input_tokens: 1200
+          output_tokens: 38000
+          cache_read_tokens: 2100000
+          cache_creation_tokens: 90000
+          models:
+            - {model: claude-opus-5-5, messages: 42, input_tokens: 1200, output_tokens: 38000, cache_read_tokens: 2100000, cache_creation_tokens: 90000}
+          days:
+            - {date: "2026-09-24", messages: 42, input_tokens: 1200, output_tokens: 38000, cache_read_tokens: 2100000, cache_creation_tokens: 90000}
+
+    Usage:
+      type: object
+      required: [checked, since, tools]
+      properties:
+        checked:
+          type: string
+          format: date-time
+        since:
+          type: string
+          format: date
+          description: 센 첫날(로컬 날짜, 그날 포함).
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolUsage"
+      examples:
+        - checked: "2026-09-24T10:00:00+09:00"
+          since: "2026-09-18"
+          tools:
+            - tool: claude
+              available: false
+              sessions: 0
+              messages: 0
+              input_tokens: 0
+              output_tokens: 0
+              cache_read_tokens: 0
+              cache_creation_tokens: 0
+              models: []
+              days: []
+
+    # 파일 트리
+
+    FileLens:
+      type: string
+      description: 파일 트리 렌즈. 전체, 이 페이지, 변경됨.
+      enum: [all, page, changed]
+
+    FileEntry:
+      type: object
+      required: [path, type]
+      properties:
+        path:
+          type: string
+          description: 작업 폴더 기준 경로.
+        type:
+          type: string
+          enum: [file, dir]
+        runs:
+          type: array
+          description: 이 폴더를 `cwd`로 선언한 실행 대상. 선언된 것에만 있다.
+          items:
+            type: string
+        change:
+          type: string
+          description: "`changed` 렌즈에서 git 상태 코드."
+      examples:
+        - {path: .madang, type: dir}
+        - {path: .madang/brief.md, type: file}
+        - {path: resume/site, type: dir, runs: [이력서 사이트]}
+        - {path: src/session/lock.ts, type: file, change: " M"}
+
+    FileTree:
+      type: object
+      required: [root, lens, entries, runs, truncated]
+      properties:
+        root:
+          type: string
+          description: 훑은 작업 폴더의 절대 경로.
+        lens:
+          $ref: "#/components/schemas/FileLens"
+        entries:
+          type: array
+          description: 폴더가 그 안의 파일보다 먼저 오는 순서. `.madang/`이 맨 앞.
+          items:
+            $ref: "#/components/schemas/FileEntry"
+        runs:
+          type: array
+          description: "작업 폴더 자체(`cwd: .`)에 선언된 실행 대상."
+          items:
+            type: string
+        truncated:
+          type: boolean
+          description: 항목이 너무 많아 잘랐으면 참.
+      examples:
+        - root: /Users/me/Documents/jobs
+          lens: all
+          entries:
+            - {path: .madang, type: dir}
+            - {path: .madang/brief.md, type: file}
+            - {path: resume, type: dir}
+            - {path: resume/site, type: dir, runs: [이력서 사이트]}
+            - {path: resume/site/index.html, type: file}
+          runs: []
+          truncated: false
 
     # 파일과 휴지통
 
@@ -2513,6 +4114,13 @@ components:
         - $ref: "#/components/schemas/FlowWaitingEvent"
         - $ref: "#/components/schemas/MemoryUpdatedEvent"
         - $ref: "#/components/schemas/RunnerAvailabilityEvent"
+        - $ref: "#/components/schemas/AskCreatedEvent"
+        - $ref: "#/components/schemas/RunLogEvent"
+        - $ref: "#/components/schemas/RunsOpenedEvent"
+        - $ref: "#/components/schemas/PortsChangedEvent"
+        - $ref: "#/components/schemas/GitChangedEvent"
+        - $ref: "#/components/schemas/PublishDoneEvent"
+        - $ref: "#/components/schemas/ViewerChangedEvent"
       discriminator:
         propertyName: type
         mapping:
@@ -2535,6 +4143,13 @@ components:
           flow.waiting: "#/components/schemas/FlowWaitingEvent"
           memory.updated: "#/components/schemas/MemoryUpdatedEvent"
           runner.availability: "#/components/schemas/RunnerAvailabilityEvent"
+          ask.created: "#/components/schemas/AskCreatedEvent"
+          run.log: "#/components/schemas/RunLogEvent"
+          runs.opened: "#/components/schemas/RunsOpenedEvent"
+          ports.changed: "#/components/schemas/PortsChangedEvent"
+          git.changed: "#/components/schemas/GitChangedEvent"
+          publish.done: "#/components/schemas/PublishDoneEvent"
+          viewer.changed: "#/components/schemas/ViewerChangedEvent"
 
     EventType:
       type: string
@@ -2558,6 +4173,13 @@ components:
         - flow.waiting
         - memory.updated
         - runner.availability
+        - ask.created
+        - run.log
+        - runs.opened
+        - ports.changed
+        - git.changed
+        - publish.done
+        - viewer.changed
 
     EventEnvelope:
       type: object
@@ -2686,7 +4308,7 @@ components:
             run: 2
             question:
               kind: choice
-              prompt: state.md 보정에 실패했습니다. 어떻게 할까요?
+              prompt: ledger.md 보정에 실패했습니다. 어떻게 할까요?
               options: [retry, next_tier, stop]
         - reason: no_runner
 
@@ -2698,6 +4320,109 @@ components:
           $ref: "#/components/schemas/MemoryLayer"
         tokens:
           type: integer
+
+    AskCreatedData:
+      type: object
+      description: 정책이 부작용을 멈춘 자리에 생긴 묻는 블록.
+      required: [block, decision, prompt, reasons, options]
+      properties:
+        block:
+          type: string
+          description: page.md 묻는 블록 id. `POST /pages/{page}/asks/{id}/answer`의 id.
+        decision:
+          type: string
+          description: 같은 질문의 결정 id(`flow.waiting`의 `decision.id`).
+        prompt:
+          type: string
+        reasons:
+          type: array
+          description: 정책이 거부한 이유.
+          items:
+            type: string
+        options:
+          type: array
+          items:
+            type: string
+
+    RunLogData:
+      type: object
+      description: 실행 대상 프로세스 출력 한 줄. 끝나면 `exit_code`가 있는 빈 줄이 온다.
+      required: [name, line]
+      properties:
+        name:
+          type: string
+          description: 실행 대상 이름.
+        line:
+          type: string
+        exit_code:
+          type: integer
+          description: 프로세스가 끝났을 때만 있다.
+
+    RunsOpenedData:
+      type: object
+      description: "`opens` URL이 응답했다. 앱은 이 URL을 브라우저 탭으로 연다."
+      required: [name, url]
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+
+    PortsChangedData:
+      type: object
+      description: 실행 대상이 열리거나 끝난 뒤 프로젝트의 지금 열린 포트.
+      required: [name, ports]
+      properties:
+        name:
+          type: string
+          description: 변화를 일으킨 실행 대상.
+        ports:
+          type: array
+          items:
+            $ref: "#/components/schemas/ObservedPort"
+
+    GitChangedData:
+      type: object
+      description: core가 git 작업 트리나 브랜치를 바꿨다. 앱은 git 탭을 다시 가져온다.
+      required: [folder, action]
+      properties:
+        folder:
+          type: string
+          description: 바뀐 작업 트리.
+        action:
+          type: string
+          enum: [stage, commit, push, pull, init, merge, undo, publish]
+        commit:
+          type: string
+        branch:
+          type: string
+        head:
+          type: string
+
+    PublishDoneData:
+      type: object
+      required: [n, undo]
+      properties:
+        n:
+          type: integer
+          description: 게시 번호.
+        undo:
+          type: boolean
+          description: 되감기였으면 참.
+        push_error:
+          type: string
+          description: 게시 브랜치를 밀다 실패한 이유.
+
+    ViewerChangedData:
+      type: object
+      description: 뷰어를 등록했거나 live 뷰어의 정본이 바뀌었다. 그 뷰어를 쓰는 문서를 다시 그린다.
+      required: [name, status]
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [ok, broken]
 
     ProjectCreatedEvent:
       type: object
@@ -2903,7 +4628,7 @@ components:
           page: 2026-09-24-resume
           run: 2
           data:
-            parts: {system_est: 24600, root: 110, project: 1840, state: 1320, contract: 420, target: 900, request: 40}
+            parts: {system_est: 24600, profile: 110, brief: 1840, ledger: 1320, contract: 420, target: 900, request: 40}
             total_est: 29230
 
     RunProgressEvent:
@@ -2954,7 +4679,7 @@ components:
             unknown_files: []
             verify: {cmd: null, ok: null}
             result_status: review
-            events_log: runs/2.events.jsonl
+            events_log: runs/2.jsonl
 
     RunFailedEvent:
       type: object
@@ -3033,7 +4758,7 @@ components:
               run: 2
               question:
                 kind: choice
-                prompt: state.md 보정에 실패했습니다. 어떻게 할까요?
+                prompt: ledger.md 보정에 실패했습니다. 어떻게 할까요?
                 options: [retry, next_tier, stop]
 
     MemoryUpdatedEvent:
@@ -3050,7 +4775,7 @@ components:
           ts: "2026-09-24T09:31:41+09:00"
           project: jobs
           page: 2026-09-24-resume
-          data: {layer: state, tokens: 212}
+          data: {layer: ledger, tokens: 212}
 
     RunnerAvailabilityEvent:
       type: object
@@ -3067,3 +4792,115 @@ components:
             runners:
               - {name: claude, available: true, auth: subscription, reason: null}
               - {name: codex, available: false, auth: subscription, reason: not logged in}
+
+    AskCreatedEvent:
+      type: object
+      required: [type, ts, project, page, block, data]
+      properties:
+        type: {type: string, enum: [ask.created]}
+        ts: {type: string, format: date-time}
+        project: {type: string}
+        page: {type: string}
+        block: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/AskCreatedData"}
+      examples:
+        - type: ask.created
+          ts: "2026-09-24T09:40:10+09:00"
+          project: madang
+          page: 2026-09-24-lock
+          block: b12
+          run: 3
+          data:
+            block: b12
+            decision: b09
+            prompt: 정책이 머지를 멈췄습니다. 어떻게 할까요?
+            reasons: ["테스트 실패(종료 코드 1)"]
+            options: [merge, retry, stop]
+
+    RunLogEvent:
+      type: object
+      required: [type, ts, project, data]
+      properties:
+        type: {type: string, enum: [run.log]}
+        ts: {type: string, format: date-time}
+        project: {type: string}
+        data: {$ref: "#/components/schemas/RunLogData"}
+      examples:
+        - type: run.log
+          ts: "2026-09-24T09:41:00+09:00"
+          project: jobs
+          data: {name: 이력서 사이트, line: "  VITE v6.0.0  ready in 312 ms"}
+
+    RunsOpenedEvent:
+      type: object
+      required: [type, ts, project, data]
+      properties:
+        type: {type: string, enum: [runs.opened]}
+        ts: {type: string, format: date-time}
+        project: {type: string}
+        data: {$ref: "#/components/schemas/RunsOpenedData"}
+      examples:
+        - type: runs.opened
+          ts: "2026-09-24T09:41:01+09:00"
+          project: jobs
+          data: {name: 이력서 사이트, url: "http://localhost:5173"}
+
+    PortsChangedEvent:
+      type: object
+      required: [type, ts, project, data]
+      properties:
+        type: {type: string, enum: [ports.changed]}
+        ts: {type: string, format: date-time}
+        project: {type: string}
+        data: {$ref: "#/components/schemas/PortsChangedData"}
+      examples:
+        - type: ports.changed
+          ts: "2026-09-24T09:41:01+09:00"
+          project: jobs
+          data:
+            name: 이력서 사이트
+            ports: [{port: 5173, host: 127.0.0.1, pid: 48213, run: 이력서 사이트}]
+
+    GitChangedEvent:
+      type: object
+      required: [type, ts, project, data]
+      properties:
+        type: {type: string, enum: [git.changed]}
+        ts: {type: string, format: date-time}
+        project: {type: string}
+        page: {type: string}
+        data: {$ref: "#/components/schemas/GitChangedData"}
+      examples:
+        - type: git.changed
+          ts: "2026-09-24T09:42:00+09:00"
+          project: madang
+          data: {folder: /Users/me/src/madang, action: merge, commit: 7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708}
+
+    PublishDoneEvent:
+      type: object
+      required: [type, ts, project, data]
+      properties:
+        type: {type: string, enum: [publish.done]}
+        ts: {type: string, format: date-time}
+        project: {type: string}
+        page: {type: string}
+        run: {type: integer}
+        data: {$ref: "#/components/schemas/PublishDoneData"}
+      examples:
+        - type: publish.done
+          ts: "2026-09-24T10:02:00+09:00"
+          project: jobs
+          data: {n: 4, undo: false}
+
+    ViewerChangedEvent:
+      type: object
+      required: [type, ts, data]
+      properties:
+        type: {type: string, enum: [viewer.changed]}
+        ts: {type: string, format: date-time}
+        data: {$ref: "#/components/schemas/ViewerChangedData"}
+      examples:
+        - type: viewer.changed
+          ts: "2026-09-24T10:05:00+09:00"
+          data: {name: resume/basic, status: ok}
